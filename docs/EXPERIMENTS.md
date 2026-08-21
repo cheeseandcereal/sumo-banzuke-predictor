@@ -52,7 +52,7 @@ with 11+ wins have historically always been promoted, so this is
 encoded as a forced slot. Remaining sanyaku-count fuzziness (extra K
 slots, strong M1 cases) left to residual analysis.
 
-## E3: main bake-off (2026-08, running)
+## E3: main bake-off (2026-08, results/dev_*)
 
 Contenders, all sharing FEATURES (rank, results, prizes, momentum
 history, kadoban/ozeki-run flags, era):
@@ -67,4 +67,67 @@ history, kadoban/ozeki-run flags, era):
 | B  | LightGBM LambdaRank on next-basho order | relative/resolution signal matters |
 | C  | pairwise classifier on nearby pairs (feature diffs), local Bradley-Terry aggregation | pair-asymmetric resolution bias matters |
 
-Results: pending.
+Exact slots /42, dev window (118 basho): Aq 16.75, A 16.18 (p=.12),
+B 15.68 (p=.009), Aw 15.58 (p=.016), R 13.09, L 11.71, C 9.82.
+2020+ slice: Aq 12.91, B 12.70, Aw 12.04, A 11.87 (p=.001).
+
+Findings: L1 beats L2 as hypothesized, and the gap widens in the
+chaotic recent era. LambdaRank is competitive on ordering but much
+worse at the juryo boundary (promo F1 .72 vs .93): its scores have no
+positional anchor. Recency-weighted training does not pay for its
+reduced effective sample (the era features already carry drift). C's
+current-position anchoring cannot express big moves; standalone it is
+the worst contender, but see E4 for where its machinery works.
+
+## E4: residual analysis -> boundary_dist + local rerank Ar (results/dev2_*)
+
+Residual analysis of Aq (analyze.py): 28% of misses were pure E/W
+flips, 34% within one position; juryo promotees under-promoted by
++1.10 positions; in model-inverted adjacent pairs the committee
+favored the climber (prior order held only 44% vs 63% baseline), and
+with tied wins prior order held 94%. So: near-tie resolution is
+learnable signal, and the model was too anchored, not too little.
+
+Changes:
+- boundary_dist feature (signed distance to the makuuchi/juryo line)
+- Ar = Aq global order + pairwise classifier reranking only within
+  near-tie clusters (consecutive base scores within GAP=0.5, clusters
+  capped at 4). GAP=1.5 was tried first and clustered 80% of pairs,
+  degrading results; 0.5 clusters ~39%.
+
+Dev: Ar 18.07 vs Aq 16.96 (sign 32-72, p<.001). Promotee bias fell to
++0.78, big-winner bias +0.29 -> +0.06, sanyaku-zone exact .65 -> .72.
+
+## E5: forced komusubi claims (results/dev3_*)
+
+All 10 dev-window sanyaku-count misses were under-created slots for
+strong upper maegashira. Empirical claim precision (1990+):
+M1 8+ wins .85-.90, M2 11+ 1.00, M3 10+ .91, M4 12+ 1.00, M5 13+ 1.00;
+stable across eras. Encoded as forced K claims. M1 12+ jumping straight
+to S was left out (2 of 4 historically).
+
+Dev: sanyaku_exact .55 -> .60, 2020+ exact_n 13.74 -> 14.13 (Ar);
+full-window exact_n flat (18.07 -> 18.01), consistent with the
+committee creating slots more liberally in recent years. Kept per the
+recency-weighted selection rule.
+
+## E6: held-out confirmation 2024-2026 (one shot, results/holdout_*)
+
+16 basho, all contenders, evaluated once: Ar 17.13 exact (40.8%),
+MAE 0.854, promo F1 .96; A 16.69, Aq 16.63, Aw 15.81, B 15.44,
+R 15.44, L 9.44, C 8.31. Sign tests are underpowered at n=16, but Ar
+leads every ordering metric and the dev-window ordering reproduces.
+
+**Decision: Ar promoted as the default predictor** (predict.py).
+Runner-up Aq kept as the simpler fallback.
+
+## Known limitations / future leads
+
+- Juryo promotee placement still +0.78 under-promoted; bottom-of-sheet
+  slotting is genuinely noisy ("banzuke luck").
+- Ozeki/yokozuna promotion thresholds are hardcoded conventions in the
+  resolver; borderline cases (32-win runs with a yusho) surface in
+  predict.py notes rather than being decided statistically.
+- COVID-era kadoban exemptions (Mitakeumi 2022) are not modeled.
+- Sanyaku count is right in ~89% of basho; when wrong it still costs
+  ~7 slots. A learned count model is the next candidate experiment.

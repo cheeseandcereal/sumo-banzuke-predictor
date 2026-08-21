@@ -4,32 +4,51 @@ Predicts the next makuuchi banzuke (grand sumo top-division rankings)
 from the results of the previous basho.
 
 Multiple ordering models (rules formula, linear, gradient-boosted
-regression/ranking variants) compete on a shared rolling-origin backtest
-covering every banzuke transition since 1958; the best performer on
-modern-era data is promoted as the default predictor. See
-`docs/EXPERIMENTS.md` for what was tried and how it scored.
+regression/ranking/pairwise variants) competed on a shared
+rolling-origin backtest covering every banzuke transition since 1959.
+The promoted default, `Ar`, is an L1 gradient-boosted movement model
+whose near-tie clusters are reordered by a pairwise classifier that
+learned the committee's conflict-resolution habits, feeding a resolver
+that applies the near-inviolable structure (Y/O conventions, sanyaku
+minimums, empirically-derived E/W layout). See `docs/EXPERIMENTS.md`
+for the full experiment log and selection rationale.
+
+Held-out performance (2024-2026, never touched during development):
+**17.1 of 42 slots exactly right** per basho on average, mean absolute
+error 0.85 half-ranks, juryo promotion/demotion F1 0.96/0.87. For
+scale, winners of the human "Guess the Banzuke" game typically land
+25-35 exact; average players land in the teens.
 
 ## Data
 
 All data comes from the excellent [sumo-api.com](https://www.sumo-api.com)
-(banzuke, results, yusho, and special prizes for every basho since 1958).
-Raw API responses are committed under `data/` so cloning this repo does
-not require re-scraping. If you find the API useful, consider
+(banzuke, results, yusho, and special prizes for every basho since
+1959). Raw API responses are committed under `data/` so cloning this
+repo does not require re-scraping. If you find the API useful, consider
 [supporting its server costs](https://ko-fi.com/sumoapi).
-
-To update after a new basho:
-
-```sh
-uv run python fetch_banzuke.py   # incremental, skips existing files
-uv run python fetch_basho.py
-uv run python -m banzuke.build   # rebuild processed dataset
-```
 
 ## Usage
 
+Predict the upcoming banzuke from the latest fetched results:
+
 ```sh
-uv run python predict.py 202609            # predict an upcoming banzuke
-uv run python backtest.py --help           # run/inspect the model bake-off
+uv run python predict.py
+uv run python predict.py --retired Shikona1,Shikona2   # announced retirees
+```
+
+Update data after a basho ends (incremental, skips existing files):
+
+```sh
+uv run python fetch_banzuke.py && uv run python fetch_basho.py
+uv run python -m banzuke.build
+```
+
+Re-run the model bake-off / evaluation:
+
+```sh
+uv run python backtest.py --out results/dev            # dev window 2004-2023
+uv run python backtest.py --start 202401 --end 202607  # held-out window
+uv run python analyze.py --model Ar                    # residual analysis
 ```
 
 ## Layout
@@ -38,5 +57,6 @@ uv run python backtest.py --help           # run/inspect the model bake-off
 - `data/banzuke/`, `data/basho/`: raw API responses (committed)
 - `data/processed/`: rebuildable parquet dataset (gitignored)
 - `banzuke/`: dataset build, features, models, resolver, backtest harness
+- `predict.py`, `backtest.py`, `analyze.py`: CLIs
 - `results/`: backtest metric summaries (committed)
 - `docs/EXPERIMENTS.md`: experiment log and model-selection rationale
