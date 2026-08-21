@@ -1,0 +1,12 @@
+[project]
+name = "sumo-banzuke"
+version = "0.1.0"
+description = "Predict the next makuuchi banzuke from basho results"
+requires-python = ">=3.12"
+dependencies = [
+    "pandas>=2.2",
+    "pyarrow>=17",
+    "lightgbm>=4.5",
+    "scikit-learn>=1.5",
+    "scipy>=1.14",
+]

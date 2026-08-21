@@ -1,0 +1,6 @@
+.venv/
+__pycache__/
+*.pyc
+data/processed/
+models/
+results/scratch/
