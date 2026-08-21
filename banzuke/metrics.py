@@ -14,8 +14,10 @@ def _set_f1(pred: set, actual: set) -> float:
 def evaluate(pred: pd.DataFrame, cands: pd.DataFrame, actual: pd.DataFrame) -> dict:
     """pred: resolver output. cands: candidate rows at N. actual: tidy rows at N+1."""
     prev_div = cands.set_index("rikishi_id")["division"]
-    mak = actual[actual["division"] == 0].merge(pred, on="rikishi_id", how="left")
-    assert mak["pred_pos"].notna().all(), "actual makuuchi rikishi missing from candidates"
+    all_mak = actual[actual["division"] == 0].merge(pred, on="rikishi_id", how="left")
+    # rikishi absent from the previous banzuke (e.g. Sokokurai's 2013 court
+    # reinstatement) are unpredictable: automatic misses, excluded from mae/tau
+    mak = all_mak[all_mak["pred_pos"].notna()]
 
     exact = (
         (mak["pred_class"] == mak["rank_class"])
@@ -41,9 +43,9 @@ def evaluate(pred: pd.DataFrame, cands: pd.DataFrame, actual: pd.DataFrame) -> d
     )
 
     return {
-        "n_slots": len(mak),
+        "n_slots": len(all_mak),
         "exact_n": int(exact.sum()),
-        "exact": exact.mean(),
+        "exact": exact.sum() / len(all_mak),
         "mae": mae,
         "tau": tau,
         "promo_f1": promo_f1,

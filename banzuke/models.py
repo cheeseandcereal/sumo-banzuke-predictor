@@ -91,6 +91,21 @@ class GBMMedian(GBMRegression):
     objective = "regression_l1"
 
 
+class GBMRecency(GBMRegression):
+    """Aw: L2 GBM with exponential recency weights (half-life 60 basho, ~10y),
+    biasing training toward the modern committee's behavior."""
+
+    name = "Aw"
+    HALF_LIFE = 60
+
+    def fit(self, train):
+        order = {b: i for i, b in enumerate(sorted(train["basho"].unique()))}
+        age = train["basho"].map(order).max() - train["basho"].map(order)
+        self.m = LGBMRegressor(objective=self.objective, **LGB_PARAMS)
+        self.m.fit(train[FEATURES], train["delta"],
+                   sample_weight=0.5 ** (age / self.HALF_LIFE))
+
+
 class GBMRanker:
     """B: LambdaRank on the next-basho order within each transition."""
 
@@ -110,6 +125,9 @@ class GBMRanker:
         return -self.m.predict(cands[FEATURES])
 
 
+_PAIR_CACHE: dict[int, tuple] = {}  # training pairs per basho never change
+
+
 class PairwiseBT:
     """C: classifier on nearby candidate pairs (feature diffs), aggregated
     into local movement from the current order (approximate Bradley-Terry)."""
@@ -121,22 +139,22 @@ class PairwiseBT:
     def _pairs(self, df):
         df = df.sort_values("position", kind="stable")
         X = df[FEATURES].to_numpy(dtype=float)
-        idx_pairs = [
-            (i, j)
-            for i in range(len(df))
-            for j in range(i + 1, min(i + 1 + self.WINDOW, len(df)))
-        ]
-        i_arr = np.array([p[0] for p in idx_pairs])
-        j_arr = np.array([p[1] for p in idx_pairs])
+        n = len(df)
+        j_grid = np.arange(n)[:, None] + np.arange(1, self.WINDOW + 1)[None, :]
+        mask = j_grid < n
+        i_arr = np.broadcast_to(np.arange(n)[:, None], j_grid.shape)[mask]
+        j_arr = j_grid[mask]
         return X[i_arr] - X[j_arr], i_arr, j_arr, df
 
     def fit(self, train):
         Xs, ys = [], []
-        for _, grp in train.groupby("basho"):
-            X, i_arr, j_arr, df = self._pairs(grp)
-            nxt = df["position_next"].to_numpy()
-            Xs.append(X)
-            ys.append((nxt[i_arr] < nxt[j_arr]).astype(int))
+        for b, grp in train.groupby("basho"):
+            if b not in _PAIR_CACHE:
+                X, i_arr, j_arr, df = self._pairs(grp)
+                nxt = df["position_next"].to_numpy()
+                _PAIR_CACHE[b] = (X, (nxt[i_arr] < nxt[j_arr]).astype(int))
+            Xs.append(_PAIR_CACHE[b][0])
+            ys.append(_PAIR_CACHE[b][1])
         self.m = LGBMClassifier(**{**LGB_PARAMS, "n_estimators": 400})
         self.m.fit(np.vstack(Xs), np.concatenate(ys))
 
@@ -153,4 +171,5 @@ class PairwiseBT:
 
 
 MODELS = {m.name: m for m in
-          (RulesBaseline, LinearModel, GBMRegression, GBMMedian, GBMRanker, PairwiseBT)}
+          (RulesBaseline, LinearModel, GBMRegression, GBMMedian, GBMRecency,
+           GBMRanker, PairwiseBT)}

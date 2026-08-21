@@ -36,9 +36,11 @@ def run_backtest(model_names, targets, trans, tidy, progress=True) -> pd.DataFra
     return pd.DataFrame(rows)
 
 
-def summarize(results: pd.DataFrame) -> pd.DataFrame:
+def summarize(results: pd.DataFrame, since: int | None = None) -> pd.DataFrame:
     from scipy.stats import binomtest
 
+    if since:
+        results = results[results["basho"] >= since]
     summary = (
         results.groupby("model")
         .agg(
