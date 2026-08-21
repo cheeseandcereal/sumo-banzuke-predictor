@@ -1,1 +1,36 @@
-1/118 basho, 7s2/118 basho, 13s3/118 basho, 19s4/118 basho, 26s5/118 basho, 32s6/118 basho, 39s7/118 basho, 45s8/118 basho, 52s9/118 basho, 58s10/118 basho, 64s11/118 basho, 71s12/118 basho, 78s13/118 basho, 84s14/118 basho, 91s15/118 basho, 97s16/118 basho, 104s17/118 basho, 110s18/118 basho, 117s
+1/118 basho, 7s2/118 basho, 13s3/118 basho, 19s4/118 basho, 26s5/118 basho, 32s6/118 basho, 39s7/118 basho, 45s8/118 basho, 52s9/118 basho, 58s10/118 basho, 64s11/118 basho, 71s12/118 basho, 78s13/118 basho, 84s14/118 basho, 91s15/118 basho, 97s16/118 basho, 104s17/118 basho, 110s18/118 basho, 117s19/118 basho, 123s20/118 basho, 130s21/118 basho, 136s22/118 basho, 143s23/118 basho, 150s24/118 basho, 156s25/118 basho, 163s26/118 basho, 169s27/118 basho, 176s28/118 basho, 182s29/118 basho, 189s30/118 basho, 196s31/118 basho, 202s32/118 basho, 209s33/118 basho, 215s34/118 basho, 222s35/118 basho, 229s36/118 basho, 235s37/118 basho, 242s38/118 basho, 249s39/118 basho, 255s40/118 basho, 262s41/118 basho, 269s42/118 basho, 276s43/118 basho, 282s44/118 basho, 289s45/118 basho, 296s46/118 basho, 303s47/118 basho, 309s48/118 basho, 316s49/118 basho, 323s50/118 basho, 329s51/118 basho, 337s52/118 basho, 343s53/118 basho, 350s54/118 basho, 357s55/118 basho, 364s56/118 basho, 371s57/118 basho, 378s58/118 basho, 385s59/118 basho, 392s60/118 basho, 399s61/118 basho, 406s62/118 basho, 413s63/118 basho, 420s64/118 basho, 427s65/118 basho, 434s66/118 basho, 441s67/118 basho, 448s68/118 basho, 455s69/118 basho, 462s70/118 basho, 468s71/118 basho, 476s72/118 basho, 483s73/118 basho, 490s74/118 basho, 497s75/118 basho, 504s76/118 basho, 511s77/118 basho, 518s78/118 basho, 525s79/118 basho, 532s80/118 basho, 539s81/118 basho, 546s82/118 basho, 553s83/118 basho, 560s84/118 basho, 567s85/118 basho, 574s86/118 basho, 581s87/118 basho, 589s88/118 basho, 596s89/118 basho, 603s90/118 basho, 610s91/118 basho, 617s92/118 basho, 624s93/118 basho, 631s94/118 basho, 638s95/118 basho, 645s96/118 basho, 652s97/118 basho, 660s98/118 basho, 667s99/118 basho, 674s100/118 basho, 681s101/118 basho, 689s102/118 basho, 696s103/118 basho, 704s104/118 basho, 711s105/118 basho, 718s106/118 basho, 725s107/118 basho, 732s108/118 basho, 740s109/118 basho, 747s110/118 basho, 755s111/118 basho, 762s112/118 basho, 769s113/118 basho, 776s114/118 basho, 784s115/118 basho, 791s116/118 basho, 798s117/118 basho, 806s118/118 basho, 813s
+
+=== full (118 basho) ===
+       exact  exact_n    mae    tau  promo_f1  demo_f1  sanyaku_acc  sanyaku_exact wl_vs_best  p_vs_best
+model                                                                                                   
+Aq     0.399   16.754  1.038  0.945     0.931    0.905        0.804          0.542        0-0      1.000
+A      0.386   16.178  1.069  0.942     0.928    0.891        0.806          0.492      44-61      0.118
+B      0.374   15.678  1.408  0.934     0.720    0.761        0.831          0.542      40-68      0.009
+Aw     0.371   15.576  1.139  0.938     0.923    0.890        0.756          0.424      41-67      0.016
+R      0.312   13.085  1.544  0.914     0.888    0.890        0.642          0.246      21-85      0.000
+L      0.279   11.712  1.693  0.906     0.838    0.805        0.757          0.424      22-90      0.000
+C      0.234    9.822  2.513  0.868     0.825    0.771        0.652          0.161     11-101      0.000
+
+=== 2014+ (59 basho) ===
+       exact  exact_n    mae    tau  promo_f1  demo_f1  sanyaku_acc  sanyaku_exact wl_vs_best  p_vs_best
+model                                                                                                   
+Aq     0.391   16.424  0.992  0.947     0.921    0.892        0.777          0.508        0-0      1.000
+A      0.377   15.831  1.048  0.943     0.920    0.877        0.789          0.492      21-34      0.105
+B      0.370   15.542  1.347  0.935     0.717    0.745        0.794          0.492      18-35      0.027
+Aw     0.366   15.373  1.112  0.939     0.915    0.868        0.740          0.424      20-33      0.098
+R      0.325   13.627  1.435  0.920     0.911    0.901        0.669          0.237      11-40      0.000
+L      0.272   11.424  1.665  0.906     0.857    0.802        0.743          0.407      10-47      0.000
+C      0.222    9.339  2.667  0.860     0.805    0.738        0.681          0.203       4-50      0.000
+
+=== 2020+ (23 basho) ===
+       exact  exact_n    mae    tau  promo_f1  demo_f1  sanyaku_acc  sanyaku_exact wl_vs_best  p_vs_best
+model                                                                                                   
+Aq     0.308   12.913  1.273  0.932     0.898    0.858        0.736          0.348        0-0      1.000
+B      0.303   12.696  1.508  0.922     0.699    0.730        0.758          0.348       8-12      0.503
+Aw     0.287   12.043  1.415  0.922     0.893    0.809        0.738          0.391       9-12      0.664
+A      0.283   11.870  1.319  0.928     0.902    0.847        0.766          0.391       3-19      0.001
+R      0.273   11.435  1.578  0.913     0.911    0.859        0.723          0.261       4-15      0.019
+L      0.245   10.261  1.854  0.894     0.863    0.775        0.766          0.391       6-15      0.078
+C      0.187    7.826  2.960  0.844     0.770    0.691        0.734          0.174       0-20      0.000
+
+wrote results/dev_per_basho.csv, results/dev_summary.csv

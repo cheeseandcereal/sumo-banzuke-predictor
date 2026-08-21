@@ -1,0 +1,24 @@
+1/118 basho, 5s2/118 basho, 10s3/118 basho, 15s4/118 basho, 20s5/118 basho, 25s6/118 basho, 30s7/118 basho, 36s8/118 basho, 41s9/118 basho, 46s10/118 basho, 51s11/118 basho, 56s12/118 basho, 61s13/118 basho, 67s14/118 basho, 72s15/118 basho, 77s16/118 basho, 82s17/118 basho, 87s18/118 basho, 92s19/118 basho, 98s20/118 basho, 103s21/118 basho, 108s22/118 basho, 113s23/118 basho, 118s24/118 basho, 124s25/118 basho, 129s26/118 basho, 134s27/118 basho, 139s28/118 basho, 144s29/118 basho, 150s30/118 basho, 155s31/118 basho, 160s32/118 basho, 166s33/118 basho, 171s34/118 basho, 176s35/118 basho, 181s36/118 basho, 186s37/118 basho, 192s38/118 basho, 197s39/118 basho, 202s40/118 basho, 208s41/118 basho, 213s42/118 basho, 219s43/118 basho, 224s44/118 basho, 229s45/118 basho, 235s46/118 basho, 240s47/118 basho, 246s48/118 basho, 251s49/118 basho, 256s50/118 basho, 262s51/118 basho, 267s52/118 basho, 273s53/118 basho, 278s54/118 basho, 283s55/118 basho, 289s56/118 basho, 294s57/118 basho, 300s58/118 basho, 305s59/118 basho, 311s60/118 basho, 316s61/118 basho, 321s62/118 basho, 327s63/118 basho, 332s64/118 basho, 337s65/118 basho, 343s66/118 basho, 348s67/118 basho, 354s68/118 basho, 359s69/118 basho, 365s70/118 basho, 370s71/118 basho, 376s72/118 basho, 381s73/118 basho, 387s74/118 basho, 393s75/118 basho, 398s76/118 basho, 404s77/118 basho, 409s78/118 basho, 415s79/118 basho, 420s80/118 basho, 426s81/118 basho, 431s82/118 basho, 437s83/118 basho, 442s84/118 basho, 448s85/118 basho, 454s86/118 basho, 459s87/118 basho, 465s88/118 basho, 470s89/118 basho, 476s90/118 basho, 482s91/118 basho, 487s92/118 basho, 493s93/118 basho, 498s94/118 basho, 504s95/118 basho, 510s96/118 basho, 516s97/118 basho, 521s98/118 basho, 527s99/118 basho, 532s100/118 basho, 538s101/118 basho, 544s102/118 basho, 549s103/118 basho, 555s104/118 basho, 561s105/118 basho, 566s106/118 basho, 572s107/118 basho, 578s108/118 basho, 583s109/118 basho, 589s110/118 basho, 595s111/118 basho, 601s112/118 basho, 606s113/118 basho, 612s114/118 basho, 618s115/118 basho, 624s116/118 basho, 629s117/118 basho, 635s118/118 basho, 641s
+
+=== full (118 basho) ===
+       exact  exact_n    mae    tau  promo_f1  demo_f1  sanyaku_acc  sanyaku_exact wl_vs_best  p_vs_best
+model                                                                                                   
+Ar     0.431   18.068  0.996  0.947     0.932    0.900        0.827          0.551        0-0        1.0
+Aq     0.404   16.958  1.041  0.945     0.920    0.902        0.829          0.559      32-72        0.0
+B      0.367   15.407  1.375  0.934     0.747    0.773        0.829          0.568      25-80        0.0
+
+=== 2014+ (59 basho) ===
+       exact  exact_n    mae    tau  promo_f1  demo_f1  sanyaku_acc  sanyaku_exact wl_vs_best  p_vs_best
+model                                                                                                   
+Ar     0.412   17.288  0.988  0.948     0.922    0.885        0.781          0.475        0-0      1.000
+Aq     0.399   16.746  0.986  0.948     0.912    0.891        0.797          0.542      21-31      0.212
+B      0.354   14.881  1.341  0.934     0.749    0.745        0.790          0.492      11-40      0.000
+
+=== 2020+ (23 basho) ===
+       exact  exact_n    mae    tau  promo_f1  demo_f1  sanyaku_acc  sanyaku_exact wl_vs_best  p_vs_best
+model                                                                                                   
+Ar     0.328   13.739  1.250  0.933     0.893    0.855        0.766          0.391        0-0      1.000
+Aq     0.320   13.435  1.259  0.932     0.881    0.856        0.766          0.435        9-9      1.000
+B      0.282   11.826  1.542  0.919     0.745    0.738        0.769          0.348       6-14      0.115
+
+wrote results/dev2_per_basho.csv, results/dev2_summary.csv

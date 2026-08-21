@@ -62,7 +62,15 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int) -> pd.DataFr
     # komusubi with 11+ wins historically always get a sekiwake slot created
     s_members = fill_class(kadoban_out | ((cls == SEKIWAKE) & kk)
                            | ((cls == KOMUSUBI) & (wins >= 11)), 2)
-    k_members = fill_class((cls == KOMUSUBI) & kk, 2)
+    # upper maegashira whose scores land sanyaku >=85% of the time (1990+)
+    # get komusubi slots created for them when the zone is full
+    num = df["rank_number"].to_numpy()
+    m_claim = (cls == MAEGASHIRA) & (
+        ((num == 1) & (wins >= 8)) | ((num == 2) & (wins >= 11))
+        | ((num == 3) & (wins >= 10)) | ((num == 4) & (wins >= 12))
+        | ((num == 5) & (wins >= 13))
+    )
+    k_members = fill_class(((cls == KOMUSUBI) & kk) | m_claim, 2)
 
     remaining = [i for i in idx if i not in taken]
     n_m = max(0, mak_size - len(y_members) - len(o_members) - len(s_members) - len(k_members))

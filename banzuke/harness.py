@@ -10,10 +10,10 @@ from banzuke.models import MODELS
 from banzuke.resolver import resolve
 
 
-def run_backtest(model_names, targets, trans, tidy, progress=True) -> pd.DataFrame:
+def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=False):
     bashos = sorted(tidy["basho"].unique())
     prev_map = {b: p for p, b in zip(bashos, bashos[1:])}
-    rows = []
+    rows, preds = [], []
     t0 = time.time()
     for n, target in enumerate(targets, 1):
         prev = prev_map[target]
@@ -28,12 +28,17 @@ def run_backtest(model_names, targets, trans, tidy, progress=True) -> pd.DataFra
             rows.append(
                 {"model": name, "basho": target, **evaluate(pred, cands, actual)}
             )
+            if return_preds:
+                p = cands.merge(pred, on="rikishi_id")
+                p["model"], p["target"] = name, target
+                preds.append(p)
         if progress:
             print(f"\r{n}/{len(targets)} basho, {time.time() - t0:.0f}s",
                   end="", file=sys.stderr, flush=True)
     if progress:
         print(file=sys.stderr)
-    return pd.DataFrame(rows)
+    results = pd.DataFrame(rows)
+    return (results, pd.concat(preds, ignore_index=True)) if return_preds else results
 
 
 def summarize(results: pd.DataFrame, since: int | None = None) -> pd.DataFrame:

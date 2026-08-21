@@ -125,7 +125,35 @@ class GBMRanker:
         return -self.m.predict(cands[FEATURES])
 
 
-_PAIR_CACHE: dict[int, tuple] = {}  # training pairs per basho never change
+_PAIR_CACHE: dict[tuple, tuple] = {}  # training pairs per (basho, window) never change
+
+
+def _pair_diffs(df, window):
+    """Feature diffs for pairs within `window` of each other in the current
+    order, oriented i = currently higher ranked."""
+    df = df.sort_values("position", kind="stable")
+    X = df[FEATURES].to_numpy(dtype=float)
+    n = len(df)
+    j_grid = np.arange(n)[:, None] + np.arange(1, window + 1)[None, :]
+    mask = j_grid < n
+    i_arr = np.broadcast_to(np.arange(n)[:, None], j_grid.shape)[mask]
+    j_arr = j_grid[mask]
+    return X[i_arr] - X[j_arr], i_arr, j_arr, df
+
+
+def _fit_pair_classifier(train, window, n_estimators=400):
+    Xs, ys = [], []
+    for b, grp in train.groupby("basho"):
+        key = (b, window)
+        if key not in _PAIR_CACHE:
+            X, i_arr, j_arr, df = _pair_diffs(grp, window)
+            nxt = df["position_next"].to_numpy()
+            _PAIR_CACHE[key] = (X, (nxt[i_arr] < nxt[j_arr]).astype(int))
+        Xs.append(_PAIR_CACHE[key][0])
+        ys.append(_PAIR_CACHE[key][1])
+    m = LGBMClassifier(**{**LGB_PARAMS, "n_estimators": n_estimators})
+    m.fit(np.vstack(Xs), np.concatenate(ys))
+    return m
 
 
 class PairwiseBT:
@@ -136,30 +164,11 @@ class PairwiseBT:
     WINDOW = 12
     SCALE = 2.0
 
-    def _pairs(self, df):
-        df = df.sort_values("position", kind="stable")
-        X = df[FEATURES].to_numpy(dtype=float)
-        n = len(df)
-        j_grid = np.arange(n)[:, None] + np.arange(1, self.WINDOW + 1)[None, :]
-        mask = j_grid < n
-        i_arr = np.broadcast_to(np.arange(n)[:, None], j_grid.shape)[mask]
-        j_arr = j_grid[mask]
-        return X[i_arr] - X[j_arr], i_arr, j_arr, df
-
     def fit(self, train):
-        Xs, ys = [], []
-        for b, grp in train.groupby("basho"):
-            if b not in _PAIR_CACHE:
-                X, i_arr, j_arr, df = self._pairs(grp)
-                nxt = df["position_next"].to_numpy()
-                _PAIR_CACHE[b] = (X, (nxt[i_arr] < nxt[j_arr]).astype(int))
-            Xs.append(_PAIR_CACHE[b][0])
-            ys.append(_PAIR_CACHE[b][1])
-        self.m = LGBMClassifier(**{**LGB_PARAMS, "n_estimators": 400})
-        self.m.fit(np.vstack(Xs), np.concatenate(ys))
+        self.m = _fit_pair_classifier(train, self.WINDOW)
 
     def score(self, cands):
-        X, i_arr, j_arr, df = self._pairs(cands)
+        X, i_arr, j_arr, df = _pair_diffs(cands, self.WINDOW)
         p = self.m.predict_proba(X)[:, 1]  # P(i stays above j)
         movement = np.zeros(len(df))
         np.add.at(movement, i_arr, p - 0.5)
@@ -170,6 +179,56 @@ class PairwiseBT:
         return out.to_numpy()
 
 
+class GBMRerank(GBMMedian):
+    """Ar: Aq's global order + learned local reranking of near-tie clusters.
+    Residual analysis showed 28% of misses are E/W flips and 34% are within
+    one position; the committee resolves these by wins, then prior order.
+    A pairwise classifier learns that resolution; it may only reorder within
+    clusters of nearly-equal base scores, so global placement stays Aq's."""
+
+    name = "Ar"
+    PAIR_WINDOW = 6   # training pairs within this current-position distance
+    GAP = 0.5         # cluster break when consecutive base scores differ more
+    CLUSTER_MAX = 4
+
+    def fit(self, train):
+        super().fit(train)
+        self.pair = _fit_pair_classifier(train, self.PAIR_WINDOW)
+
+    def score(self, cands):
+        base = super().score(cands)
+        order = np.lexsort((cands["position"].to_numpy(), base))
+        X = cands[FEATURES].to_numpy(dtype=float)
+        pos = cands["position"].to_numpy()
+
+        clusters, cur = [], [order[0]]
+        for prev, i in zip(order, order[1:]):
+            if base[i] - base[prev] <= self.GAP and len(cur) < self.CLUSTER_MAX:
+                cur.append(i)
+            else:
+                clusters.append(cur)
+                cur = [i]
+        clusters.append(cur)
+
+        final = []
+        for cl in clusters:
+            if len(cl) > 1:
+                borda = {i: 0.0 for i in cl}
+                pairs = [(i, j) for a, i in enumerate(cl) for j in cl[a + 1:]]
+                # orient by current position to match training
+                oriented = [(i, j) if pos[i] <= pos[j] else (j, i) for i, j in pairs]
+                probs = self.pair.predict_proba(
+                    np.array([X[i] - X[j] for i, j in oriented]))[:, 1]
+                for (i, j), p in zip(oriented, probs):
+                    borda[i] += p
+                    borda[j] += 1 - p
+                cl = sorted(cl, key=lambda i: (-borda[i], base[i]))
+            final.extend(cl)
+        out = np.empty(len(cands))
+        out[final] = np.arange(len(final))
+        return out
+
+
 MODELS = {m.name: m for m in
           (RulesBaseline, LinearModel, GBMRegression, GBMMedian, GBMRecency,
-           GBMRanker, PairwiseBT)}
+           GBMRanker, PairwiseBT, GBMRerank)}

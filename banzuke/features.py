@@ -19,7 +19,7 @@ FEATURES = [
     "kk_streak", "sanyaku_tenure", "career_high", "n_basho",
     "kadoban", "demoted_ozeki", "ozeki_run3", "sanyaku3",
     "yusho1", "junyusho1",
-    "year", "kosho", "mak_size", "jur_size",
+    "year", "kosho", "mak_size", "jur_size", "boundary_dist",
 ]
 
 
@@ -111,6 +111,8 @@ def build_transitions(tidy: pd.DataFrame) -> pd.DataFrame:
 
     df["year"] = df["basho"] // 100
     df["kosho"] = ((df["basho"] >= 197201) & (df["basho"] <= 200311)).astype(int)
+    # signed distance to the makuuchi/juryo boundary (negative = inside makuuchi)
+    df["boundary_dist"] = df["position"] - df["mak_size"]
 
     # targets: the same rikishi's row at the next calendar basho
     df["next_basho"] = df["basho"].map(next_map)
