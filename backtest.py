@@ -20,8 +20,12 @@ RESULTS = Path(__file__).parent / "results"
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--models", default=",".join(MODELS), help="comma-separated model names")
-    ap.add_argument("--start", type=int, default=200401, help="first target basho")
-    ap.add_argument("--end", type=int, default=202311, help="last target basho")
+    ap.add_argument("--start", type=int, default=200401,
+                    help="first target basho (default 200401: start of the 42-man, "
+                         "post-kosho era; earlier committee behavior differs)")
+    ap.add_argument("--end", type=int, default=None,
+                    help="last target basho (default: latest fetched; during model "
+                         "development 202311 was used to protect the 2024+ holdout)")
     ap.add_argument("--out", default=None, help="results file stem, e.g. results/dev")
     ap.add_argument("--summarize", default=None, metavar="CSVS",
                     help="skip running; summarize existing per-basho csv(s), comma-separated")
@@ -40,7 +44,8 @@ def main():
 
     tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
     trans = pd.read_parquet(PROCESSED / "transitions.parquet")
-    targets = [b for b in sorted(tidy["basho"].unique()) if args.start <= b <= args.end]
+    end = args.end or int(tidy["basho"].max())
+    targets = [b for b in sorted(tidy["basho"].unique()) if args.start <= b <= end]
 
     results = run_backtest(names, targets, trans, tidy)
     print_summaries(results)

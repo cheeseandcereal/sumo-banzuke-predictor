@@ -54,9 +54,9 @@ uv run python -m banzuke.build
 Re-run the model bake-off / evaluation:
 
 ```sh
-uv run python backtest.py --out results/dev            # dev window 2004-2023
-uv run python backtest.py --start 202401 --end 202607  # held-out window
-uv run python analyze.py --model Ar                    # residual analysis
+uv run python backtest.py --out results/all    # 2004 through latest basho
+uv run python backtest.py --end 202311         # original dev window only
+uv run python analyze.py --model Ar            # residual analysis
 ```
 
 ## Layout
