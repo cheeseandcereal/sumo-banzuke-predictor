@@ -134,6 +134,24 @@ committee does not actually use it, or the effect is already carried
 by the wins/prior-rank features. Ar remains the default; Ah kept
 in-tree for future re-evaluation.
 
+## E8: joi / strength-of-schedule awareness (results/dev5_*)
+
+Hypothesis: the committee favors the joi (the top ~16 who share the
+toughest schedule; its boundary shifts with absences), and an 8-7
+against the joi schedule outranks an 8-7 against mid-maegashira. A
+static in-joi flag would be redundant (trees already split on
+position), so the realized schedule was computed from the 191k bout
+records: mean opponent position, joi opponents faced, wins over joi
+opponents, and kinboshi (maegashira defeating a yokozuna). Added to
+FEATURES for both the base model and the rerank pair diffs.
+
+Result: null. Aq full 16.60 -> 16.62 (sign 54-54); Ar full
+18.01 -> 17.71 (50-54, p=.77), 2014+ 17.42 -> 17.56 (p=.41),
+2020+ 14.13 -> 13.74. Joi membership is almost perfectly implied by
+rank position, which the model already has; the dynamic residue is too
+rare to move a 42-slot metric. Columns remain in the dataset
+(SCHEDULE_FEATURES) but are excluded from model inputs.
+
 ## Benchmark calibration: human "Guess the Banzuke" players
 
 Verified from dichne.com (2026-08). GTB "bullseye" = our exact-slot

@@ -96,7 +96,7 @@ def main():
     bouts.to_parquet(PROCESSED / "bouts.parquet", index=False)
     print(f"tidy: {len(tidy)} rows, {tidy['basho'].nunique()} basho; {len(bouts)} bouts")
 
-    trans = build_transitions(tidy)
+    trans = build_transitions(tidy, bouts)
     trans.to_parquet(PROCESSED / "transitions.parquet", index=False)
     n_target = trans["position_next"].notna().sum()
     print(f"transitions: {len(trans)} rows, {n_target} with targets")

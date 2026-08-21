@@ -8,7 +8,7 @@ immediately preceding basho.
 import numpy as np
 import pandas as pd
 
-from banzuke.build import OZEKI, SEKIWAKE, KOMUSUBI
+from banzuke.build import OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA
 
 # model input columns (all numeric; NaN allowed, tree models handle natively)
 FEATURES = [
@@ -22,13 +22,44 @@ FEATURES = [
     "year", "kosho", "mak_size", "jur_size", "boundary_dist",
 ]
 
+# computed into the dataset but excluded from model inputs: joi/schedule
+# awareness tested as a null result, see docs/EXPERIMENTS.md E8
+SCHEDULE_FEATURES = ["opp_pos_mean", "n_joi_opp", "wins_vs_joi", "kinboshi"]
 
-def build_transitions(tidy: pd.DataFrame) -> pd.DataFrame:
+JOI = 16  # top-of-banzuke group that shares the toughest schedule
+
+
+def schedule_features(tidy: pd.DataFrame, bouts: pd.DataFrame) -> pd.DataFrame:
+    """Realized strength-of-schedule per rikishi-basho, from actual bouts.
+    The joi boundary is dynamic (absences pull lower maegashira up), so the
+    fought schedule carries information the banzuke position does not."""
+    a = bouts.rename(columns={"winner": "rikishi_id", "loser": "opp"}).assign(win=1)
+    b = bouts.rename(columns={"loser": "rikishi_id", "winner": "opp"}).assign(win=0)
+    ab = pd.concat([a, b], ignore_index=True)
+    opp = tidy[["basho", "rikishi_id", "position", "rank_class"]].rename(columns={
+        "rikishi_id": "opp", "position": "opp_pos", "rank_class": "opp_class"})
+    ab = ab.merge(opp, on=["basho", "opp"])  # drops sub-juryo opponents
+    ab["joi_opp"] = ab["opp_pos"] < JOI
+    ab["win_joi"] = ab["win"] * ab["joi_opp"]
+    ab["beat_yokozuna"] = ab["win"] * (ab["opp_class"] == 0)
+    return ab.groupby(["basho", "rikishi_id"]).agg(
+        opp_pos_mean=("opp_pos", "mean"),
+        n_joi_opp=("joi_opp", "sum"),
+        wins_vs_joi=("win_joi", "sum"),
+        beat_yokozuna=("beat_yokozuna", "sum"),
+    ).reset_index()
+
+
+def build_transitions(tidy: pd.DataFrame, bouts: pd.DataFrame) -> pd.DataFrame:
     bashos = sorted(tidy["basho"].unique())
     bidx_map = {b: i for i, b in enumerate(bashos)}
     next_map = {b: n for b, n in zip(bashos, bashos[1:])}
 
-    df = tidy.sort_values(["rikishi_id", "basho"], kind="stable").reset_index(drop=True)
+    df = tidy.merge(schedule_features(tidy, bouts), on=["basho", "rikishi_id"], how="left")
+    df[["n_joi_opp", "wins_vs_joi", "beat_yokozuna"]] = (
+        df[["n_joi_opp", "wins_vs_joi", "beat_yokozuna"]].fillna(0)
+    )
+    df = df.sort_values(["rikishi_id", "basho"], kind="stable").reset_index(drop=True)
     df["bidx"] = df["basho"].map(bidx_map)
     df["kk"] = (df["wins"] >= 8).astype(int)
     df["win8"] = df["wins"] - 8
@@ -113,6 +144,8 @@ def build_transitions(tidy: pd.DataFrame) -> pd.DataFrame:
     df["kosho"] = ((df["basho"] >= 197201) & (df["basho"] <= 200311)).astype(int)
     # signed distance to the makuuchi/juryo boundary (negative = inside makuuchi)
     df["boundary_dist"] = df["position"] - df["mak_size"]
+    # kinboshi: a maegashira defeating a yokozuna, explicitly rewarded
+    df["kinboshi"] = df["beat_yokozuna"] * (df["rank_class"] == MAEGASHIRA)
 
     # targets: the same rikishi's row at the next calendar basho
     df["next_basho"] = df["basho"].map(next_map)
@@ -125,4 +158,4 @@ def build_transitions(tidy: pd.DataFrame) -> pd.DataFrame:
     df["dropped"] = df["next_basho"].notna() & df["position_next"].isna()
     df["delta"] = df["position_next"] - df["position"]
 
-    return df.drop(columns=["bidx", "class1", "class2"])
+    return df.drop(columns=["bidx", "class1", "class2", "beat_yokozuna"])
