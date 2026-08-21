@@ -16,7 +16,7 @@ from pathlib import Path
 BASE_URL = "https://www.sumo-api.com/api/basho/{basho}/banzuke/{division}"
 OUT_DIR = Path(__file__).parent / "data" / "banzuke"
 DIVISIONS = ("Makuuchi", "Juryo")
-FIRST_BASHO = "195801"  # API data starts 195803; 195801 probed and skipped
+FIRST_BASHO = "195911"  # earliest basho with yusho + special prize data
 BASHO_MONTHS = (1, 3, 5, 7, 9, 11)
 DELAY_S = 0.15
 RETRIES = 3
