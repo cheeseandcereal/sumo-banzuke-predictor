@@ -21,8 +21,8 @@ CLASS_ORD = {"Yokozuna": 0, "Ozeki": 1, "Sekiwake": 2, "Komusubi": 3, "Maegashir
 YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO = range(6)
 
 
-def load_tidy() -> pd.DataFrame:
-    rows = []
+def load_tidy() -> tuple[pd.DataFrame, pd.DataFrame]:
+    rows, bouts = [], []
     for path in sorted(RAW_BANZUKE.glob("*.json")):
         d = json.loads(path.read_text())
         basho = int(d["bashoId"])
@@ -31,6 +31,11 @@ def load_tidy() -> pd.DataFrame:
             for r in d[side_key] or []:
                 cls, num, side = r["rank"].split()
                 record = r.get("record") or []
+                # competitive head-to-head wins (fusen excluded)
+                bouts.extend(
+                    {"basho": basho, "winner": r["rikishiID"], "loser": b["opponentID"]}
+                    for b in record if b["result"] == "win"
+                )
                 rows.append({
                     "basho": basho,
                     "rikishi_id": r["rikishiID"],
@@ -79,16 +84,17 @@ def load_tidy() -> pd.DataFrame:
 
     for col in ("yusho", "junyusho"):
         df[col] = df[col].astype(int)
-    return df
+    return df, pd.DataFrame(bouts).drop_duplicates()
 
 
 def main():
     from banzuke.features import build_transitions
 
     PROCESSED.mkdir(parents=True, exist_ok=True)
-    tidy = load_tidy()
+    tidy, bouts = load_tidy()
     tidy.to_parquet(PROCESSED / "tidy.parquet", index=False)
-    print(f"tidy: {len(tidy)} rows, {tidy['basho'].nunique()} basho")
+    bouts.to_parquet(PROCESSED / "bouts.parquet", index=False)
+    print(f"tidy: {len(tidy)} rows, {tidy['basho'].nunique()} basho; {len(bouts)} bouts")
 
     trans = build_transitions(tidy)
     trans.to_parquet(PROCESSED / "transitions.parquet", index=False)

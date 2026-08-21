@@ -125,12 +125,24 @@ class GBMRanker:
         return -self.m.predict(cands[FEATURES])
 
 
-_PAIR_CACHE: dict[tuple, tuple] = {}  # training pairs per (basho, window) never change
+_PAIR_CACHE: dict[tuple, tuple] = {}  # training pairs per (basho, window, h2h) never change
+_H2H: set | None = None  # {(basho, winner_id, loser_id)}
 
 
-def _pair_diffs(df, window):
+def _h2h_wins():
+    global _H2H
+    if _H2H is None:
+        from banzuke.build import PROCESSED
+
+        b = pd.read_parquet(PROCESSED / "bouts.parquet")
+        _H2H = set(zip(b["basho"], b["winner"], b["loser"]))
+    return _H2H
+
+
+def _pair_diffs(df, window, h2h=False):
     """Feature diffs for pairs within `window` of each other in the current
-    order, oriented i = currently higher ranked."""
+    order, oriented i = currently higher ranked. With h2h, appends the
+    head-to-head result of the pair this basho (+1 i won, -1 i lost, 0)."""
     df = df.sort_values("position", kind="stable")
     X = df[FEATURES].to_numpy(dtype=float)
     n = len(df)
@@ -138,15 +150,26 @@ def _pair_diffs(df, window):
     mask = j_grid < n
     i_arr = np.broadcast_to(np.arange(n)[:, None], j_grid.shape)[mask]
     j_arr = j_grid[mask]
-    return X[i_arr] - X[j_arr], i_arr, j_arr, df
+    out = X[i_arr] - X[j_arr]
+    if h2h:
+        wins = _h2h_wins()
+        rid = df["rikishi_id"].to_numpy()
+        basho = int(df["basho"].iloc[0])
+        col = np.array(
+            [(basho, rid[i], rid[j]) in wins for i, j in zip(i_arr, j_arr)], dtype=float
+        ) - np.array(
+            [(basho, rid[j], rid[i]) in wins for i, j in zip(i_arr, j_arr)], dtype=float
+        )
+        out = np.column_stack([out, col])
+    return out, i_arr, j_arr, df
 
 
-def _fit_pair_classifier(train, window, n_estimators=400):
+def _fit_pair_classifier(train, window, h2h=False, n_estimators=400):
     Xs, ys = [], []
     for b, grp in train.groupby("basho"):
-        key = (b, window)
+        key = (b, window, h2h)
         if key not in _PAIR_CACHE:
-            X, i_arr, j_arr, df = _pair_diffs(grp, window)
+            X, i_arr, j_arr, df = _pair_diffs(grp, window, h2h)
             nxt = df["position_next"].to_numpy()
             _PAIR_CACHE[key] = (X, (nxt[i_arr] < nxt[j_arr]).astype(int))
         Xs.append(_PAIR_CACHE[key][0])
@@ -190,10 +213,11 @@ class GBMRerank(GBMMedian):
     PAIR_WINDOW = 6   # training pairs within this current-position distance
     GAP = 0.5         # cluster break when consecutive base scores differ more
     CLUSTER_MAX = 4
+    H2H = False       # include the pair's head-to-head bout this basho
 
     def fit(self, train):
         super().fit(train)
-        self.pair = _fit_pair_classifier(train, self.PAIR_WINDOW)
+        self.pair = _fit_pair_classifier(train, self.PAIR_WINDOW, self.H2H)
 
     def score(self, cands):
         base = super().score(cands)
@@ -210,6 +234,9 @@ class GBMRerank(GBMMedian):
                 cur = [i]
         clusters.append(cur)
 
+        rid = cands["rikishi_id"].to_numpy()
+        basho = int(cands["basho"].iloc[0])
+        wins = _h2h_wins() if self.H2H else None
         final = []
         for cl in clusters:
             if len(cl) > 1:
@@ -217,8 +244,13 @@ class GBMRerank(GBMMedian):
                 pairs = [(i, j) for a, i in enumerate(cl) for j in cl[a + 1:]]
                 # orient by current position to match training
                 oriented = [(i, j) if pos[i] <= pos[j] else (j, i) for i, j in pairs]
-                probs = self.pair.predict_proba(
-                    np.array([X[i] - X[j] for i, j in oriented]))[:, 1]
+                diffs = np.array([X[i] - X[j] for i, j in oriented])
+                if self.H2H:
+                    col = [float((basho, rid[i], rid[j]) in wins)
+                           - float((basho, rid[j], rid[i]) in wins)
+                           for i, j in oriented]
+                    diffs = np.column_stack([diffs, col])
+                probs = self.pair.predict_proba(diffs)[:, 1]
                 for (i, j), p in zip(oriented, probs):
                     borda[i] += p
                     borda[j] += 1 - p
@@ -229,6 +261,14 @@ class GBMRerank(GBMMedian):
         return out
 
 
+class GBMRerankH2H(GBMRerank):
+    """Ah: Ar + the pair's head-to-head bout result as a rerank feature.
+    The committee reportedly breaks near-ties by who beat whom."""
+
+    name = "Ah"
+    H2H = True
+
+
 MODELS = {m.name: m for m in
           (RulesBaseline, LinearModel, GBMRegression, GBMMedian, GBMRecency,
-           GBMRanker, PairwiseBT, GBMRerank)}
+           GBMRanker, PairwiseBT, GBMRerank, GBMRerankH2H)}

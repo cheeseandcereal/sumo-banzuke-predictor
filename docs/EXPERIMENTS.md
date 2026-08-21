@@ -121,6 +121,38 @@ leads every ordering metric and the dev-window ordering reproduces.
 **Decision: Ar promoted as the default predictor** (predict.py).
 Runner-up Aq kept as the simpler fallback.
 
+## E7: head-to-head bout results in the reranker (results/dev4_*)
+
+Hypothesis (sumo-fan folklore): the committee breaks near-ties by who
+beat whom during the basho. Bout winners extracted from the record
+arrays (191k bouts, fusen excluded) and appended as a pair feature
+(+1/-1/0) in Ar's rerank stage (model Ah).
+
+Result: null. Full dev 18.01 -> 17.97 (sign 19-18, p=1.0);
+2014+ 17.42 -> 17.51 (p=.36); 2020+ 14.13 -> 13.91. Either the
+committee does not actually use it, or the effect is already carried
+by the wins/prior-rank features. Ar remains the default; Ah kept
+in-tree for future re-evaluation.
+
+## Benchmark calibration: human "Guess the Banzuke" players
+
+Verified from dichne.com (2026-08). GTB "bullseye" = our exact-slot
+metric; a "hit" is the right rank on the wrong side. Numbers:
+
+- all-time top-10 GTB players average 25-27 bullseyes per basho
+- the per-basho winning entry (best of ~470 correlated entries, a
+  strong selection effect) lands roughly 33-36 in predictable basho
+- this model's held-out average is 17.1, with 6.5 E/W flips and 7.8
+  off-by-one misses per basho; resolving every near-tie perfectly
+  would yield ~32/42
+
+So the gap to the best individual humans is ~8 slots and lives almost
+entirely in near-tie resolution and sanyaku-count calls. Note also
+that GTB entries close ~4 weeks after the basho: players see announced
+yokozuna/ozeki promotions, retirements, and the shin-juryo
+announcement (which pins boundary exchange counts); the backtest gets
+none of these.
+
 ## Known limitations / future leads
 
 - Juryo promotee placement still +0.78 under-promoted; bottom-of-sheet
@@ -131,3 +163,9 @@ Runner-up Aq kept as the simpler fallback.
 - COVID-era kadoban exemptions (Mitakeumi 2022) are not modeled.
 - Sanyaku count is right in ~89% of basho; when wrong it still costs
   ~7 slots. A learned count model is the next candidate experiment.
+- Untried ideas for the near-tie gap: per-slot majority ensembling
+  across models/seeds; committee-regime features (banzuke committee
+  membership changes); for live use, feeding announced Y/O promotions
+  and shin-juryo counts into the resolver as constraints (information
+  GTB players have); scraping GTB archives for a paired per-basho
+  model-vs-human comparison on identical targets.
