@@ -19,12 +19,12 @@ def evaluate(pred: pd.DataFrame, cands: pd.DataFrame, actual: pd.DataFrame) -> d
     # reinstatement) are unpredictable: automatic misses, excluded from mae/tau
     mak = all_mak[all_mak["pred_pos"].notna()]
 
-    exact = (
-        (mak["pred_class"] == mak["rank_class"])
-        & (mak["pred_number"] == mak["rank_number"])
-        & (mak["pred_side"] == mak["side"])
-    )
-    mae = (mak["pred_pos"] - mak["position"]).abs().mean()
+    right_rank = (mak["pred_class"] == mak["rank_class"]) & (
+        mak["pred_number"] == mak["rank_number"])
+    exact = right_rank & (mak["pred_side"] == mak["side"])
+    hits = right_rank & ~exact  # GTB "hit": right rank, wrong side
+    abs_err = (mak["pred_pos"] - mak["position"]).abs()
+    mae = abs_err.mean()
     tau = kendalltau(mak["pred_pos"], mak["position"]).statistic
 
     pred_mak = set(pred.loc[pred["pred_class"] <= MAEGASHIRA, "rikishi_id"])
@@ -46,6 +46,8 @@ def evaluate(pred: pd.DataFrame, cands: pd.DataFrame, actual: pd.DataFrame) -> d
         "n_slots": len(all_mak),
         "exact_n": int(exact.sum()),
         "exact": exact.sum() / len(all_mak),
+        "gtb_points": int(2 * exact.sum() + hits.sum()),  # dichne.com scoring
+        "within1": (abs_err <= 1).sum() / len(all_mak),
         "mae": mae,
         "tau": tau,
         "promo_f1": promo_f1,

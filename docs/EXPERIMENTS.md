@@ -16,8 +16,12 @@ same features, resolver, and backtest.
   2014+, and 2020+ windows; recent windows carry the most weight in
   model selection.
 - Primary metric: exact slots /42 (GTB-style). Secondary: half-rank MAE,
-  Kendall tau, juryo-boundary promotion/demotion F1, sanyaku accuracy.
-  Paired sign test on exact slots vs the leader; simpler model wins ties.
+  within-1-position fraction, GTB points (2x exact + 1x right rank
+  wrong side), Kendall tau, juryo-boundary promotion/demotion F1,
+  sanyaku accuracy. Paired sign test on exact slots vs the leader;
+  simpler model wins ties. Note the models themselves train on
+  placement distance (L1 on movement delta), never on exact slots;
+  exact is only the selection criterion.
 - Transitions 201101->201105 and 202003->202007 span cancelled basho and
   behave as normal single transitions (the cancelled banzuke were reissued).
 - Backtest candidates exclude rikishi absent from the next banzuke

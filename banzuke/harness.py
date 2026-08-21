@@ -51,6 +51,8 @@ def summarize(results: pd.DataFrame, since: int | None = None) -> pd.DataFrame:
         .agg(
             exact=("exact", "mean"),
             exact_n=("exact_n", "mean"),
+            gtb_points=("gtb_points", "mean"),
+            within1=("within1", "mean"),
             mae=("mae", "mean"),
             tau=("tau", "mean"),
             promo_f1=("promo_f1", "mean"),
