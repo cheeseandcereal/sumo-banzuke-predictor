@@ -187,6 +187,8 @@ def main():
     ap.add_argument("--mak-size", type=int, default=42)
     ap.add_argument("--seeds", type=int, default=5,
                     help="ensemble size for the uncertainty column")
+    ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
+                    help="ignore training transitions before this basho")
     ap.add_argument("--above", action="append", default=[], metavar='"A > B"')
     ap.add_argument("--below", action="append", default=[], metavar='"A < B"')
     ap.add_argument("--class", dest="cls", action="append", default=[], metavar="X=O")
@@ -200,6 +202,10 @@ def main():
     latest = int(trans["basho"].max())
     target = next_basho_id(latest)
     train = trans[trans["position_next"].notna()]
+    if args.train_start:
+        train = train[train["basho"] >= args.train_start]
+        print(f"training restricted to {train['basho'].nunique()} basho "
+              f"({args.train_start}+)", file=sys.stderr)
     cands = trans[trans["basho"] == latest].reset_index(drop=True)
 
     retired = [s.strip().lower() for s in args.retired.split(",") if s.strip()]

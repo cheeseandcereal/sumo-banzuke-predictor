@@ -175,6 +175,25 @@ yokozuna/ozeki promotions, retirements, and the shin-juryo
 announcement (which pins boundary exchange counts); the backtest gets
 none of these.
 
+## E9: hard training cutoff at 2010 (--train-start)
+
+Hypothesis: old-regime transitions (1959+) mislead the model about the
+modern committee, so train only on 2010+ (~6.5k rows vs 25k). This is
+the hard-cutoff version of E3's Aw (recency weights), which already
+lost. Result, paired on identical targets vs full-history training:
+
+- dev 2014-2023: Aq 16.41 -> 15.73 (sign 24-32), Ar 17.42 -> 16.69
+  (18-28, p=.18); MAE worsens 0.98 -> ~1.09 for both
+- holdout 2024+: Aq 16.62 -> 15.94; Ar 17.12 -> 17.38 (sign 6-6,
+  noise) with MAE still worse (0.854 -> 0.885)
+
+Neutral-to-worse everywhere that has statistical power: the era
+features (year, kosho, mak_size) already let trees specialize to the
+modern regime, so a cutoff only shrinks the sample; rare big-move
+patterns thin out first. Full history stays the default;
+`--train-start` remains available on backtest.py and predict.py for
+future re-testing (the result cache keys on it).
+
 ## Overrides (predict.py, 2026-08)
 
 Human-in-the-loop overrides constrain the assignment, not the model:

@@ -48,6 +48,9 @@ def main():
     ap.add_argument("--out", default=None, help="results file stem, e.g. results/dev")
     ap.add_argument("--summarize", default=None, metavar="CSVS",
                     help="skip running; summarize existing per-basho csv(s), comma-separated")
+    ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
+                    help="ignore training transitions before this basho "
+                         "(e.g. 201001); default: all history since 1959")
     ap.add_argument("--fresh", action="store_true",
                     help="ignore and rebuild the per-(model, basho) result cache")
     args = ap.parse_args()
@@ -68,7 +71,12 @@ def main():
     end = args.end or int(tidy["basho"].max())
     targets = [b for b in sorted(tidy["basho"].unique()) if args.start <= b <= end]
 
-    fp = fingerprint()
+    fp = fingerprint() + (f"+ts{args.train_start}" if args.train_start else "")
+    if args.train_start:
+        n_train = int(tidy["basho"].between(args.train_start, targets[0]).sum()) - 1
+        if n_train < 30:
+            print(f"warning: first target {targets[0]} has only {n_train} training "
+                  f"basho with --train-start {args.train_start}", file=sys.stderr)
     cached = pd.DataFrame()
     if CACHE.exists() and not args.fresh:
         store = pd.read_parquet(CACHE)
@@ -79,7 +87,8 @@ def main():
                   f"--fresh to recompute", file=sys.stderr)
 
     skip = set(zip(cached["model"], cached["basho"])) if len(cached) else None
-    computed = run_backtest(names, targets, trans, tidy, skip=skip)
+    computed = run_backtest(names, targets, trans, tidy, skip=skip,
+                            train_start=args.train_start)
     results = pd.concat([f for f in (cached, computed) if len(f)], ignore_index=True)
 
     if len(computed):

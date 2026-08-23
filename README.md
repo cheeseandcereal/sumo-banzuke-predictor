@@ -86,6 +86,11 @@ and data rebuilds invalidate it automatically (`--fresh` to force).
 Model training itself is never persisted: `predict.py` retrains on
 every invocation (seconds; `--seeds 1` for the fastest run).
 
+Both CLIs accept `--train-start BASHO` to restrict training to newer
+transitions. Tested and neutral-to-worse (docs/EXPERIMENTS.md E9):
+the era features already let the models specialize to the modern
+regime, so full history remains the default.
+
 ## Layout
 
 - `fetch_banzuke.py`, `fetch_basho.py`: incremental scrapers
