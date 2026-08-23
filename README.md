@@ -47,6 +47,23 @@ uv run python predict.py
 uv run python predict.py --retired Shikona1,Shikona2   # announced retirees
 ```
 
+Disagree with a placement? Overrides constrain the assignment while the
+model fills everything else (scores are computed once; there is no
+conditional re-inference):
+
+```sh
+uv run python predict.py --above "Takayasu > Hakunofuji"  # A rises above B
+uv run python predict.py --below "Oho < Ura"              # A drops below B
+uv run python predict.py --class Aonishiki=O --count S=3  # structural beliefs
+uv run python predict.py --pin Wakatakakage=M8E           # exact cell
+uv run python predict.py --interactive                    # train once, iterate
+```
+
+Output annotates pinned cells, marks every wrestler your override moved
+(`<-M3E`), reports whether each relation survived the structural stage,
+and warns when an override breaks a banzuke convention (demoting a
+yokozuna, dropping a kachi-koshi sanyaku incumbent, etc.).
+
 Update data after a basho ends (incremental, skips existing files):
 
 ```sh

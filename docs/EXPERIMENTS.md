@@ -175,6 +175,27 @@ yokozuna/ozeki promotions, retirements, and the shin-juryo
 announcement (which pins boundary exchange counts); the backtest gets
 none of these.
 
+## Overrides (predict.py, 2026-08)
+
+Human-in-the-loop overrides constrain the assignment, not the model:
+scores are computed once; `--above`/`--below` splice the model's
+ordering (the named wrestler moves the minimal distance to clear its
+target, applied sequentially, no-op if already satisfied); `--class`,
+`--count`, and `--pin` steer the resolver's structural stage. There is
+no conditional re-inference: the model does not revise its opinion of
+C because you moved A above B; the sheet shifts structurally around
+the override.
+
+Precedence: overrides outrank the resolver's near-inviolable
+conventions, and each broken convention is reported (demoted yokozuna,
+retained kadoban ozeki, dropped kachi-koshi incumbent, cancelled rule
+promotion). A relation that the ordering satisfies can still be
+inverted in the final labels by a forced convention (e.g. the
+forced-komusubi claim); this is reported as VIOLATED rather than
+silently overriding the convention. The resolver refactor that made
+slots addressable (block_slots) reproduced the committed holdout
+results exactly, 144/144 (model, basho) rows.
+
 ## Known limitations / future leads
 
 - Juryo promotee placement still +0.78 under-promoted; bottom-of-sheet
