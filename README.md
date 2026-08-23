@@ -62,6 +62,13 @@ uv run python backtest.py --end 202311         # original dev window only
 uv run python analyze.py --model Ar            # residual analysis
 ```
 
+Backtest results are cached per (model, basho) in `results/scratch/`;
+re-runs with the same code and data reuse them. The cache key hashes
+the processed dataset and all result-affecting source files, so edits
+and data rebuilds invalidate it automatically (`--fresh` to force).
+Model training itself is never persisted: `predict.py` retrains on
+every invocation (seconds; `--seeds 1` for the fastest run).
+
 ## Layout
 
 - `fetch_banzuke.py`, `fetch_basho.py`: incremental scrapers

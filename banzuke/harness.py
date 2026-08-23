@@ -10,7 +10,9 @@ from banzuke.models import MODELS
 from banzuke.resolver import resolve
 
 
-def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=False):
+def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=False,
+                 skip=None):
+    """skip: set of (model_name, target) combos to leave out (already cached)."""
     bashos = sorted(tidy["basho"].unique())
     prev_map = {b: p for p, b in zip(bashos, bashos[1:])}
     rows, preds = [], []
@@ -22,6 +24,8 @@ def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=
         actual = tidy[tidy["basho"] == target]
         mak_size = int((actual["division"] == 0).sum())
         for name in model_names:
+            if skip and (name, target) in skip:
+                continue
             model = MODELS[name]()
             model.fit(train)
             pred = resolve(cands, model.score(cands), mak_size)
