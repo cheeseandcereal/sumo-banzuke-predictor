@@ -66,19 +66,28 @@ def main():
     print(f"predicted makuuchi banzuke for {target} "
           f"(from {latest} results, model {args.model}, {args.seeds} seeds)\n")
     mak = pred[pred["pred_class"] < JURYO].sort_values("pred_pos")
-    for _, r in mak.iterrows():
-        slot = f"{CLS[r['pred_class']]}{r['pred_number']}{'EW'[r['pred_side']]}"
+
+    def cell(r):
+        if r is None:
+            return ""
         prev = f"{CLS[r['rank_class']]}{r['rank_number']}{'EW'[r['side']]}"
         rec = f"{int(r['wins'])}-{int(r['losses'])}"
         if r["absences"]:
             rec += f"-{int(r['absences'])}"
-        flags = []
-        if r["rank_class"] == JURYO:
-            flags.append("promoted")
+        out = f"{r['shikona']:<14} ({prev:>4} {rec})"
         if r["spread"] > 2:
-            flags.append(f"unstable +-{r['spread']:.0f}")
-        print(f"  {slot:5s} {r['shikona']:15s} ({prev:4s} {rec})"
-              + (f"  [{', '.join(flags)}]" if flags else ""))
+            out += f" +-{r['spread']:.0f}"
+        return out
+
+    slots: dict = {}
+    for _, r in mak.iterrows():
+        slots.setdefault((r["pred_class"], r["pred_number"]), {})[r["pred_side"]] = r
+    width = 34
+    print(f"       {'EAST':<{width}}{'WEST'}")
+    for (c, n), sides in sorted(slots.items()):
+        label = f"{CLS[int(c)]}{int(n)}"
+        line = f"  {label:>3}  {cell(sides.get(0)):<{width}}{cell(sides.get(1))}"
+        print(line.rstrip())
 
     notes = []
     for _, r in pred.iterrows():
