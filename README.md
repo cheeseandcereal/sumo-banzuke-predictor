@@ -46,6 +46,13 @@ repo does not require re-scraping. If you find the API useful, consider
 
 ## Usage
 
+Build the processed dataset after cloning (it is generated from the
+committed raw data and is not tracked by git):
+
+```sh
+uv run python -m banzuke.build
+```
+
 Predict the upcoming banzuke from the latest fetched results:
 
 ```sh
@@ -70,7 +77,8 @@ Output annotates pinned cells, marks every wrestler your override moved
 and warns when an override breaks a banzuke convention (demoting a
 yokozuna, dropping a kachi-koshi sanyaku incumbent, etc.).
 
-Update data after a basho ends (incremental, skips existing files):
+Update and rebuild data after a basho ends (fetching is incremental and
+skips existing files):
 
 ```sh
 uv run python fetch_banzuke.py && uv run python fetch_basho.py

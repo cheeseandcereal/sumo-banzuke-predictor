@@ -198,7 +198,10 @@ def main():
                     help="train once, then adjust overrides in a loop")
     args = ap.parse_args()
 
-    trans = pd.read_parquet(PROCESSED / "transitions.parquet")
+    transitions_path = PROCESSED / "transitions.parquet"
+    if not transitions_path.is_file():
+        ap.error("processed data not found; run `uv run python -m banzuke.build` first")
+    trans = pd.read_parquet(transitions_path)
     latest = int(trans["basho"].max())
     target = next_basho_id(latest)
     train = trans[trans["position_next"].notna()]
