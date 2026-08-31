@@ -40,18 +40,12 @@ what has been tried.
 
 All data comes from the excellent [sumo-api.com](https://www.sumo-api.com)
 (banzuke, results, yusho, and special prizes for every basho since
-1959). Raw API responses are committed under `data/` so cloning this
-repo does not require re-scraping. If you find the API useful, consider
-[supporting its server costs](https://ko-fi.com/sumoapi).
+1959). Raw API responses and processed Parquet datasets are committed
+under `data/`, so a clone is ready to use without fetching or rebuilding.
+If you find the API useful, consider [supporting its server
+costs](https://ko-fi.com/sumoapi).
 
 ## Usage
-
-Build the processed dataset after cloning (it is generated from the
-committed raw data and is not tracked by git):
-
-```sh
-uv run python -m banzuke.build
-```
 
 Predict the upcoming banzuke from the latest fetched results:
 
@@ -77,12 +71,13 @@ Output annotates pinned cells, marks every wrestler your override moved
 and warns when an override breaks a banzuke convention (demoting a
 yokozuna, dropping a kachi-koshi sanyaku incumbent, etc.).
 
-Update and rebuild data after a basho ends (fetching is incremental and
-skips existing files):
+Fetch available data and rebuild the processed datasets after a banzuke
+release or completed basho (completed tournaments are skipped):
 
 ```sh
-uv run python fetch_banzuke.py && uv run python fetch_basho.py
-uv run python -m banzuke.build
+uv run python update_data.py
+uv run python update_data.py --fetch-only  # update raw JSON only
+uv run python update_data.py --build-only  # rebuild from existing JSON only
 ```
 
 Re-run the model bake-off / evaluation:
@@ -107,9 +102,9 @@ regime, so full history remains the default.
 
 ## Layout
 
-- `fetch_banzuke.py`, `fetch_basho.py`: incremental scrapers
-- `data/banzuke/`, `data/basho/`: raw API responses (committed)
-- `data/processed/`: rebuildable parquet dataset (gitignored)
+- `update_data.py`: incremental fetcher and processed-data builder
+- `data/banzuke/`, `data/basho/`: committed raw API responses
+- `data/processed/`: committed, reproducible Parquet datasets
 - `banzuke/`: dataset build, features, models, resolver, backtest harness
 - `predict.py`, `backtest.py`, `analyze.py`: CLIs
 - `results/`: backtest metric summaries (committed)

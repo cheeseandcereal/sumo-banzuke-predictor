@@ -200,9 +200,9 @@ def main():
 
     transitions_path = PROCESSED / "transitions.parquet"
     if not transitions_path.is_file():
-        ap.error("processed data not found; run `uv run python -m banzuke.build` first")
+        ap.error("processed data not found; run `uv run python update_data.py` first")
     trans = pd.read_parquet(transitions_path)
-    latest = int(trans["basho"].max())
+    latest = int(trans.loc[trans["yusho"].eq(1), "basho"].max())
     target = next_basho_id(latest)
     train = trans[trans["position_next"].notna()]
     if args.train_start:

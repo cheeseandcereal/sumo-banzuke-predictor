@@ -4,7 +4,7 @@ Outputs to data/processed/:
 - tidy.parquet: one row per rikishi per basho (rank, results, prizes)
 - transitions.parquet: tidy + history features + next-basho targets
 
-Run: uv run python -m banzuke.build
+Normally run via: uv run python update_data.py
 """
 import json
 from pathlib import Path
