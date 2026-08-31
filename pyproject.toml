@@ -2,11 +2,11 @@
 name = "sumo-banzuke"
 version = "0.1.0"
 description = "Predict the next makuuchi banzuke from basho results"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 dependencies = [
-    "pandas>=2.2",
-    "pyarrow>=17",
-    "lightgbm>=4.5",
-    "scikit-learn>=1.5",
-    "scipy>=1.14",
+    "pandas>=3.0.5",
+    "pyarrow>=25.0.1",
+    "lightgbm>=4.7.0",
+    "scikit-learn>=1.9.0",
+    "scipy>=1.18.1",
 ]
