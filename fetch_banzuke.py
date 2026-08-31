@@ -2,8 +2,8 @@
 """Download all banzuke data (Makuuchi + Juryo) from sumo-api.com.
 
 Saves raw JSON per basho/division to data/banzuke/{bashoId}_{division}.json.
-Re-runnable: skips files that already exist, so run it again after each
-basho to pick up the newest data.
+Re-runnable: skips completed files, so run it again after each basho to
+pick up the newest data.
 """
 import json
 import sys
@@ -15,6 +15,7 @@ from pathlib import Path
 
 BASE_URL = "https://www.sumo-api.com/api/basho/{basho}/banzuke/{division}"
 OUT_DIR = Path(__file__).parent / "data" / "banzuke"
+BASHO_DIR = Path(__file__).parent / "data" / "basho"
 DIVISIONS = ("Makuuchi", "Juryo")
 FIRST_BASHO = "195911"  # earliest basho with yusho + special prize data
 BASHO_MONTHS = (1, 3, 5, 7, 9, 11)
@@ -23,15 +24,15 @@ RETRIES = 3
 
 
 def basho_ids():
-    """All basho IDs from FIRST_BASHO through the current month."""
+    """All basho IDs through the next scheduled basho."""
     today = date.today()
-    for year in range(int(FIRST_BASHO[:4]), today.year + 1):
+    for year in range(int(FIRST_BASHO[:4]), today.year + 2):
         for month in BASHO_MONTHS:
-            if (year, month) > (today.year, today.month):
-                return
             basho = f"{year}{month:02d}"
             if basho >= FIRST_BASHO:
                 yield basho
+            if (year, month) > (today.year, today.month):
+                return
 
 
 def fetch(url):
@@ -55,8 +56,13 @@ def main():
         for division in DIVISIONS:
             path = OUT_DIR / f"{basho}_{division}.json"
             if path.exists():
-                skipped += 1
-                continue
+                existing = json.loads(path.read_text())
+                rikishi = (existing.get("east") or []) + (existing.get("west") or [])
+                basho_path = BASHO_DIR / f"{basho}.json"
+                basho_data = json.loads(basho_path.read_text()) if basho_path.exists() else {}
+                if any(r.get("record") for r in rikishi) and basho_data.get("yusho"):
+                    skipped += 1
+                    continue
             data = fetch(BASE_URL.format(basho=basho, division=division))
             if not data.get("bashoId"):  # cancelled/missing basho
                 empty.append(f"{basho} {division}")

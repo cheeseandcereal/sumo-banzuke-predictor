@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Download basho metadata (dates, yusho, special prizes) from sumo-api.com.
 
-Saves raw JSON to data/basho/{bashoId}.json. Re-runnable: skips existing
+Saves raw JSON to data/basho/{bashoId}.json. Re-runnable: skips completed
 files. Only fetches basho for which we already have banzuke data.
 """
 import json
@@ -39,8 +39,10 @@ def main():
     for basho in bashos:
         path = OUT_DIR / f"{basho}.json"
         if path.exists():
-            skipped += 1
-            continue
+            existing = json.loads(path.read_text())
+            if existing.get("yusho"):
+                skipped += 1
+                continue
         data = fetch(BASE_URL.format(basho=basho))
         if not data.get("date"):
             empty.append(basho)
