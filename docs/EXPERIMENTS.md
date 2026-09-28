@@ -2,9 +2,9 @@
 
 Goal: predict the next makuuchi banzuke from the previous basho's
 results. Architecture: per-rikishi ordering model + structure resolver
-(Y/O membership rules, sanyaku minimums, empirical E/W layout). The
-ordering objective is the experiment axis; all contenders share the
-same features, resolver, and backtest.
+(Y/O membership rules, sanyaku minimums, empirical E/W layout, S/K/M
+make-koshi ceiling). The ordering objective is the experiment axis;
+all contenders share the same features, resolver, and backtest.
 
 ## Protocol
 
@@ -56,7 +56,7 @@ with 11+ wins have historically always been promoted, so this is
 encoded as a forced slot. Remaining sanyaku-count fuzziness (extra K
 slots, strong M1 cases) left to residual analysis.
 
-## E3: main bake-off (2026-08, results/dev_*)
+## E3: main bake-off (2026-08)
 
 Contenders, all sharing FEATURES (rank, results, prizes, momentum
 history, kadoban/ozeki-run flags, era):
@@ -83,7 +83,7 @@ reduced effective sample (the era features already carry drift). C's
 current-position anchoring cannot express big moves; standalone it is
 the worst contender, but see E4 for where its machinery works.
 
-## E4: residual analysis -> boundary_dist + local rerank Ar (results/dev2_*)
+## E4: residual analysis -> boundary_dist + local rerank Ar
 
 Residual analysis of Aq (analyze.py): 28% of misses were pure E/W
 flips, 34% within one position; juryo promotees under-promoted by
@@ -102,7 +102,7 @@ Changes:
 Dev: Ar 18.07 vs Aq 16.96 (sign 32-72, p<.001). Promotee bias fell to
 +0.78, big-winner bias +0.29 -> +0.06, sanyaku-zone exact .65 -> .72.
 
-## E5: forced komusubi claims (results/dev3_*)
+## E5: forced komusubi claims
 
 All 10 dev-window sanyaku-count misses were under-created slots for
 strong upper maegashira. Empirical claim precision (1990+):
@@ -115,7 +115,7 @@ full-window exact_n flat (18.07 -> 18.01), consistent with the
 committee creating slots more liberally in recent years. Kept per the
 recency-weighted selection rule.
 
-## E6: held-out confirmation 2024-2026 (one shot, results/holdout_*)
+## E6: held-out confirmation 2024-2026 (one shot)
 
 16 basho, all contenders, evaluated once: Ar 17.13 exact (40.8%),
 MAE 0.854, promo F1 .96; A 16.69, Aq 16.63, Aw 15.81, B 15.44,
@@ -125,7 +125,7 @@ leads every ordering metric and the dev-window ordering reproduces.
 **Decision: Ar promoted as the default predictor** (predict.py).
 Runner-up Aq kept as the simpler fallback.
 
-## E7: head-to-head bout results in the reranker (results/dev4_*)
+## E7: head-to-head bout results in the reranker
 
 Hypothesis (sumo-fan folklore): the committee breaks near-ties by who
 beat whom during the basho. Bout winners extracted from the record
@@ -138,7 +138,7 @@ committee does not actually use it, or the effect is already carried
 by the wins/prior-rank features. Ar remains the default; Ah kept
 in-tree for future re-evaluation.
 
-## E8: joi / strength-of-schedule awareness (results/dev5_*)
+## E8: joi / strength-of-schedule awareness
 
 Hypothesis: the committee favors the joi (the top ~16 who share the
 toughest schedule; its boundary shifts with absences), and an 8-7
@@ -193,6 +193,31 @@ modern regime, so a cutoff only shrinks the sample; rare big-move
 patterns thin out first. Full history stays the default;
 `--train-start` remains available on backtest.py and predict.py for
 future re-testing (the result cache keys on it).
+
+## E10: no make-koshi promotion for S/K/M (2026-09)
+
+Hypothesis: enforcing no promotion after make-koshi improves slotting.
+Trigger: Takayasu (M2E, 7-8 in 202609) predicted at M1W. Historical
+audit found no S/K exceptions since 2004 and only two M exceptions,
+both in 201107; Y/O within-class rises still occur after losing records.
+
+Change: S/K/M without KK cannot rise above their current rank label,
+including west->east. Retention is allowed; whole-banzuke position can
+still improve when sanyaku shrinks. Enforced in class/slot assignment.
+
+Paired on identical Ar scores:
+- dev 2004-2023 (118 basho): exact 18.01 -> 18.58 (27-5, p=.00011),
+  MAE .993 -> .961
+- dev 2020-2023: exact 14.13 -> 15.26 (11-0, p=.00098)
+- confirmation 202401-202609 (17 basho, reused holdout plus one target):
+  exact 17.35 -> 18.18 (7-0, p=.016), MAE .854 -> .829
+
+Non-KK promotions 109->0. Full-dev promotion/demotion F1 dips
+.932/.900 -> .930/.893, chiefly from the 201107 exception; accuracy
+still improves excluding it. Confirmation boundary F1 unchanged.
+**Kept in the resolver**: consistent gains, strongest recently.
+Takayasu now lands at M2E for 202611, whose actual banzuke is not yet
+available.
 
 ## Overrides (predict.py, 2026-08)
 

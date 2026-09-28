@@ -18,7 +18,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from banzuke import features, metrics, models, resolver
+from banzuke import features, harness, metrics, models, resolver
 from banzuke.harness import run_backtest, summarize
 from banzuke.models import MODELS
 
@@ -31,7 +31,7 @@ def fingerprint() -> str:
     h = hashlib.sha256()
     for f in ("tidy.parquet", "transitions.parquet", "bouts.parquet"):
         h.update((PROCESSED / f).read_bytes())
-    for mod in (features, metrics, models, resolver):
+    for mod in (features, harness, metrics, models, resolver):
         h.update(inspect.getsource(mod).encode())
     return h.hexdigest()[:16]
 

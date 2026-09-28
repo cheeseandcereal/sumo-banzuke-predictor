@@ -6,8 +6,9 @@ the near-inviolable structure. Hard-coded here:
   promotion/kadoban conventions (rare events, unlearnable from data)
 - a sanyaku incumbent with kachi-koshi does not drop out of his class
 - minimum 2 sekiwake and 2 komusubi; extra slots emerge when forced
-Everything else (who fills vacancies, all of maegashira, the juryo
-boundary) comes purely from the model's ordering.
+- no-promotion ceiling for make-koshi S/K/M, including E/W
+Vacancies, maegashira placement, and the juryo boundary follow the model's
+ordering subject to these constraints.
 
 Human overrides (see banzuke.overrides) may force class membership,
 sanyaku counts, or exact cells. They take precedence over the
@@ -69,6 +70,28 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
     cassert = {rid2i[r]: c for r, c in (ov.get("class") or {}).items() if r in rid2i}
     pins = {rid2i[r]: s for r, s in (ov.get("pins") or {}).items() if r in rid2i}
     counts = ov.get("count") or {}
+    prior = list(zip(cls, df["rank_number"], df["side"]))
+    limited = np.isin(cls, (SEKIWAKE, KOMUSUBI, MAEGASHIRA)) & ~kk
+    bounded = limited.copy()
+    for i in idx:
+        if i in pins or (i in cassert and cassert[i] < cls[i]):
+            bounded[i] = False
+
+    def eligible(i, c, slot):
+        return not bounded[i] or (c, *slot) >= prior[i]
+
+    def feasible(c, slots, members):
+        """Reserve pins, then fit the most restrictive ceilings from the bottom."""
+        reserved = {pins[i][1:] for i in members if i in pins}
+        if not reserved.issubset(slots):
+            return False
+        free = sorted(set(slots) - reserved, reverse=True)
+        unpinned = [i for i in members if i not in pins]
+        unpinned.sort(key=lambda i: prior[i] if bounded[i] else (-1, 0, 0), reverse=True)
+        for i, slot in zip(unpinned, free):
+            if not eligible(i, c, slot):
+                return False
+        return len(unpinned) <= len(free)
 
     def away(i, c):
         """Asserted to some class other than c."""
@@ -107,6 +130,15 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
     o_members = rule_class(OZEKI, o_stay, (o_promo | o_return) & ~o_stay)
 
     taken = set(y_members) | set(o_members)
+    upper_blocks = [(YOKOZUNA, y_members), (OZEKI, o_members)]
+
+    def next_slots(c, n):
+        ne = nw = 0
+        for pc, members in upper_blocks:
+            slots = block_slots(pc, len(members), ne, nw)
+            ne += sum(s[1] == 0 for s in slots)
+            nw += sum(s[1] == 1 for s in slots)
+        return block_slots(c, n, ne, nw)
 
     def fill_class(c, forced_mask):
         for i in idx:
@@ -128,8 +160,21 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
             warn.append(f"convention broken: fewer than 2 {CLS_NAMES[c]}")
         fills = [i for i in idx
                  if i not in taken and not forced_mask[i] and i not in cassert]
-        members = forced + fills[: target - len(forced)]
+        slots = next_slots(c, target)
+        if not feasible(c, slots, forced):
+            raise OverrideError(f"forced {CLS_NAMES[c]} members/pins cannot fit "
+                                "without a make-koshi promotion; adjust --class/--pin/--count")
+        members = list(forced)
+        for i in fills:
+            if len(members) >= target:
+                break
+            if feasible(c, slots, members + [i]):
+                members.append(i)
+        if len(members) < target:
+            raise OverrideError(f"cannot fill {target} {CLS_NAMES[c]} slots "
+                                "without a make-koshi promotion")
         taken.update(members)
+        upper_blocks.append((c, members))
         return members
 
     # komusubi with 11+ wins historically always get a sekiwake slot created
@@ -153,15 +198,20 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
         raise OverrideError(f"{len(forced_m)} rikishi asserted into maegashira "
                             f"but only {n_m} slots exist")
     m_set = set(forced_m)
+    m_slots = next_slots(MAEGASHIRA, n_m)
+    if not feasible(MAEGASHIRA, m_slots, forced_m):
+        raise OverrideError("asserted maegashira members/pins cannot fit without "
+                            "a make-koshi promotion; adjust --class/--pin/--mak-size")
     for i in remaining:
         if len(m_set) >= n_m:
             break
-        if i not in cassert:
+        if i not in cassert and feasible(MAEGASHIRA, m_slots, [*m_set, i]):
             m_set.add(i)
     m_members = [i for i in remaining if i in m_set]
     j_members = [i for i in remaining if i not in m_set]
     if len(m_members) < n_m:
-        warn.append(f"makuuchi undersized: {len(m_members)} of {n_m} slots filled")
+        raise OverrideError(f"cannot fill {n_m} maegashira slots "
+                            "without a make-koshi promotion")
 
     blocks = [
         (YOKOZUNA, y_members), (OZEKI, o_members), (SEKIWAKE, s_members),
@@ -184,8 +234,18 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
                 assign[(pn, ps)] = i
         free_members = [i for i in members if i not in pins]
         free_slots = [s for s in slots if s not in assign]
-        assign.update(zip(free_slots, free_members))
+        for slot in free_slots:
+            i = next((i for i in free_members if eligible(i, c, slot)), None)
+            if i is None:
+                raise OverrideError(f"cannot fill {fmt_slot(c, *slot)} "
+                                    "without a make-koshi promotion")
+            assign[slot] = i
+            free_members.remove(i)
         for s in slots:  # emit in precedence order
+            i = assign[s]
+            if limited[i] and (c, *s) < prior[i]:
+                warn.append(f"convention broken: make-koshi {shik[i]} promoted "
+                            f"from {fmt_slot(*prior[i])} to {fmt_slot(c, *s)} by override")
             out_idx.append(assign[s])
             out_cls.append(c)
             out_num.append(s[0])
