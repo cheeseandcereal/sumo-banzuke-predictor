@@ -110,10 +110,11 @@ def render(pred, ov, warnings, baseline, target, latest, args):
     for _, r in pred.iterrows():
         if r["rank_class"] == OZEKI and r["pred_class"] == OZEKI and r["wins"] < 8:
             notes.append(f"{r['shikona']}: kadoban at {target}")
-        if (r["rank_class"] in (SEKIWAKE, KOMUSUBI) and r["wins"] >= 10
-                and (r["roll3"] or 0) >= 26):
-            notes.append(f"{r['shikona']}: ozeki run, {int(r['roll3'])} wins "
-                         f"over last 3 basho")
+        if (r["rank_class"] in (SEKIWAKE, KOMUSUBI)
+                and r["pred_class"] in (SEKIWAKE, KOMUSUBI)
+                and r["wins"] >= 8 and r["ozeki_run2"] >= 20):
+            notes.append(f"{r['shikona']}: ozeki run, {int(r['ozeki_run2'])} wins "
+                         f"over last 2 basho in sanyaku")
     demoted = pred[(pred["rank_class"] < JURYO) & (pred["pred_class"] == JURYO)]
     if len(demoted):
         notes.append("demoted to juryo: " + ", ".join(
@@ -210,6 +211,12 @@ def main():
         print(f"training restricted to {train['basho'].nunique()} basho "
               f"({args.train_start}+)", file=sys.stderr)
     cands = trans[trans["basho"] == latest].reset_index(drop=True)
+    previous = trans.loc[trans["basho"] < latest, "basho"].max()
+    prev_sk = trans[(trans["basho"] == previous)
+                    & trans["rank_class"].isin((SEKIWAKE, KOMUSUBI))
+                    & (trans["wins"] >= 8)]
+    cands["ozeki_run2"] = cands["wins"] + cands["rikishi_id"].map(
+        prev_sk.set_index("rikishi_id")["wins"])
 
     retired = [s.strip().lower() for s in args.retired.split(",") if s.strip()]
     gone = cands["shikona"].str.lower().isin(retired)
