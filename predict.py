@@ -30,7 +30,6 @@ import pandas as pd
 
 from banzuke import confidence, models
 from banzuke.build import JURYO, KOMUSUBI, OZEKI, SEKIWAKE
-from banzuke.harness import parse_sets
 from banzuke.overrides import OverrideError, parse, splice, verify
 from banzuke.resolver import resolve
 
@@ -51,12 +50,10 @@ def label(c, n, s):
 
 
 def predict(cands, point, per_seed, ov, mak_size, base=None, rates=None):
-    """Splice relative overrides into the point forecast's order (the seed
-    bag) and into each single seed's order, resolve with the structural
-    overrides. Returns (point pred with a `spread` column, warnings, review
-    items); spread is the range of a rikishi's resolved position across single
-    seeds, a sensitivity diagnostic rather than a calibrated interval.
-    base: mean base score per rikishi (Series); drives the confidence markers."""
+    """Splice relative overrides into the bag's order and each seed's order,
+    resolve with the structural overrides. Returns (pred, warnings, review
+    items); the `spread` column is a rikishi's position range across single
+    seeds. base: mean base score per rikishi (Series); drives the markers."""
     rids = cands["rikishi_id"].to_numpy()
     pos = cands["position"].to_numpy()
     preds, pseudos, warnings = [], [], []
@@ -221,10 +218,8 @@ def main():
     ap.add_argument("--mak-size", type=int, default=None,
                     help="makuuchi size (default: same as the latest banzuke)")
     ap.add_argument("--seeds", type=int, default=None,
-                    help="bag size (default: the model's, 5 for the GBMs); the forecast "
-                         "averages the seeds, which also feed the confidence markers")
-    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
-                    help="model option override, as in backtest.py (base.n_estimators=200)")
+                    help="bag size (default: the model's, 5 for the GBMs); single seeds "
+                         "also feed the confidence markers")
     ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
                     help="ignore training transitions before this basho")
     ap.add_argument("--above", action="append", default=[], metavar='"A > B"')
@@ -242,8 +237,7 @@ def main():
     trans = pd.read_parquet(transitions_path)
     latest = int(trans.loc[trans["yusho"].eq(1), "basho"].max())
     target = next_basho_id(latest)
-    # labels published by `latest`: a fetched-but-unplayed next banzuke must
-    # not supply the transition being predicted
+    # a fetched-but-unplayed next banzuke must not supply the transition being predicted
     train = trans[trans["position_next"].notna() & (trans["next_basho"] <= latest)]
     if args.train_start:
         train = train[train["basho"] >= args.train_start]
@@ -266,12 +260,9 @@ def main():
     # train once; everything downstream is instant
     print("training...", file=sys.stderr)
     cls = models.MODELS[args.model]
-    kwargs = parse_sets(args.set)
-    if args.seeds:
-        kwargs["n_seeds"] = args.seeds
-    if hasattr(cls, "prepare"):  # rolling OOF scores: ~2 min once per data update
-        kwargs = cls.prepare(kwargs, trans, min(16, os.cpu_count() or 1), args.train_start)
-    model = cls(seed=0, **kwargs)
+    kwargs = {"n_seeds": args.seeds} if args.seeds else {}
+    kwargs = cls.prepare(kwargs, trans, min(16, os.cpu_count() or 1), args.train_start)
+    model = cls(**kwargs)
     model.fit(train)
     point = model.score(cands)
     per_seed = [model.score(cands, k) for k in range(len(model.seeds))] \
