@@ -6,16 +6,18 @@ import time
 import pandas as pd
 
 from banzuke.metrics import evaluate
-from banzuke.models import LGB_PARAMS, MODELS
+from banzuke.models import MODELS
 from banzuke.resolver import resolve
 
 
 def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=False,
-                 skip=None, train_start=None, seeds=None):
+                 skip=None, train_start=None, seed=0, model_kwargs=None,
+                 mak_size_policy="prior"):
     """skip: set of (model_name, target) combos to leave out (already cached).
     train_start: ignore training transitions from basho before this.
-    seeds: ints to set LGB_PARAMS["random_state"] to, one fit each (adds a
-    `seed` column); None keeps a single fit with the current params."""
+    seed / model_kwargs: passed to every model's constructor.
+    mak_size_policy: 'prior' sizes the predicted makuuchi like the previous
+    banzuke (all a forecaster can know); 'actual' reads the target's size."""
     bashos = sorted(tidy["basho"].unique())
     prev_map = {b: p for p, b in zip(bashos, bashos[1:])}
     rows, preds = [], []
@@ -27,25 +29,25 @@ def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=
             train = train[train["basho"] >= train_start]
         cands = trans[(trans["basho"] == prev) & ~trans["dropped"]].reset_index(drop=True)
         actual = tidy[tidy["basho"] == target]
-        mak_size = int((actual["division"] == 0).sum())
+        if mak_size_policy == "actual":
+            mak_size = int((actual["division"] == 0).sum())
+        else:
+            mak_size = int(cands["mak_size"].iloc[0])
         for name in model_names:
             if skip and (name, target) in skip:
                 continue
-            for seed in ([None] if seeds is None else seeds):
-                tag = {} if seed is None else {"seed": seed}
-                if tag:
-                    LGB_PARAMS["random_state"] = seed
-                model = MODELS[name]()
-                model.fit(train)
-                score = model.score(cands)
-                pred = resolve(cands, score, mak_size)
-                rows.append(
-                    {"model": name, "basho": target, **tag, **evaluate(pred, cands, actual)}
-                )
-                if return_preds:
-                    base = model.base_score(cands) if hasattr(model, "base_score") else score
-                    p = cands.assign(score=score, base=base).merge(pred, on="rikishi_id")
-                    preds.append(p.assign(model=name, target=target, **tag))
+            model = MODELS[name](seed=seed, **(model_kwargs or {}))
+            model.fit(train)
+            score = model.score(cands)
+            pred = resolve(cands, score, mak_size)
+            rows.append(
+                {"model": name, "basho": target, **evaluate(pred, cands, actual)}
+            )
+            if return_preds:
+                base = model.base_score(cands) if hasattr(model, "base_score") else score
+                p = cands.assign(score=score, base=base).merge(pred, on="rikishi_id")
+                p["model"], p["target"] = name, target
+                preds.append(p)
         if progress:
             print(f"\r{n}/{len(targets)} basho, {time.time() - t0:.0f}s",
                   end="", file=sys.stderr, flush=True)

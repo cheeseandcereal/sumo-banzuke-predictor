@@ -212,7 +212,8 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", default="Ar", choices=list(models.MODELS))
     ap.add_argument("--retired", default="", help="comma-separated shikona to exclude")
-    ap.add_argument("--mak-size", type=int, default=42)
+    ap.add_argument("--mak-size", type=int, default=None,
+                    help="makuuchi size (default: same as the latest banzuke)")
     ap.add_argument("--seeds", type=int, default=5,
                     help="ensemble size; seed disagreement feeds the confidence markers")
     ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
@@ -255,15 +256,15 @@ def main():
     print("training...", file=sys.stderr)
     scores_list, bases = [], []
     for seed in range(args.seeds):
-        models.LGB_PARAMS["random_state"] = seed
-        model = models.MODELS[args.model]()
+        model = models.MODELS[args.model](seed=seed)
         model.fit(train)
         scores_list.append(model.score(cands))
         bases.append(getattr(model, "base_score", model.score)(cands))
     base = pd.Series(np.mean(bases, axis=0), index=cands["rikishi_id"].to_numpy())
     rates = confidence.claim_rates(trans)
 
-    base_pred = resolve(cands, scores_list[0], args.mak_size)
+    mak_size = args.mak_size or int(cands["mak_size"].iloc[0])
+    base_pred = resolve(cands, scores_list[0], mak_size)
     baseline = {r: label(c, n, s) for r, c, n, s in zip(
         base_pred["rikishi_id"], base_pred["pred_class"], base_pred["pred_number"],
         base_pred["pred_side"])}
@@ -271,7 +272,7 @@ def main():
     def run(state):
         ov = parse(cands, above=state["above"], below=state["below"],
                    classes=state["class"], counts=state["count"], pins=state["pin"])
-        pred, warnings, items = predict(cands, scores_list, ov, args.mak_size, base, rates)
+        pred, warnings, items = predict(cands, scores_list, ov, mak_size, base, rates)
         render(pred, ov, warnings, items, baseline, target, latest, args)
 
     state = {"above": args.above, "below": args.below, "class": args.cls,
