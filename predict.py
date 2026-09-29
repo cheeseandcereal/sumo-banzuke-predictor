@@ -15,6 +15,7 @@ Overrides (constrain the assignment; the model fills everything else):
     --interactive       train once, then iterate on overrides instantly
 """
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -67,8 +68,8 @@ def predict(cands, point, per_seed, ov, mak_size):
     return pred, warnings
 
 
-def render(pred, ov, warnings, baseline, target, latest, args):
-    how = f"{args.seeds}-seed bag" if args.seeds > 1 else "seed 0"
+def render(pred, ov, warnings, baseline, target, latest, args, n_seeds):
+    how = f"{n_seeds}-seed bag" if n_seeds > 1 else "seed 0"
     print(f"predicted makuuchi banzuke for {target} "
           f"(from {latest} results, model {args.model}, {how})\n")
     mak = pred[pred["pred_class"] < JURYO].sort_values("pred_pos")
@@ -193,9 +194,9 @@ def main():
     ap.add_argument("--retired", default="", help="comma-separated shikona to exclude")
     ap.add_argument("--mak-size", type=int, default=None,
                     help="makuuchi size (default: same as the latest banzuke)")
-    ap.add_argument("--seeds", type=int, default=5,
-                    help="bag size: the forecast averages this many seeds; single "
-                         "seeds also feed the +-N sensitivity column")
+    ap.add_argument("--seeds", type=int, default=None,
+                    help="bag size (default: the model's, 5 for the GBMs); the forecast "
+                         "averages the seeds, which also feed the +-N sensitivity column")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="model option override, as in backtest.py (base.n_estimators=200)")
     ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
@@ -238,12 +239,17 @@ def main():
 
     # train once; everything downstream is instant
     print("training...", file=sys.stderr)
-    kwargs = models.MODELS[args.model].prepare(parse_sets(args.set), trans) \
-        if hasattr(models.MODELS[args.model], "prepare") else parse_sets(args.set)
-    model = models.MODELS[args.model](seed=0, n_seeds=args.seeds, **kwargs)
+    cls = models.MODELS[args.model]
+    kwargs = parse_sets(args.set)
+    if args.seeds:
+        kwargs["n_seeds"] = args.seeds
+    if hasattr(cls, "prepare"):  # rolling OOF scores: ~2 min once per data update
+        kwargs = cls.prepare(kwargs, trans, workers=min(16, os.cpu_count() or 1))
+    model = cls(seed=0, **kwargs)
     model.fit(train)
     point = model.score(cands)
-    per_seed = [model.score(cands, k) for k in range(args.seeds)] if args.seeds > 1 else []
+    per_seed = [model.score(cands, k) for k in range(len(model.seeds))] \
+        if len(model.seeds) > 1 else []
 
     mak_size = args.mak_size or int(cands["mak_size"].iloc[0])
     base = resolve(cands, point, mak_size)
@@ -254,7 +260,7 @@ def main():
         ov = parse(cands, above=state["above"], below=state["below"],
                    classes=state["class"], counts=state["count"], pins=state["pin"])
         pred, warnings = predict(cands, point, per_seed, ov, mak_size)
-        render(pred, ov, warnings, baseline, target, latest, args)
+        render(pred, ov, warnings, baseline, target, latest, args, len(model.seeds))
 
     state = {"above": args.above, "below": args.below, "class": args.cls,
              "count": args.count, "pin": args.pin}
