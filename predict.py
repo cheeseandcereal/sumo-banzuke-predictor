@@ -185,7 +185,8 @@ def main():
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", default="Ar", choices=list(models.MODELS))
     ap.add_argument("--retired", default="", help="comma-separated shikona to exclude")
-    ap.add_argument("--mak-size", type=int, default=42)
+    ap.add_argument("--mak-size", type=int, default=None,
+                    help="makuuchi size (default: same as the latest banzuke)")
     ap.add_argument("--seeds", type=int, default=5,
                     help="ensemble size for the uncertainty column")
     ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
@@ -228,19 +229,19 @@ def main():
     print("training...", file=sys.stderr)
     scores_list = []
     for seed in range(args.seeds):
-        models.LGB_PARAMS["random_state"] = seed
-        model = models.MODELS[args.model]()
+        model = models.MODELS[args.model](seed=seed)
         model.fit(train)
         scores_list.append(model.score(cands))
 
-    base = resolve(cands, scores_list[0], args.mak_size)
+    mak_size = args.mak_size or int(cands["mak_size"].iloc[0])
+    base = resolve(cands, scores_list[0], mak_size)
     baseline = {r: label(c, n, s) for r, c, n, s in zip(
         base["rikishi_id"], base["pred_class"], base["pred_number"], base["pred_side"])}
 
     def run(state):
         ov = parse(cands, above=state["above"], below=state["below"],
                    classes=state["class"], counts=state["count"], pins=state["pin"])
-        pred, warnings = predict(cands, scores_list, ov, args.mak_size)
+        pred, warnings = predict(cands, scores_list, ov, mak_size)
         render(pred, ov, warnings, baseline, target, latest, args)
 
     state = {"above": args.above, "below": args.below, "class": args.cls,

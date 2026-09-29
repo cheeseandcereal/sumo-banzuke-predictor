@@ -11,9 +11,13 @@ from banzuke.resolver import resolve
 
 
 def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=False,
-                 skip=None, train_start=None):
+                 skip=None, train_start=None, seed=0, model_kwargs=None,
+                 mak_size_policy="prior"):
     """skip: set of (model_name, target) combos to leave out (already cached).
-    train_start: ignore training transitions from basho before this."""
+    train_start: ignore training transitions from basho before this.
+    seed / model_kwargs: passed to every model's constructor.
+    mak_size_policy: 'prior' sizes the predicted makuuchi like the previous
+    banzuke (all a forecaster can know); 'actual' reads the target's size."""
     bashos = sorted(tidy["basho"].unique())
     prev_map = {b: p for p, b in zip(bashos, bashos[1:])}
     rows, preds = [], []
@@ -25,11 +29,14 @@ def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=
             train = train[train["basho"] >= train_start]
         cands = trans[(trans["basho"] == prev) & ~trans["dropped"]].reset_index(drop=True)
         actual = tidy[tidy["basho"] == target]
-        mak_size = int((actual["division"] == 0).sum())
+        if mak_size_policy == "actual":
+            mak_size = int((actual["division"] == 0).sum())
+        else:
+            mak_size = int(cands["mak_size"].iloc[0])
         for name in model_names:
             if skip and (name, target) in skip:
                 continue
-            model = MODELS[name]()
+            model = MODELS[name](seed=seed, **(model_kwargs or {}))
             model.fit(train)
             pred = resolve(cands, model.score(cands), mak_size)
             rows.append(
