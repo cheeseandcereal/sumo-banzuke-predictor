@@ -574,3 +574,33 @@ window pairs, recency weights, L2 blending, lower claim thresholds.
   announced Y/O promotions and shin-juryo counts into the resolver as
   constraints (information GTB players have); scraping GTB archives for
   a paired per-basho model-vs-human comparison on identical targets.
+
+## E15: sanyaku block structure (2026-09)
+
+### E15a within-block order follows the model
+
+`fill_class` laid out forced claimants ahead of fills regardless of
+score (200607: Kisenosato M1E 8-7, a forced K claim, was given K1E
+over Asasekiryu M2E 10-5, whom the model and the committee ranked
+higher). Members now take slots in score order once membership is
+settled; claims still decide who gets in. Ceiling from the miss
+decomposition: 22 slots over 135 basho. Measured on the adopted
+configuration (two bag replicates): screen +0.04 exact [-0.09, +0.19],
+confirm +0.05 [+0.00, +0.15], MAE -0.001 in both, 7-5 W-L overall, never
+worse in any window. Below the tuning acceptance threshold, kept as a
+correctness fix (the resolver docstring already promised the model's
+order within a class).
+
+### E15b learned slot count: scoped out
+
+Whether the committee creates a third komusubi slot turns on a handful
+of historical cases. From all transitions since 1990, M1 8-7 claimants
+reach sanyaku 94% of the time when the S/K zone has spare room, 89%
+when it is one short, but only 58% (7 of 12; 2 of 5 since 2004) when
+kachi-koshi incumbents and stronger claims already fill it, so a slot
+must be created for them. The analogous "zone already full" cells for
+M2 10-5 (2 of 4), M2 9-6 (5 of 10) and M3 10-5 (0 of 2) are as thin.
+Conditioning the M1 8-7 claim on spare room would fix 3 and break 2
+basho since 2004, worth ~0.05 slots/basho; a fitted model would be
+learning from those same 12 cases. Left as a rule table for the next
+data-rich revisit; the ~0.8 slots/basho ceiling stands unclaimed.

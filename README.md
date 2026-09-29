@@ -27,7 +27,7 @@ bags, averaged per basho; +- is the standard error over basho):
 
 | window | basho | exact slots /42 | GTB points | within 1 | MAE (half-ranks) | promo / demo F1 |
 |---|---:|---:|---:|---:|---:|---:|
-| 2004-2019 (tuning) | 95 | **20.2** +- 0.5 | 46.8 | 81% | 0.84 | .94 / .91 |
+| 2004-2019 (tuning) | 95 | **20.3** +- 0.5 | 46.9 | 81% | 0.84 | .94 / .91 |
 | 2020-2026 (confirmation) | 40 | **17.9** +- 1.0 | 43.0 | 80% | 0.94 | .91 / .88 |
 | 2024-2026 | 17 | 20.8 +- 1.6 | 48.2 | 84% | 0.71 | .95 / .91 |
 

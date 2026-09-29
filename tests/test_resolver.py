@@ -194,28 +194,20 @@ def test_true_order_agreement_distribution_2004_plus(make_cands, tidy, bashos):
     assert ((r["promo_f1"] == 1.0) & (r["demo_f1"] == 1.0)).mean() >= 0.95
 
 
-def test_forced_claimants_precede_fills_within_class_block(make_cands):
-    """Characterization (possibly unintended, see resolver.py fill_class:
-    `members = list(forced)` then fills appended, and the slot loop that
-    assigns cells in `members` order): inside an S/K block a *forced*
-    claimant is laid out ahead of a non-forced fill even when the scores
-    rank the fill higher. 200605 -> 200607: Kisenosato (M1E 8-7, forced K
-    claim, true position 9) gets K1E over Asasekiryu (M2E 10-5, a fill,
-    true position 8), whereas the committee did K1E Asasekiryu / K1W
-    Kisenosato. Making Asasekiryu a claimant too (11 wins) restores score
-    order, showing the mechanism."""
+def test_block_slots_follow_score_order_regardless_of_claim(make_cands):
+    """Inside an S/K block, cells follow the model's order whether a member
+    got in by a forced claim or as a fill (E15a). 200605 -> 200607:
+    Kisenosato (M1E 8-7, forced K claim) is ranked below Asasekiryu (M2E
+    10-5, a fill) by the true order, and the committee did K1E Asasekiryu
+    / K1W Kisenosato."""
     cands = make_cands(200607)
     scores = cands["position_next"].to_numpy(dtype=float)
     cells = resolve(cands, scores, 42).merge(cands[["rikishi_id", "shikona"]], on="rikishi_id")
     cells = cells.set_index("shikona")[["pred_class", "pred_number", "pred_side"]]
-    assert cells.loc["Asasekiryu"].tolist() == [KOMUSUBI, 1, 1]  # actual: K1E
-    assert cells.loc["Kisenosato"].tolist() == [KOMUSUBI, 1, 0]  # actual: K1W
-    bumped = cands.copy()
-    bumped.loc[bumped["shikona"] == "Asasekiryu", "wins"] = 11
-    cells2 = resolve(bumped, scores, 42).merge(bumped[["rikishi_id", "shikona"]], on="rikishi_id")
-    cells2 = cells2.set_index("shikona")[["pred_class", "pred_number", "pred_side"]]
-    assert cells2.loc["Asasekiryu"].tolist() == [KOMUSUBI, 1, 0]
-    assert cells2.loc["Kisenosato"].tolist() == [KOMUSUBI, 1, 1]
+    assert cells.loc["Asasekiryu"].tolist() == [KOMUSUBI, 1, 0]  # actual: K1E
+    assert cells.loc["Kisenosato"].tolist() == [KOMUSUBI, 1, 1]  # actual: K1W
+    # forced claimants still get in ahead of fills when slots are scarce
+    assert (cells["pred_class"] == KOMUSUBI).sum() >= 2
 
 
 def test_resolve_scores_are_only_an_ordering(cands_200401):
