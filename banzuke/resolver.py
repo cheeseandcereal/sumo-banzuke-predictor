@@ -215,6 +215,9 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
         if len(members) < target:
             raise OverrideError(f"cannot fill {target} {CLS_NAMES[c]} slots "
                                 "without a make-koshi promotion")
+        # slots inside the block follow the model's order (idx is score order),
+        # whether a member got in by a forced claim or as a fill
+        members.sort()
         taken.update(members)
         upper_blocks.append((c, members))
         return members
