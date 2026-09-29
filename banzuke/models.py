@@ -12,10 +12,14 @@ share one configuration path and nothing mutates module state.
 
 Seeds: `seed=k` with `n_seeds=1` sets LightGBM's random_state=k. With
 `n_seeds=m > 1` the instance is a bag of m models on seeds m*k .. m*k+m-1
-(so bag replicates k=0,1,... are disjoint) whose predictions are averaged.
-`seed=None` omits random_state entirely, reproducing LightGBM's library
-defaults (the pre-2026-09 configuration); it cannot be bagged.
+(so bag replicates k=0,1,... are disjoint) whose predictions are averaged;
+the GBM classes default to a bag of 5 (E11). `seed=None` omits
+random_state entirely, reproducing LightGBM's library defaults (the
+pre-2026-09 configuration); it cannot be bagged.
+
+Defaults below are the E11-E14 selection (docs/EXPERIMENTS.md, 2026-09).
 """
+import sys
 from itertools import combinations
 
 import numpy as np
@@ -30,10 +34,10 @@ from banzuke.build import KOMUSUBI, MAEGASHIRA
 from banzuke.features import FEATURES
 
 BASE_PARAMS = dict(
-    n_estimators=600, learning_rate=0.05, num_leaves=63, min_child_samples=30,
+    n_estimators=300, learning_rate=0.05, num_leaves=63, min_child_samples=30,
     subsample=0.9, subsample_freq=1, colsample_bytree=0.9, n_jobs=1, verbose=-1,
 )
-PAIR_PARAMS = {**BASE_PARAMS, "n_estimators": 400}
+PAIR_PARAMS = {**BASE_PARAMS, "n_estimators": 150}
 
 
 def _seeds(seed, n_seeds):
@@ -55,12 +59,15 @@ def _seeded(params, seed):
 
 class _Model:
     """Shared constructor: seeds plus per-stage parameter overrides and
-    model-specific options (declared per class in OPTIONS with defaults)."""
+    model-specific options (declared per class in OPTIONS with defaults).
+    n_seeds=None uses the class default N_SEEDS (1 for deterministic models,
+    a bag of 5 for the gradient-boosted ones)."""
 
     OPTIONS: dict = {}
+    N_SEEDS = 1
 
-    def __init__(self, seed=0, n_seeds=1, base=None, pair=None, **options):
-        self.seeds = _seeds(seed, n_seeds)
+    def __init__(self, seed=0, n_seeds=None, base=None, pair=None, **options):
+        self.seeds = _seeds(seed, self.N_SEEDS if n_seeds is None else n_seeds)
         self.base_params = {**BASE_PARAMS, **(base or {})}
         self.pair_params = {**PAIR_PARAMS, **(pair or {})}
         unknown = set(options) - set(self.OPTIONS)
@@ -132,6 +139,7 @@ class GBMRegression(_Model):
 
     name = "A"
     objective = "regression"
+    N_SEEDS = 5
     OPTIONS = {"half_life": None, "blend_l2": 0.0}
 
     def _weights(self, train):
@@ -192,7 +200,8 @@ class GBMRanker(_Model):
     makuuchi boundary sits near position 42)."""
 
     name = "B"
-    OPTIONS = {"top": 60, "truncation": None}
+    N_SEEDS = 5
+    OPTIONS = {"top": 60, "truncation": 60}
 
     def fit(self, train):
         t = train.sort_values(["basho", "position"], kind="stable")
@@ -378,6 +387,9 @@ def oof_base_scores(trans, base_params, objective, seeds, min_history=60, worker
 
     bashos = sorted(lab["basho"].unique())
     todo = bashos[min_history:]
+    print(f"computing rolling out-of-fold base scores for {len(todo)} basho x "
+          f"{len(seeds)} seed(s) ({workers} workers; cached afterwards)...",
+          file=sys.stderr, flush=True)
     args = [(b, base_params, objective, seeds) for b in todo]
     if workers > 1:
         with ProcessPoolExecutor(workers, mp_context=get_context("spawn"),
@@ -427,6 +439,7 @@ class PairwiseBT(_Model):
     into local movement from the current order (approximate Bradley-Terry)."""
 
     name = "C"
+    N_SEEDS = 5
     OPTIONS = {"pair_window": 12, "scale": 2.0, "h2h": False, "context": False}
 
     def fit(self, train):
@@ -463,8 +476,8 @@ class GBMRerank(GBMMedian):
     """
 
     name = "Ar"
-    OPTIONS = {**GBMMedian.OPTIONS, "pair_window": 6, "gap": 0.5, "cluster_max": 4,
-               "h2h": False, "context": False, "pairs": "window", "oof_gap": 1.0,
+    OPTIONS = {**GBMMedian.OPTIONS, "pair_window": 6, "gap": 1.0, "cluster_max": 6,
+               "h2h": False, "context": True, "pairs": "mixed", "oof_gap": 2.0,
                "oof": None, "oof_min_history": 60}
 
     @classmethod
@@ -473,7 +486,7 @@ class GBMRerank(GBMMedian):
         OOF base scores when training pairs are selected by base near-ties.
         Returns kwargs extended with them. Uses the configuration's seed-0
         (replicate 0) bag; later replicates reuse the same OOF table."""
-        if kwargs.get("pairs", "window") == "window" or kwargs.get("oof") is not None:
+        if kwargs.get("pairs", cls.OPTIONS["pairs"]) == "window" or kwargs.get("oof") is not None:
             return kwargs
         proto = cls(**{k: v for k, v in kwargs.items() if k != "seed"})
         oof = oof_base_scores(trans, proto.base_params, proto.objective, proto.seeds,

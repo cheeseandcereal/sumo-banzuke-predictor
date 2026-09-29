@@ -7,12 +7,16 @@ import pytest
 from banzuke.features import FEATURES
 from banzuke.models import (
     BASE_PARAMS, CONTEXT_ENDS, CONTEXT_MEAN, CONTEXT_SHARED, MODELS, PAIR_PARAMS,
-    GBMMedian, GBMRerank, LinearModel, RulesBaseline, _gap_pairs, _pair_matrix,
-    _PairStage, _seeded, _seeds, _window_pairs, oof_base_scores,
+    GBMMedian, GBMRanker, GBMRerank, LinearModel, RulesBaseline, _gap_pairs,
+    _pair_matrix, _PairStage, _seeded, _seeds, _window_pairs, oof_base_scores,
 )
 
 SMALL_BASE = {"n_estimators": 30}
 SMALL_PAIR = {"n_estimators": 20}
+# the GBM classes default to a 5-seed bag; fits below use one seed unless the
+# test is about bagging, and Ar's default pairs='mixed' needs an OOF table, so
+# reranker fits select 'window' pairs unless the test is about the mixed path
+ONE = {"n_seeds": 1}
 
 
 # --- seeds and options --------------------------------------------------------
@@ -46,14 +50,71 @@ def test_constructor_merges_params_without_mutating_module_state():
     assert m.base_params["n_estimators"] == 5
     assert m.pair_params["n_estimators"] == 7
     assert m.base_params["learning_rate"] == BASE_PARAMS["learning_rate"]
-    assert m.gap == 0.25 and m.cluster_max == 4  # override vs default
-    assert BASE_PARAMS["n_estimators"] == 600 and PAIR_PARAMS["n_estimators"] == 400
+    # override vs default
+    assert m.gap == 0.25 and m.cluster_max == GBMRerank.OPTIONS["cluster_max"] == 6
+    assert BASE_PARAMS["n_estimators"] == 300 and PAIR_PARAMS["n_estimators"] == 150
+    assert GBMRerank.OPTIONS["gap"] == 1.0  # the instance override did not leak
+
+
+def test_e11_e14_defaults():
+    # the 2026-09 selection (docs/EXPERIMENTS.md): rounds, reranker options,
+    # LambdaRank truncation
+    assert BASE_PARAMS["n_estimators"] == 300 and PAIR_PARAMS["n_estimators"] == 150
+    assert PAIR_PARAMS["learning_rate"] == BASE_PARAMS["learning_rate"]  # shares the rest
+    opts = GBMRerank.OPTIONS
+    assert opts["gap"] == 1.0 and opts["cluster_max"] == 6 and opts["context"] is True
+    assert opts["pairs"] == "mixed" and opts["oof_gap"] == 2.0
+    assert opts["pair_window"] == 6 and opts["oof"] is None and opts["oof_min_history"] == 60
+    ar = GBMRerank(seed=0)
+    assert (ar.gap, ar.cluster_max, ar.context) == (1.0, 6, True)
+    assert (ar.pairs, ar.oof_gap) == ("mixed", 2.0)
+    assert GBMRanker.OPTIONS["truncation"] == 60
+    assert GBMRanker().truncation == 60
+
+
+def test_default_bag_size_per_class():
+    # n_seeds=None -> the class N_SEEDS: a 5-bag for the GBMs, one seed for the
+    # deterministic baselines; explicit n_seeds still wins
+    assert GBMRerank(seed=0).seeds == [0, 1, 2, 3, 4]
+    assert RulesBaseline(seed=0).seeds == [0]
+    assert LinearModel(seed=0).seeds == [0]
+    assert GBMRerank.N_SEEDS == 5 and RulesBaseline.N_SEEDS == LinearModel.N_SEEDS == 1
+    for name, cls in MODELS.items():
+        expect = [0] if name in ("R", "L") else [0, 1, 2, 3, 4]
+        assert cls(seed=0).seeds == expect, name
+        assert cls(seed=0, n_seeds=1).seeds == [0], name
+    assert GBMRerank(seed=1).seeds == [5, 6, 7, 8, 9]  # replicate 1 of the default bag
+    assert GBMRerank(seed=0, n_seeds=2).seeds == [0, 1]
+
+
+def test_seed_none_cannot_use_default_bag():
+    # library-default seeds cannot be bagged, so seed=None needs n_seeds=1 on
+    # the GBMs (whose default is a 5-bag) but works as-is on the baselines
+    with pytest.raises(ValueError, match="cannot be bagged"):
+        GBMRerank(seed=None)
+    with pytest.raises(ValueError, match="cannot be bagged"):
+        GBMMedian(seed=None)
+    assert GBMRerank(seed=None, n_seeds=1).seeds == [None]
+    assert RulesBaseline(seed=None).seeds == [None]
+
+
+def test_rerank_mixed_pairs_need_oof_at_fit(small_train):
+    # the default pairs='mixed' selects training pairs by rolling OOF base
+    # near-ties, so fit() without an `oof` table (from GBMRerank.prepare /
+    # oof_base_scores) must fail loudly rather than silently train on window
+    # pairs only; the base stage is fitted first, so keep it tiny
+    m = GBMRerank(seed=0, n_seeds=1, base={"n_estimators": 1}, pair=SMALL_PAIR)
+    assert m.pairs == "mixed" and m.oof is None
+    with pytest.raises(ValueError, match="OOF"):
+        m.fit(small_train)
+    assert not hasattr(m, "pair")  # the pair stage was never built
 
 
 def test_model_registry():
     assert set(MODELS) == {"R", "L", "A", "Aq", "Aw", "B", "C", "Ar", "Ah"}
     assert all(cls.name == k for k, cls in MODELS.items())
     assert MODELS["Ah"](seed=0).h2h is True and MODELS["Ar"](seed=0).h2h is False
+    assert MODELS["Ah"].OPTIONS == {**GBMRerank.OPTIONS, "h2h": True}  # Ah = Ar + h2h
 
 
 # --- pairwise helpers ----------------------------------------------------------
@@ -136,7 +197,7 @@ def test_pair_stage_oof_requires_oof_table():
 
 @pytest.fixture(scope="module")
 def rerank_fit(small_train):
-    m = GBMRerank(seed=0, base=SMALL_BASE, pair=SMALL_PAIR)
+    m = GBMRerank(seed=0, pairs="window", base=SMALL_BASE, pair=SMALL_PAIR, **ONE)
     m.fit(small_train)
     return m
 
@@ -147,9 +208,10 @@ def test_rerank_score_is_permutation_and_deterministic(rerank_fit, small_train, 
     assert s.shape == (n,)
     assert sorted(s.tolist()) == list(range(n))
     # single-seed instance: k=0 is the whole bag
+    assert rerank_fit.seeds == [0] and len(rerank_fit.ms) == len(rerank_fit.pair.ms) == 1
     assert np.array_equal(rerank_fit.score(cands_200401, k=0), s)
     # identical refit gives identical scores
-    m2 = GBMRerank(seed=0, base=SMALL_BASE, pair=SMALL_PAIR)
+    m2 = GBMRerank(seed=0, pairs="window", base=SMALL_BASE, pair=SMALL_PAIR, **ONE)
     m2.fit(small_train)
     assert np.array_equal(m2.score(cands_200401), s)
     # diagnostics of the adjudicated near-tie pairs
@@ -163,6 +225,7 @@ def test_rerank_score_is_permutation_and_deterministic(rerank_fit, small_train, 
 def test_rerank_only_reorders_within_clusters(rerank_fit, cands_200401):
     # the final order is Aq's base order with reordering confined to
     # near-tie clusters: cluster blocks keep their relative placement
+    assert rerank_fit.cluster_max == GBMRerank.OPTIONS["cluster_max"]
     base = GBMMedian.score(rerank_fit, cands_200401)
     final = rerank_fit.score(cands_200401)
     clusters = rerank_fit._clusters(base, cands_200401["position"].to_numpy())
@@ -174,9 +237,51 @@ def test_rerank_only_reorders_within_clusters(rerank_fit, cands_200401):
         start += len(cl)
 
 
+def test_rerank_window_pairs_use_context_by_default(rerank_fit):
+    # context=True is now the default: pair rows are the 35 feature
+    # differences plus 12 context columns (no base gap with window pairs)
+    assert rerank_fit.context is True and rerank_fit.pair.use_base is False
+    n_ctx = len(CONTEXT_SHARED) + len(CONTEXT_MEAN) + 2 * len(CONTEXT_ENDS)
+    assert rerank_fit.pair.ms[0].n_features_in_ == len(FEATURES) + n_ctx == 47
+
+
+def test_rerank_mixed_pairs_fit_with_oof(trans, bashos, make_cands, tmp_path):
+    # the default configuration end to end on a short history: rolling OOF
+    # scores for the last 6 labeled basho, training on the first 5 of them
+    # (labels at or before the 6th), scoring the transition off the 6th
+    lab = trans[trans["position_next"].notna()]
+    labeled = sorted(lab["basho"].unique())
+    covered = labeled[-6:]
+    params = {**BASE_PARAMS, **SMALL_BASE}
+    oof = oof_base_scores(trans, params, GBMRerank.objective, [0], min_history=len(labeled) - 6,
+                          workers=1, cache_dir=tmp_path)
+    assert sorted(oof["basho"].unique()) == covered
+    train = lab[lab["basho"].isin(covered[:-1])]
+    cands = make_cands(bashos[-1])
+    assert int(cands["basho"].iloc[0]) == covered[-1] == bashos[-2]
+    kw = dict(seed=0, base=SMALL_BASE, pair=SMALL_PAIR, **ONE)
+    m = GBMRerank(oof=oof, **kw)  # pairs='mixed' by default
+    assert m.pairs == "mixed" and m.oof_gap == 2.0
+    m.fit(train)
+    w = GBMRerank(pairs="window", **kw)
+    w.fit(train)
+    # mixed = window pairs plus the OOF near-tie pairs, with the base gap as
+    # an extra pair feature; the reranked order is still a permutation
+    assert m.pair.use_base and m.pair.n_train_pairs > w.pair.n_train_pairs
+    assert m.pair.ms[0].n_features_in_ == w.pair.ms[0].n_features_in_ + 1
+    s = m.score(cands)
+    assert sorted(s.tolist()) == list(range(len(cands)))
+    i, j, p, _ = m.last_pairs
+    assert len(i) > 0 and ((p >= 0) & (p <= 1)).all()
+    # 'oof' alone needs the table to cover the training basho
+    before = lab[lab["basho"] == labeled[-8]]
+    with pytest.raises(ValueError, match="no training pairs"):
+        GBMRerank(pairs="oof", oof=oof, **kw).fit(before)
+
+
 def test_seed_changes_scores(small_train, cands_200401):
-    a = GBMMedian(seed=0, base=SMALL_BASE)
-    b = GBMMedian(seed=1, base=SMALL_BASE)
+    a = GBMMedian(seed=0, base=SMALL_BASE, **ONE)
+    b = GBMMedian(seed=1, base=SMALL_BASE, **ONE)
     a.fit(small_train)
     b.fit(small_train)
     assert not np.array_equal(a.delta(cands_200401), b.delta(cands_200401))
@@ -195,13 +300,23 @@ def test_bag_delta_is_mean_of_members(small_train, cands_200401):
     pos = cands_200401["position"].to_numpy()
     assert bag.score(cands_200401) == pytest.approx(pos + (d0 + d1) / 2)
     # bag members equal the corresponding single-seed fits
-    single = GBMMedian(seed=1, base=SMALL_BASE)  # seed 1 == member 1 of bag 0
+    single = GBMMedian(seed=1, base=SMALL_BASE, **ONE)  # seed 1 == member 1 of bag 0
     single.fit(small_train)
     assert single.delta(cands_200401) == pytest.approx(d1)
 
 
+def test_default_bag_fits_five_members(small_train, cands_200401):
+    # the class default: seed=0 alone is the 5-seed bag 0..4
+    bag = GBMMedian(seed=0, base={"n_estimators": 5})
+    bag.fit(small_train)
+    assert bag.seeds == [0, 1, 2, 3, 4]
+    assert [m.get_params()["random_state"] for m in bag.ms] == [0, 1, 2, 3, 4]
+    members = [bag.delta(cands_200401, k=k) for k in range(5)]
+    assert bag.delta(cands_200401) == pytest.approx(np.mean(members, axis=0))
+
+
 def test_seed_none_uses_library_defaults(small_train, cands_200401):
-    m = GBMMedian(seed=None, base=SMALL_BASE)
+    m = GBMMedian(seed=None, base=SMALL_BASE, **ONE)
     m.fit(small_train)
     assert m.seeds == [None]
     assert m.ms[0].get_params()["random_state"] is None
@@ -270,20 +385,42 @@ def test_oof_scores_are_base_prediction_without_label(trans, tmp_path):
     assert got.reindex(expect.index).to_numpy() == pytest.approx(expect.to_numpy())
 
 
-def test_rerank_prepare_supplies_oof(trans, small_train, cands_200401, tmp_path, monkeypatch):
-    # prepare() is a no-op for window pairs and fills `oof` for oof/mixed
-    assert GBMRerank.prepare({"gap": 0.3}, trans) == {"gap": 0.3}
-    import banzuke.models as models_mod
-    calls = []
-
+def _fake_oof(calls):
     def fake_oof(trans_, base_params, objective, seeds, min_history, workers):
         calls.append((base_params["n_estimators"], objective, seeds, min_history, workers))
         return pd.DataFrame({"basho": [200311], "rikishi_id": [1], "oof": [1.0]})
+    return fake_oof
 
-    monkeypatch.setattr(models_mod, "oof_base_scores", fake_oof)
+
+def test_rerank_prepare_supplies_oof(trans, monkeypatch):
+    # prepare() is a no-op for window pairs and fills `oof` for oof/mixed
+    assert GBMRerank.prepare({"pairs": "window", "gap": 0.3}, trans) == {
+        "pairs": "window", "gap": 0.3}
+    import banzuke.models as models_mod
+    calls = []
+    monkeypatch.setattr(models_mod, "oof_base_scores", _fake_oof(calls))
     kw = GBMRerank.prepare({"pairs": "oof", "seed": 3, "base": SMALL_BASE,
                             "oof_min_history": 12}, trans, workers=2)
     assert kw["oof"].shape == (1, 3) and kw["pairs"] == "oof"
-    assert calls == [(30, "regression_l1", [0], 12, 2)]  # seed-0 bag, seed dropped
+    # the configuration's seed-0 bag (the class default of 5), seed dropped
+    assert calls == [(30, "regression_l1", [0, 1, 2, 3, 4], 12, 2)]
     given = GBMRerank.prepare({"pairs": "oof", "oof": kw["oof"]}, trans)
     assert len(calls) == 1 and given["oof"] is kw["oof"]  # supplied table reused
+    # n_seeds in the configuration sizes the OOF bag too
+    kw1 = GBMRerank.prepare({"pairs": "mixed", "n_seeds": 1, "seed": 2}, trans)
+    assert calls[-1] == (BASE_PARAMS["n_estimators"], "regression_l1", [0], 60, 1)
+    assert kw1["oof"] is not None and kw1["n_seeds"] == 1 and kw1["seed"] == 2
+    # the prepared kwargs build a model that fits the mixed pair stage
+    m = GBMRerank(**{k: v for k, v in kw1.items() if k != "seed"}, seed=kw1["seed"])
+    assert m.pairs == "mixed" and m.oof is not None and m.seeds == [2]
+
+
+def test_rerank_prepare_honours_default_pairs(trans, monkeypatch):
+    """prepare() must read the class default for `pairs`, not assume 'window':
+    predict.py / backtest.py pass no explicit pairs option."""
+    import banzuke.models as models_mod
+    calls = []
+    monkeypatch.setattr(models_mod, "oof_base_scores", _fake_oof(calls))
+    kw = GBMRerank.prepare({"n_seeds": 1, "base": SMALL_BASE}, trans)
+    assert GBMRerank(**kw).pairs == "mixed"
+    assert calls and kw.get("oof") is not None

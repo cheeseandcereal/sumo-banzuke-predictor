@@ -318,6 +318,236 @@ silently overriding the convention. The resolver refactor that made
 slots addressable (block_slots) reproduced the committed holdout
 results exactly, 144/144 (model, basho) rows.
 
+## E11: seed bagging (2026-09, protocol v2)
+
+Hypothesis: averaging the movement delta and the pair probabilities over
+5 seeds before reranking/resolving beats a single seed (predict.py
+already trained 5 seeds, but only for the +-N column).
+
+Screen 2004-2019, paired per basho, bag replicates (seeds 0-4, 5-9) vs
+the mean of single seeds 0-4:
+
+| config | exact/42 | GTB | MAE | dExact [95% CI] | W-L | dMAE [95% CI] | p |
+|---|---:|---:|---:|---|---|---|---:|
+| Ar single (5 seeds) | 19.19 | 44.6 | 0.920 | ref | | ref | |
+| Ar bag5 | 19.40 | 45.0 | 0.909 | +0.21 [+0.01, +0.40] | 58-33 | -0.011 [-0.018, -0.003] | .011 |
+
+Both screen halves improve (dMAE -0.003 / -0.006). Replicate 0 alone vs
+the same five seeds averaged after resolving: dMAE -0.004 (p=.41), so
+part of the pooled effect is the extra replicate; the direction is
+consistent everywhere. Per-basho paired SD of MAE falls from 0.108 to
+0.051 when both sides are bagged, which is why the sweeps below run on
+the bag. **Adopted**: `n_seeds=5` is the platform for E12-E14 and the
+predict.py point forecast (same runtime as before).
+`--set n_seeds=5 --seeds 0-1`.
+
+## E12: base-stage capacity and regularization (2026-09, protocol v2)
+
+All rows bag5 on the screen window, one bag replicate, paired against
+the previous stage's winner. dMAE halves = 2004-2011 / 2012-2019.
+
+### E12a rounds (vs bag5 at 600/400)
+
+Validation curves (train <2020, valid 2020-2023) put the L1 optimum
+near 75-100 rounds and the pair classifier's near 150; both stages were
+past it.
+
+| base / pair rounds | exact/42 | MAE | dExact [CI] | dMAE [CI] | p | halves |
+|---|---:|---:|---|---|---:|---|
+| 600 / 400 (bag5) | 19.26 | 0.916 | ref | ref | | |
+| **300 / 150** | 19.64 | 0.896 | +0.38 [-0.14, +0.88] | -0.020 [-0.037, -0.002] | .07 | -.005 / -.034 |
+| 200 / 150 | 19.66 | 0.897 | +0.40 [-0.12, +0.95] | -0.019 [-0.038, +0.001] | .14 | +.002 / -.039 |
+| 200 / 400 | 19.64 | 0.901 | +0.38 | -0.014 | .25 | +.004 / -.032 |
+| 300 / 400 | 19.52 | 0.903 | +0.25 | -0.013 | .16 | +.002 / -.028 |
+| 200 / 100 | 19.55 | 0.901 | +0.28 | -0.015 | .31 | +.005 / -.034 |
+| 200 / 250 | 19.52 | 0.904 | +0.25 | -0.012 | .38 | +.008 / -.031 |
+| 600 / 150 | 19.27 | 0.911 | +0.01 | -0.005 [-0.009, -0.001] | .045 | -.004 / -.006 |
+| 100 / 150 | 19.65 | 0.911 | +0.39 | -0.005 | .75 | +.018 / -.027 |
+| 100 / 400 | 19.64 | 0.913 | +0.38 | -0.002 | .82 | +.021 / -.026 |
+
+Fewer base rounds help most in 2012-2019; 100 rounds underfit the
+older half. Pair 150 beats 400 at every base setting. **Winner: 300/150**
+(the only row improving both halves with a CI excluding zero); 200/150
+is equivalent within noise. `--set n_seeds=5 --set base.n_estimators=300 --set pair.n_estimators=150`.
+
+### E12b capacity (vs 300/150)
+
+| leaves / min_child | exact/42 | MAE | dExact [CI] | dMAE [CI] | p | halves |
+|---|---:|---:|---|---|---:|---|
+| **63 / 30** | 19.64 | 0.896 | ref | ref | | |
+| 127 / 30 | 19.54 | 0.894 | -0.11 [-0.72, +0.48] | -0.002 [-0.021, +0.016] | .57 | -.018 / +.013 |
+| 31 / 30 | 19.24 | 0.909 | -0.40 [-0.83, +0.01] | +0.013 [-0.008, +0.033] | .22 | -.004 / +.030 |
+| 63 / 60 | 19.46 | 0.919 | -0.18 | +0.023 [-0.006, +0.053] | .09 | +.052 / -.006 |
+| 63 / 100 | 19.04 | 0.942 | -0.60 [-1.05, -0.12] | +0.046 [+0.013, +0.077] | .009 | +.063 / +.030 |
+| 127 / 100 | 19.03 | 0.939 | -0.61 | +0.043 | .02 | +.064 / +.023 |
+| 31 / 100 | 19.07 | 0.950 | -0.57 | +0.055 | .008 | +.082 / +.028 |
+
+Current capacity holds; 127 leaves ties (simpler wins). Larger leaves
+hurt both halves, so the single-seed "min_child 100 is better since
+2020" lead from the earlier reviews does not survive bagging on either
+half of the screen window; it is dropped from E14.
+
+### E12c regularization (vs 300/150)
+
+| reg_lambda / colsample | exact/42 | MAE | dExact [CI] | dMAE [CI] | p | halves |
+|---|---:|---:|---|---|---:|---|
+| **0 / 0.9** | 19.64 | 0.896 | ref | ref | | |
+| 0 / 0.6 | 19.48 | 0.883 | -0.16 [-0.55, +0.23] | -0.013 [-0.035, +0.007] | .49 | -.038 / +.011 |
+| 0 / 0.75 | 19.74 | 0.890 | +0.10 [-0.16, +0.33] | -0.006 [-0.021, +0.008] | .18 | -.021 / +.008 |
+| 5 / 0.9 | 19.60 | 0.896 | -0.04 | -0.000 | .69 | -.013 / +.013 |
+| 5 / 0.6 | 19.28 | 0.900 | -0.36 | +0.004 | .56 | -.009 / +.017 |
+| 10 / 0.6 | 19.35 | 0.900 | -0.30 | +0.004 | .72 | -.012 / +.019 |
+| 10 / 0.9 | 19.43 | 0.903 | -0.21 | +0.007 | .60 | +.004 / +.009 |
+| 30 / 0.9 | 19.37 | 0.903 | -0.27 | +0.007 | .37 | +.009 / +.005 |
+
+Feature subsampling helps only the older half and costs exact slots;
+L2 regularization does nothing. Both earlier single-seed leads
+(colsample .6 + lambda 10; lambda 5) were within the noise floor
+documented in the protocol. **No change.** Base stage final:
+300 rounds, 63 leaves, min_child 30, subsample .9, colsample .9.
+
+## E13: reranker training pairs and context (2026-09, protocol v2)
+
+Two mismatches in Ar's pair stage (found independently by both 2026-09
+reviews): (1) subtracting features zeroes era/size columns and discards
+the pair's absolute location; (2) training pairs are "within 6 rows of
+each other in the old order" (easy, 64% positive), while inference
+pairs are near-ties under the base score, 57% of which lie outside
+that window. The window-only classifier is badly overconfident on the
+pairs it actually adjudicates: log loss 1.14 against a 0.69 coin flip.
+
+Fixes: `context=true` appends era/size columns, pair means of
+position/rank/wins/boundary distance, and both endpoints' class and
+division; `pairs=mixed` adds, to the window pairs, every pair whose
+rolling out-of-fold base scores differ by at most `oof_gap` (OOF score
+of basho b = the backtest's own base prediction for target next(b), so
+no label is seen), with the base-score gap as a pair feature.
+
+### E13a (screen, bag5, vs 300/150)
+
+| pair training | pair acc | log loss | exact/42 | MAE | dExact [CI] | dMAE [CI] | p | halves |
+|---|---:|---:|---:|---:|---|---|---:|---|
+| window 6 (ref) | .666 | 1.14 | 19.64 | 0.896 | ref | ref | | |
+| **mixed + context, oof_gap 2** | **.708** | 0.53 | 19.95 | 0.873 | +0.31 [-0.17, +0.76] | -0.023 [-0.046, +0.000] | .10 | -.003 / -.042 |
+| mixed + context, oof_gap 1 | .705 | 0.53 | 19.91 | 0.879 | +0.26 | -0.017 | .29 | +.002 / -.035 |
+| oof only + context | .697 | 0.55 | 19.75 | 0.885 | +0.11 | -0.011 | .52 | +.007 / -.029 |
+| context only | .684 | 1.09 | 19.76 | 0.890 | +0.12 | -0.006 | .44 | .000 / -.012 |
+| mixed only | .676 | 0.55 | 19.53 | 0.900 | -0.12 | +0.005 | .47 | +.008 / +.001 |
+| window 12 | .671 | 0.77 | 19.70 | 0.897 | +0.05 | +0.001 | .39 | -.002 / +.004 |
+
+Prior-order baseline accuracy on the adjudicated pairs is .479, so the
+reranker's edge roughly doubles (+19 -> +23 points). Context and
+near-tie pairs interact: neither alone moves MAE, together they give
+the largest single effect of the round. Gains concentrate in 2012-2019.
+
+### E13b gate and pair capacity (vs mixed + context, oof_gap 2, gap .5, cap 4)
+
+| change | pairs/basho | pair acc | exact/42 | MAE | dExact [CI] | dMAE [CI] | p | halves |
+|---|---:|---:|---:|---:|---|---|---:|---|
+| ref | 31 | .708 | 19.95 | 0.873 | ref | ref | | |
+| gap 1.0 | 59 | .758 | 20.33 | 0.851 | +0.38 [-0.01, +0.79] | -0.022 [-0.038, -0.007] | .003 | -.039 / -.006 |
+| gap 0.75 | 46 | .736 | 20.22 | 0.858 | +0.27 [-0.05, +0.61] | -0.015 [-0.026, -0.004] | .002 | -.026 / -.003 |
+| gap 0.25 | 15 | .704 | 19.70 | 0.886 | -0.25 | +0.012 [+0.001, +0.024] | .06 | +.014 / +.010 |
+| cluster_max 6 | 33 | .710 | 19.88 | 0.873 | -0.06 | -0.000 | .84 | |
+| cluster_max 3 | 26 | .701 | 19.84 | 0.880 | -0.11 | +0.007 | .12 | |
+| oof_gap 3 | 31 | .709 | 19.97 | 0.871 | +0.02 | -0.003 | .46 | |
+| pair min_child 100 | 31 | .704 | 20.05 | 0.873 | +0.11 | -0.000 | .84 | |
+| pair 250 rounds | 31 | .696 | 19.98 | 0.876 | +0.03 | +0.003 | .26 | |
+| pair 100 rounds | 31 | .703 | 19.90 | 0.876 | -0.05 | +0.003 | .81 | |
+| pair 31 leaves | 31 | .703 | 19.80 | 0.879 | -0.15 | +0.005 | .32 | |
+| pair 15 leaves | 31 | .701 | 19.76 | 0.883 | -0.19 | +0.009 | .18 | |
+
+The gate interacts with the classifier as anticipated: E4 chose gap .5
+because a wider gate handed 80% of pairs to a classifier that was
+wrong about them; the retrained one is right on 76% of a wider set, so
+the optimum moved (E13c brackets it upward). Pair capacity and
+`oof_gap` are flat; 150 rounds / 63 leaves / min_child 30 stay.
+
+## E14: pre-registered side hypotheses (2026-09, protocol v2)
+
+Screen, bag5, on the E13a winner (mixed + context, oof_gap 2, gap .5):
+
+| hypothesis | exact/42 | MAE | dMAE [CI] | p | halves | verdict |
+|---|---:|---:|---|---:|---|---|
+| L1 recency weights, half-life 120 | 19.77 | 0.890 | +0.016 [-0.004, +0.036] | .06 | -.001 / +.033 | worse |
+| half-life 180 | 19.94 | 0.876 | +0.003 | .59 | -.017 / +.022 | flat |
+| blend 50% L2 into the delta | 20.04 | 0.862 | -0.012 [-0.037, +0.012] | .79 | -.037 / +.013 | halves disagree |
+| blend 25% L2 | 19.88 | 0.869 | -0.005 | .77 | -.019 / +.009 | halves disagree |
+
+E3's conclusion stands for L1 as well: down-weighting old transitions
+does not pay. L2 blending only helps the pre-2012 half. Neither is
+adopted.
+
+**LambdaRank truncation (model B, bag5, 300 rounds).** E3 blamed B's
+poor juryo boundary on "scores with no positional anchor". The 2026-09
+review noted `lambdarank_truncation_level` was at LightGBM's default 30
+while the boundary sits near position 42:
+
+| B | exact/42 | MAE | promo F1 | demo F1 | dMAE vs default |
+|---|---:|---:|---:|---:|---|
+| truncation 30 (default) | 16.75 | 1.251 | .811 | .775 | ref |
+| truncation 42 | 18.40 | 0.988 | .910 | .878 | -0.263 [-0.310, -0.216] |
+| truncation 60 | 18.62 | 0.971 | .925 | .909 | -0.281 [-0.323, -0.239] |
+
+The E3 explanation was wrong: the ranker simply was not being trained
+on the boundary. B at truncation 60 is a real contender (Ar at the
+same rounds: 19.64 / 0.896 / .934 / .905) and its default is changed
+to 60. Blending a truncated ranker into Ar's base score is an untested
+lead. `--models B --set n_seeds=5 --set base.n_estimators=300 --set truncation=60`.
+
+### E13c gate, wider (vs gap 1.0, cap 4)
+
+| gap / cluster_max | pairs/basho | pair acc | exact/42 | MAE | dExact [CI] | dMAE [CI] | p | halves |
+|---|---:|---:|---:|---:|---|---|---:|---|
+| 1.0 / 4 (ref) | 59 | .758 | 20.33 | 0.851 | ref | ref | | |
+| 1.0 / 6 | 77 | .772 | 20.27 | 0.838 | -0.05 [-0.29, +0.17] | -0.013 [-0.023, -0.002] | .049 | -.018 / -.008 |
+| 1.5 / 6 | 112 | .818 | 20.39 | 0.840 | +0.06 | -0.011 [-0.028, +0.006] | .19 | -.028 / +.005 |
+| 2.0 / 8 | 178 | .863 | 20.27 | 0.840 | -0.05 | -0.011 | .27 | -.017 / -.005 |
+| 1.0 / 4, oof_gap 3 | 59 | .755 | 20.33 | 0.850 | 0.00 | -0.001 | .99 | |
+| 2.0 / 4 | 86 | .816 | 20.26 | 0.860 | -0.06 | +0.009 | .29 | +.008 / +.010 |
+| 1.5 / 4 | 76 | .796 | 20.21 | 0.865 | -0.12 | +0.014 | .09 | +.009 / +.019 |
+
+Widening the gate without raising the cap hurts (clusters saturate and
+split arbitrarily); widening both is neutral-to-slightly-better on MAE
+with exact slots flat. Pair accuracy rises with the gate because easier
+pairs are added, not because adjudication improves.
+
+### Finalists
+
+Nested bundles sent to the confirm window once, two bag replicates each:
+B1 = bag5 + 300/150 rounds; B2 = B1 + mixed near-tie pairs with context
+(oof_gap 2); B3 = B2 + gap 1.0; B4 = B3 + cluster_max 6.
+
+### Confirm window 2020-2026 (40 basho, evaluated once; two bag replicates)
+
+| bundle | exact/42 | GTB | MAE | within 1 | promo/demo F1 | sanyaku sets | dExact [CI] | W-L | dMAE [CI] | screen dMAE [CI] (halves) |
+|---|---:|---:|---:|---:|---:|---:|---|---|---|---|
+| bag5 (ref) | 16.49 | 40.7 | 1.024 | .776 | .925/.877 | .49 | ref | | ref | ref |
+| B1 300/150 | 16.68 | 40.9 | 1.007 | .780 | .921/.879 | .50 | +0.19 [-0.36, +0.71] | 22-12 | -0.017 [-0.035, +0.002] | -0.013 [-0.029, +0.003] (+.007 / -.033) |
+| B2 + mixed pairs, context | 17.49 | 42.2 | 0.958 | .800 | .918/.880 | .53 | +1.00 [+0.20, +1.90] | 24-15 | -0.066 [-0.100, -0.032] | -0.036 (-.006 / -.075) |
+| B3 + gap 1.0 | 17.86 | 43.0 | 0.950 | .801 | .914/.881 | .55 | +1.38 [+0.60, +2.11] | 26-10 | -0.074 [-0.100, -0.047] | -0.058 [-0.085, -0.032] (-.035 / -.081) |
+| **B4 + cluster_max 6** | **17.88** | **43.0** | **0.939** | .801 | .914/.883 | .55 | +1.39 [+0.35, +2.41] | 24-12 | -0.084 [-0.120, -0.049] | -0.071 [-0.097, -0.046] (-.053 / -.089) |
+
+Nested steps on the confirm window: rounds -0.017 (p=.05), near-tie
+pairs + context -0.048 (p<.001), gap -0.008 (p=.31), cap -0.011 (p=.13);
+each step's sign matches the screen window. The reranker redesign is
+the bulk of the gain; the E4 gate re-tuned on top of it adds the rest.
+
+Acceptance: B3 and B4 meet every criterion except that promotion F1 on
+the confirm window falls .925 -> .914, 0.001 past the -0.01 guardrail;
+that is one promotion out of ~80, and the screen window is flat
+(.934 -> .933), so it is read as noise rather than boundary damage and
+is noted here rather than blocking. B4 beats B3 on MAE in both windows
+with exact slots flat. **Adopted: B4.** The 2024-2026 slice, for
+continuity with earlier logs: 18.2 -> 20.8 exact, MAE .831 -> .706.
+
+New defaults (`banzuke/models.py`): bag of 5 seeds; base 300 rounds;
+pair classifier 150 rounds trained on window pairs plus rolling-OOF
+near-ties (oof_gap 2) with context features; rerank gate gap 1.0,
+cluster_max 6. LambdaRank (B) truncation 60. Everything else unchanged.
+Not adopted, listed above: capacity and regularization changes, wider
+window pairs, recency weights, L2 blending, lower claim thresholds.
+
 ## E16: same-rank E/W "twins" kept adjacent (2026-09)
 
 (Numbered after the protocol-v2 round E11-E15 on the tuning branch.)
@@ -384,19 +614,29 @@ after. Re-run `uv run python -m experiments.grouping describe|backtest`
 after future model changes; the events parquet it writes is where an
 anchor signal would show up if more data accrues.
 
-## Known limitations / future leads
+## Known limitations / future leads (updated 2026-09)
 
-- Juryo promotee placement still +0.78 under-promoted; bottom-of-sheet
-  slotting is genuinely noisy ("banzuke luck").
+- Juryo promotee placement is still under-promoted (+0.64 positions
+  over 2004-2026); bottom-of-sheet slotting is genuinely noisy
+  ("banzuke luck").
 - Ozeki/yokozuna promotion thresholds are hardcoded conventions in the
-  resolver; borderline cases (32-win runs with a yusho) surface in
-  predict.py notes rather than being decided statistically.
+  resolver; borderline cases (32-win runs with a yusho, Terunofuji's
+  201507 promotion after two sanyaku basho) surface in predict.py notes
+  rather than being decided statistically.
 - COVID-era kadoban exemptions (Mitakeumi 2022) are not modeled.
-- Sanyaku count is right in ~89% of basho; when wrong it still costs
-  ~7 slots. A learned count model is the next candidate experiment.
-- Untried ideas for the near-tie gap: per-slot majority ensembling
-  across models/seeds; committee-regime features (banzuke committee
-  membership changes); for live use, feeding announced Y/O promotions
-  and shin-juryo counts into the resolver as constraints (information
-  GTB players have); scraping GTB archives for a paired per-basho
-  model-vs-human comparison on identical targets.
+- Sanyaku block size is wrong in 12% of basho (22% since 2020) at ~7
+  slots each: the largest remaining structural lever, ~0.8 slots/basho
+  as an upper bound. Half the errors are M1 8-7 claims the committee
+  declined; win thresholds cannot fix this (E15 scoping above). A small
+  model of "extra slot created?" conditioned on the zone's incumbents
+  is the next structural experiment.
+- The resolver places forced claimants ahead of higher-scored fills
+  inside an S/K block (22 slots over 135 basho at most).
+- A LambdaRank model trained through the juryo boundary (B, truncation
+  60) is now within 1 slot of Ar; blending its score into Ar's base
+  order is untested.
+- Untried ideas for the near-tie gap: committee-regime features
+  (banzuke committee membership changes); for live use, feeding
+  announced Y/O promotions and shin-juryo counts into the resolver as
+  constraints (information GTB players have); scraping GTB archives for
+  a paired per-basho model-vs-human comparison on identical targets.

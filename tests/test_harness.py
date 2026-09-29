@@ -5,12 +5,16 @@ import pandas as pd
 import pytest
 
 from banzuke.harness import (
-    METRICS, block_bootstrap_ci, fingerprint, label_of, parse_sets, run_backtest,
-    summarize,
+    METRICS, PAIR_METRICS, block_bootstrap_ci, fingerprint, label_of, parse_sets,
+    run_backtest, summarize,
 )
 
 TARGETS = [202309, 202311]
-KW = {"base": {"n_estimators": 30}}
+# the GBMs default to a 5-seed bag: one seed and few rounds keep the fits fast
+KW = {"n_seeds": 1, "base": {"n_estimators": 30}}
+# Ar's default pairs='mixed' needs rolling OOF scores (~340 base fits), so the
+# harness tests select window pairs
+KW_AR = {**KW, "pairs": "window", "pair": {"n_estimators": 20}}
 
 
 @pytest.fixture(scope="module")
@@ -34,6 +38,22 @@ def test_backtest_rows_and_columns(aq_rows):
     assert r["exact_n"].sum() > 10  # a real model, not noise
     # Aq has no reranker, so no pair diagnostics columns
     assert "pair_n" not in r.columns
+
+
+def test_backtest_reranker_window_pairs_and_diagnostics(trans, tidy):
+    # model_kwargs reach the constructor: a single-seed Ar on window pairs
+    # needs no OOF table (prepare is a no-op) and reports pair diagnostics
+    r = run_backtest(["Ar"], TARGETS[-1:], trans, tidy, progress=False, seeds=(0,),
+                     model_kwargs=KW_AR)
+    assert len(r) == 1 and r["model"].iloc[0] == "Ar" and r["basho"].iloc[0] == TARGETS[-1]
+    assert set(PAIR_METRICS) <= set(r.columns)
+    row = r.iloc[0]
+    assert row["pair_n"] > 0 and 0 <= row["pair_acc"] <= 1 and 0 <= row["pair_outside"] <= 1
+    assert row["pair_logloss"] > 0 and row["exact_n"] > 5
+    # the same seed on a different bag size is a different model
+    one = run_backtest(["Ar"], TARGETS[-1:], trans, tidy, progress=False, seeds=(0,),
+                       model_kwargs={**KW_AR, "n_seeds": 2})
+    assert one["seed"].iloc[0] == 0 and not one[METRICS].equals(r[METRICS])
 
 
 def test_backtest_is_deterministic(aq_rows, trans, tidy):
