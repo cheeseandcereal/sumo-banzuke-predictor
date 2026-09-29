@@ -29,6 +29,84 @@ all contenders share the same features, resolver, and backtest.
   equivalent to a GTB player knowing announced retirements; it does not
   leak results.
 
+## Protocol v2 (2026-09, parameter tuning round)
+
+Written before the sweeps below were run. Motivation: a seed study of
+the E10 configuration (5 seeds, 118 dev basho) found a seed-to-seed
+SD of the 118-basho mean of 0.14 exact slots, a per-basho paired SD
+between two configurations of 2.2 slots (the same as pure seed noise:
+the resolver turns tiny score changes into block shifts), and hence a
+paired SE of ~0.25 slots on 95 basho. Every hyperparameter effect
+measured so far is 0.2-0.5 slots. Exact slots cannot resolve such
+effects on the data that exists; half-rank MAE can (paired SE ~0.01
+against effects of 0.02-0.03), and across configurations its mean
+change correlates -0.96 with the change in exact slots.
+
+- Every basho through 202609 has been seen by some earlier decision
+  (E6/E9/E10 reused the 2024+ holdout). Split: **screen** 2004-2019
+  (95 targets), **confirm** 2020-2026 (40 targets). The confirm window
+  is evaluated once per experiment block and never iterated on; the
+  first untouched test is the 202611 banzuke.
+- Baseline: `Ar`, explicit seed 0, 600/400 rounds, everything else as
+  in E10. LightGBM's unset seed (used before this round) is a different
+  model; backtest and predict.py now share one seeded configuration.
+- Information policy: the forecast is sized like the previous banzuke
+  (`mak_size_policy=prior`; constant 42 since 2004, -0.02 slots vs
+  reading the target's size). Candidate exclusion of announced
+  departures is unchanged.
+- Seeds are averaged within a basho before any comparison; the paired
+  unit is the basho, never rows, pairs or seeds. Bagged configurations
+  are compared as two disjoint bag replicates (seeds 0-4, 5-9).
+- Decision metric: paired **MAE** (Wilcoxon signed-rank, 6-basho
+  block-bootstrap 95% CI). Secondary: GTB points (per-basho correlation
+  with exact slots .93). Exact slots remain the headline and a
+  guardrail, not the selector. Reranker experiments also report
+  within-cluster pair accuracy against the prior-order baseline.
+- Search: staged coordinate sweeps of ~40 configurations in small
+  families, each a one-dimensional decision; at most 4 nested finalist
+  bundles go to the confirm window. Losers are listed.
+- Acceptance: confirm dMAE < 0 with CI upper bound < +0.01; screen
+  dMAE < -0.01 with the same sign on both screen halves (2004-2011 /
+  2012-2019); guardrails dExact >= -0.2, promotion/demotion F1 and
+  sanyaku-set exactness >= -0.01. Ties go to the simpler configuration.
+  p-values after a search are exploratory and reported as such.
+- Reproduction: every row below has a `backtest.py --set` command;
+  per-basho CSVs live in the git-ignored `results/scratch/`.
+
+### Baseline under protocol v2 (Ar, seeds 0-4 averaged)
+
+| window | n | exact/42 | seed SD | basho SE | MAE | seed SD | GTB | promo/demo F1 | sanyaku sets |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| screen 2004-2019 | 95 | 19.19 | 0.10 | 0.45 | 0.920 | 0.008 | 44.6 | .934/.900 | .60 |
+| confirm 2020-2026 | 40 | 16.55 | 0.22 | 0.81 | 1.030 | 0.009 | 40.6 | .919/.873 | .49 |
+| 2024-2026 (old holdout) | 17 | 18.41 | 0.54 | 1.23 | 0.834 | 0.020 | 44.3 | .953/.895 | .44 |
+
+`uv run python backtest.py --models Ar --seeds 0-4 --start 200401`.
+The E10 headline (18.2 on 17 basho, one unset-seed draw) sits inside
+this distribution. 2020+ is genuinely harder: the committee created an
+extra S/K slot in 37% of basho since 2020 vs 18% over 2004-2019.
+
+### Where the misses are (analyze.py, Ar seeds 0-2, 2004-2026)
+
+- Of 5,662 makuuchi slots, 44.3% exact; misses: 27.6% pure E/W flips,
+  33.3% off by one position, 39.1% farther.
+- Sanyaku block-size errors in 16 of 135 basho (22.5% since 2020),
+  costing 6.8 exact slots each: 0.81 slots/basho over the window, 1.53
+  since 2020 (an upper bound on a perfect count model). 9 are
+  over-creation, all komusubi, six of them M1 8-7/9-6 claims the
+  committee declined when the zone was full; 7 are under-creation, three
+  of them make-koshi S incumbents kept in sanyaku, which no win
+  threshold reaches. Lowering the claim thresholds one win would fix 5
+  cases and create 17 new errors: not warranted.
+- Within predicted S/K blocks whose membership is right, 40 of 184 are
+  misordered (86 slots, 0.64/basho); 11 of those are forced claimants
+  placed ahead of a higher-scored fill by the resolver (22 slots, the
+  ceiling on that ordering rule).
+- Seed spread is informative: slots where three seeds agree (71%) are
+  exact 51% of the time, spread 1 (22%) 31%, spread 2 (5.5%) 19%
+  (Spearman rho with |error| .26). It is a sensitivity signal, not an
+  interval.
+
 ## E1: E/W layout conventions (2026-08, resolver rules)
 
 Derived empirically from all 399 banzuke:
