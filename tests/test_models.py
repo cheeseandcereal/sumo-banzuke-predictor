@@ -386,7 +386,7 @@ def test_oof_scores_are_base_prediction_without_label(trans, tmp_path):
 
 
 def _fake_oof(calls):
-    def fake_oof(trans_, base_params, objective, seeds, min_history, workers):
+    def fake_oof(trans_, base_params, objective, seeds, min_history, workers, **model_opts):
         calls.append((base_params["n_estimators"], objective, seeds, min_history, workers))
         return pd.DataFrame({"basho": [200311], "rikishi_id": [1], "oof": [1.0]})
     return fake_oof
@@ -424,3 +424,11 @@ def test_rerank_prepare_honours_default_pairs(trans, monkeypatch):
     kw = GBMRerank.prepare({"n_seeds": 1, "base": SMALL_BASE}, trans)
     assert GBMRerank(**kw).pairs == "mixed"
     assert calls and kw.get("oof") is not None
+
+
+def test_subclass_options_extend_parent_options():
+    """A subclass must not drop the options its parent's fit() reads."""
+    for cls in MODELS.values():
+        for parent in cls.__mro__[1:]:
+            if hasattr(parent, "OPTIONS") and parent.OPTIONS:
+                assert set(parent.OPTIONS) <= set(cls.OPTIONS), (cls.name, parent.__name__)

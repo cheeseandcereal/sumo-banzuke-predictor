@@ -8,7 +8,7 @@ configuration, so editing code, rebuilding data or changing a parameter
 invalidates it automatically; --fresh forces recomputation.
 
 Examples:
-    uv run python backtest.py                         # all models, 2004+, seed 0
+    uv run python backtest.py                         # all models, 2004+, bag replicate 0
     uv run python backtest.py --models Ar --seeds 0-4 --start 200401 --end 201911
     uv run python backtest.py --models Ar --set base.n_estimators=200 \\
         --set pair.n_estimators=150 --name n200 --baseline Ar
@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from banzuke.harness import fingerprint, parse_sets, run_backtest, summarize
+from banzuke.harness import fingerprint, parse_seeds, parse_sets, run_backtest, summarize
 from banzuke.models import MODELS
 
 PROCESSED = Path(__file__).parent / "data" / "processed"
@@ -42,17 +42,6 @@ WINDOWS = [("full", None, None), ("screen 2004-2019", 200401, 201911),
            ("confirm 2020+", 202001, None), ("2014+", 201401, None)]
 
 
-def parse_seeds(spec: str) -> tuple:
-    out = []
-    for part in spec.split(","):
-        if "-" in part:
-            a, b = part.split("-")
-            out.extend(range(int(a), int(b) + 1))
-        else:
-            out.append(int(part))
-    return tuple(out)
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -63,7 +52,8 @@ def main():
     ap.add_argument("--end", type=int, default=None,
                     help="last target basho (default: latest fetched)")
     ap.add_argument("--seeds", default="0", metavar="SPEC",
-                    help="seeds to fit, e.g. 0-4 or 0,2 (default 0); averaged per basho")
+                    help="bag replicates to fit, e.g. 0-1 or 0,2 (default 0); replicate k "
+                         "uses LightGBM seeds k*n_seeds..(k+1)*n_seeds-1; averaged per basho")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="model option override (repeatable), see above")
     ap.add_argument("--name", default=None,
@@ -76,7 +66,8 @@ def main():
     ap.add_argument("--mak-size-policy", choices=("prior", "actual"), default="prior",
                     help="size the forecast like the previous banzuke (prior, default) "
                          "or read the target's actual size (actual)")
-    ap.add_argument("--workers", type=int, default=min(16, os.cpu_count() or 1))
+    ap.add_argument("--workers", type=int, default=min(16, os.cpu_count() or 1),
+                    help="target-level worker processes (default: up to 16, capped at CPUs)")
     ap.add_argument("--out", default=None, help="results file stem, e.g. results/dev")
     ap.add_argument("--summarize", default=None, metavar="CSVS",
                     help="skip running; summarize existing per-basho csv(s), comma-separated")
@@ -84,7 +75,7 @@ def main():
                     help="ignore training transitions before this basho "
                          "(e.g. 201001); default: all history since 1959")
     ap.add_argument("--fresh", action="store_true",
-                    help="ignore and rebuild the per-(model, basho) result cache")
+                    help="ignore cached per-(config, model, seed, basho) rows and recompute")
     args = ap.parse_args()
 
     pd.set_option("display.width", 250)
@@ -106,17 +97,17 @@ def main():
         kwargs = parse_sets(args.set)
         label = args.name or (",".join(args.set) if args.set else "base")
         configs[label] = kwargs
-    if args.baseline and ":" in args.baseline:
-        base_label = args.baseline.split(":", 1)[1]
-        if base_label not in configs:
-            configs = {base_label: {}, **configs} if base_label == "base" else configs
-    elif args.baseline and args.baseline in MODELS and "base" not in configs:
+    base_label = args.baseline.split(":", 1)[1] if args.baseline and ":" in args.baseline \
+        else ("base" if args.baseline in MODELS else None)
+    if base_label == "base" and "base" not in configs:
         configs = {"base": {}, **configs}
 
     tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
     trans = pd.read_parquet(PROCESSED / "transitions.parquet")
     end = args.end or int(tidy["basho"].max())
     targets = [b for b in sorted(tidy["basho"].unique()) if args.start <= b <= end]
+    if not targets:
+        ap.error(f"no target basho in {args.start}..{end}")
     if args.train_start:
         n_train = int(tidy["basho"].between(args.train_start, targets[0]).sum()) - 1
         if n_train < 30:
@@ -152,10 +143,12 @@ def main():
                                      ignore_index=True))
     results = pd.concat(all_results, ignore_index=True)
 
-    if new_rows:
-        keep = pd.read_parquet(CACHE) if CACHE.exists() and not args.fresh else pd.DataFrame()
+    if new_rows:  # replace this run's rows, keep every other configuration's
+        keep = pd.read_parquet(CACHE) if CACHE.exists() else pd.DataFrame()
         if len(keep) and "seed" not in keep:
             keep = pd.DataFrame()
+        if len(keep):
+            keep = keep[~keep["fp"].isin({r["fp"].iloc[0] for r in new_rows})]
         store = pd.concat([keep, *new_rows], ignore_index=True)
         store = store.drop_duplicates(["fp", "model", "seed", "basho"], keep="last")
         CACHE.parent.mkdir(parents=True, exist_ok=True)

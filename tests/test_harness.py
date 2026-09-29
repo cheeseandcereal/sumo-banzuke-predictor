@@ -198,3 +198,26 @@ def test_fingerprint():
     assert a != b and a == a2
     assert len(a) == 16 and int(a, 16) >= 0
     assert fingerprint() == fingerprint("")
+
+
+def test_backtest_two_models_with_prepare_hook(trans, tidy):
+    """Prepared inputs (Ar's OOF table) must not leak into other models' kwargs
+    (RulesBaseline rejects unknown options). Mixed pairs with a high history
+    floor keep the OOF computation tiny."""
+    import banzuke.models as models_mod
+    from banzuke.harness import run_backtest
+
+    kw = {"n_seeds": 1, "base": {"n_estimators": 20}, "pair": {"n_estimators": 10},
+          "oof_min_history": 396}
+    orig = models_mod.oof_base_scores
+
+    def small(trans_, *a, **k):  # keep the OOF cache out of results/
+        k["cache_dir"] = "/tmp/opencode/oof_test_harness"
+        return orig(trans_, *a, **k)
+
+    models_mod.oof_base_scores = small
+    try:
+        r = run_backtest(["R", "Ar"], [202609], trans, tidy, progress=False, model_kwargs=kw)
+    finally:
+        models_mod.oof_base_scores = orig
+    assert sorted(r["model"]) == ["Ar", "R"]

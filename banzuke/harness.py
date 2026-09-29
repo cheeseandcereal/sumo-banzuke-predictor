@@ -25,14 +25,15 @@ PAIR_METRICS = ["pair_n", "pair_acc", "pair_prior_acc", "pair_logloss", "pair_ou
 _TRANS = _TIDY = None
 
 
-def _init_worker(trans, tidy):
+def _init_worker(trans, tidy, limit_threads=True):
     global _TRANS, _TIDY
     _TRANS, _TIDY = trans, tidy
-    try:
-        from threadpoolctl import threadpool_limits
-        threadpool_limits(1)
-    except ImportError:
-        pass
+    if limit_threads:  # worker processes only; never pin the caller's BLAS
+        try:
+            from threadpoolctl import threadpool_limits
+            threadpool_limits(1)
+        except ImportError:
+            pass
 
 
 def _pair_diagnostics(model, cands):
@@ -59,7 +60,7 @@ def _pair_diagnostics(model, cands):
 
 
 def _run_target(args):
-    (target, jobs, train_start, model_kwargs, mak_size_policy, config,
+    (target, jobs, train_start, kw_by_model, mak_size_policy, config,
      return_preds) = args
     trans, tidy = _TRANS, _TIDY
     bashos = sorted(tidy["basho"].unique())
@@ -75,7 +76,7 @@ def _run_target(args):
         mak_size = int(cands["mak_size"].iloc[0])
     rows, preds = [], []
     for name, seed in jobs:
-        model = MODELS[name](seed=seed, **(model_kwargs or {}))
+        model = MODELS[name](seed=seed, **kw_by_model[name])
         model.fit(train)
         score = model.score(cands)
         pred = resolve(cands, score, mak_size)
@@ -95,23 +96,29 @@ def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=
     """skip: set of (model_name, seed, target) combos to leave out (cached).
     train_start: ignore training transitions from basho before this.
     seeds: one full fit per seed; summarize() averages seeds within a basho.
-    model_kwargs: passed to every model's constructor (per-stage params and
-    options); models with a `prepare` hook get target-independent inputs
-    computed once here (e.g. rolling OOF scores).
+    model_kwargs: per-stage params and options; each model receives the keys
+    it declares in OPTIONS (plus n_seeds/base/pair), and models with a
+    `prepare` hook get target-independent inputs computed once here (e.g.
+    rolling OOF scores).
     mak_size_policy: 'prior' sizes the predicted makuuchi like the previous
     banzuke (all a forecaster can know); 'actual' reads the target's size.
     workers: target-level processes."""
     model_kwargs = dict(model_kwargs or {})
+    kw_by_model = {}
     for name in model_names:
-        prep = getattr(MODELS[name], "prepare", None)
-        if prep:
-            model_kwargs = prep(model_kwargs, trans, workers)
+        cls = MODELS[name]
+        # each model takes the options it knows (so one --set list can drive a
+        # multi-model run); prepared inputs (e.g. OOF scores) stay per model
+        kw = {k: v for k, v in model_kwargs.items()
+              if k in ("n_seeds", "base", "pair") or k in cls.OPTIONS}
+        prep = getattr(cls, "prepare", None)
+        kw_by_model[name] = prep(kw, trans, workers, train_start) if prep else kw
     per_target = []
     for target in targets:
         jobs = [(n, s) for n in model_names for s in seeds
                 if not (skip and (n, s, target) in skip)]
         if jobs:
-            per_target.append((target, jobs, train_start, model_kwargs, mak_size_policy,
+            per_target.append((target, jobs, train_start, kw_by_model, mak_size_policy,
                                config, return_preds))
     rows, preds = [], []
     t0 = time.time()
@@ -131,7 +138,7 @@ def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=
                 preds.extend(p)
                 report(n)
     else:
-        _init_worker(trans, tidy)
+        _init_worker(trans, tidy, limit_threads=False)
         for n, a in enumerate(per_target, 1):
             r, p = _run_target(a)
             rows.extend(r)
@@ -144,6 +151,18 @@ def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=
         results = results.sort_values(["config", "model", "seed", "basho"]).reset_index(drop=True)
     return (results, pd.concat(preds, ignore_index=True) if preds else pd.DataFrame()) \
         if return_preds else results
+
+
+def parse_seeds(spec: str) -> tuple:
+    """'0-4' or '0,2' -> (0, 1, 2, 3, 4) / (0, 2): bag replicates to fit."""
+    out = []
+    for part in str(spec).split(","):
+        if "-" in part:
+            a, b = part.split("-")
+            out.extend(range(int(a), int(b) + 1))
+        else:
+            out.append(int(part))
+    return tuple(out)
 
 
 def parse_sets(items) -> dict:
@@ -218,18 +237,19 @@ def summarize(results: pd.DataFrame, baseline: str | None = None, since: int | N
     ma = per["mae"].unstack("label")
     gt = per["gtb_points"].unstack("label")
 
-    def paired(pivot, m):
+    def paired(pivot, m, ci=True):
         d = (pivot[m] - pivot[baseline]).dropna()
         if len(d) < 2 or m == baseline:
             return d.mean() if len(d) else np.nan, (np.nan, np.nan), np.nan, "0-0"
         p = wilcoxon(d, zero_method="pratt").pvalue if (d != 0).any() else 1.0
-        return d.mean(), block_bootstrap_ci(d), p, f"{int((d > 0).sum())}-{int((d < 0).sum())}"
+        return (d.mean(), block_bootstrap_ci(d) if ci else (np.nan, np.nan), p,
+                f"{int((d > 0).sum())}-{int((d < 0).sum())}")
 
     out = {k: [] for k in ("d_exact", "ci_exact", "p_exact", "wl", "d_gtb", "d_mae",
                            "ci_mae", "p_mae")}
     for m in summary.index:
         de, cie, pe, wl = paired(ex, m)
-        dg, _, _, _ = paired(gt, m)
+        dg, _, _, _ = paired(gt, m, ci=False)
         dm, cim, pm, _ = paired(ma, m)
         out["d_exact"].append(de)
         out["ci_exact"].append(_fmt_ci(cie))

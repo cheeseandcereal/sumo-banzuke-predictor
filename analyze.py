@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Residual analysis for one model over the dev window: where do exact-slot
-misses come from, and are they systematically biased? Ends with the
-convention audit (banzuke.conventions): every hard-coded resolver rule
-re-measured against the committee's actual decisions.
+"""Residual analysis for one model over a target window (default 2004 through
+the latest basho): where do exact-slot misses come from, and are they
+systematically biased? Ends with the convention audit (banzuke.conventions):
+every hard-coded resolver rule re-measured against the committee's decisions.
 
-Usage: uv run python analyze.py [--model Ar] [--start 200401] [--end 202311]
+Usage: uv run python analyze.py [--model Ar] [--start 200401] [--end 202609]
                                 [--seeds 0-2] [--set base.n_estimators=200 ...]
 
 Sections (the first seed drives everything but the last):
@@ -34,7 +34,7 @@ from scipy.stats import spearmanr
 
 from banzuke import confidence, conventions
 from banzuke.build import OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA
-from banzuke.harness import fingerprint, parse_sets, run_backtest
+from banzuke.harness import fingerprint, parse_seeds, parse_sets, run_backtest
 
 PROCESSED = Path(__file__).parent / "data" / "processed"
 SCRATCH = Path(__file__).parent / "results" / "scratch"
@@ -133,17 +133,6 @@ def calibration(preds, trans):
         for _, row in r.sort_values("wins").iterrows():
             print(f"  M{num} {int(row['wins'])} wins: {int(row['honoured'])} of {int(row['n'])}")
 
-
-def parse_seeds(spec: str) -> tuple:
-    """'0-2' or '0,1,2' -> (0, 1, 2); the grammar of backtest.py --seeds."""
-    out = []
-    for part in spec.split(","):
-        if "-" in part:
-            a, b = part.split("-")
-            out.extend(range(int(a), int(b) + 1))
-        else:
-            out.append(int(part))
-    return tuple(out)
 
 
 def rank_str(c, n, s) -> str:
@@ -470,13 +459,14 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--model", default="Ar")
     ap.add_argument("--start", type=int, default=200401)
-    ap.add_argument("--end", type=int, default=202311)
+    ap.add_argument("--end", type=int, default=None, help="default: latest basho")
     ap.add_argument("--seeds", default="0", metavar="SPEC",
-                    help="seeds to fit, e.g. 0-2 or 0,1,2 (default 0); the first drives the "
+                    help="bag replicates to fit, e.g. 0-2 (default 0); the first drives the "
                          "residual sections, all of them the seed-spread section")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="model option override, as in backtest.py")
-    ap.add_argument("--workers", type=int, default=min(16, os.cpu_count() or 1))
+    ap.add_argument("--workers", type=int, default=min(16, os.cpu_count() or 1),
+                    help="target-level worker processes")
     ap.add_argument("--fresh", action="store_true", help="ignore cached predictions")
     args = ap.parse_args()
 
@@ -485,6 +475,7 @@ def main():
     kwargs = parse_sets(args.set)
     tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
     trans = pd.read_parquet(PROCESSED / "transitions.parquet")
+    args.end = args.end or int(tidy["basho"].max())
     fp = fingerprint(json.dumps({"kwargs": kwargs, "seeds": list(seeds)}, sort_keys=True))
     cache = SCRATCH / f"preds_{args.model}_{args.start}_{args.end}_{fp}.parquet"
     if cache.exists() and not args.fresh:

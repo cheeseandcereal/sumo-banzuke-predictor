@@ -249,7 +249,7 @@ def main():
         train = train[train["basho"] >= args.train_start]
         print(f"training restricted to {train['basho'].nunique()} basho "
               f"({args.train_start}+)", file=sys.stderr)
-    cands = trans[trans["basho"] == latest].reset_index(drop=True)
+    cands = trans[(trans["basho"] == latest) & ~trans["dropped"]].reset_index(drop=True)
     previous = trans.loc[trans["basho"] < latest, "basho"].max()
     prev_sk = trans[(trans["basho"] == previous)
                     & trans["rank_class"].isin((SEKIWAKE, KOMUSUBI))
@@ -270,7 +270,7 @@ def main():
     if args.seeds:
         kwargs["n_seeds"] = args.seeds
     if hasattr(cls, "prepare"):  # rolling OOF scores: ~2 min once per data update
-        kwargs = cls.prepare(kwargs, trans, workers=min(16, os.cpu_count() or 1))
+        kwargs = cls.prepare(kwargs, trans, min(16, os.cpu_count() or 1), args.train_start)
     model = cls(seed=0, **kwargs)
     model.fit(train)
     point = model.score(cands)

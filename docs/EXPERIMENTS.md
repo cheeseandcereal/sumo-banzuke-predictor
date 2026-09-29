@@ -70,8 +70,13 @@ change correlates -0.96 with the change in exact slots.
   2012-2019); guardrails dExact >= -0.2, promotion/demotion F1 and
   sanyaku-set exactness >= -0.01. Ties go to the simpler configuration.
   p-values after a search are exploratory and reported as such.
-- Reproduction: every row below has a `backtest.py --set` command;
-  per-basho CSVs live in the git-ignored `results/scratch/`.
+- Reproduction: every row below has a `backtest.py --set` command,
+  written against the pre-round defaults. With the current defaults the
+  round's starting point is
+  `--set n_seeds=1 --set base.n_estimators=600 --set pair.n_estimators=400
+  --set pairs=window --set context=false --set gap=0.5 --set cluster_max=4`
+  (add `--set n_seeds=5` for "bag5"); per-basho CSVs live in the
+  git-ignored `results/scratch/`.
 
 ### Baseline under protocol v2 (Ar, seeds 0-4 averaged)
 
@@ -81,8 +86,8 @@ change correlates -0.96 with the change in exact slots.
 | confirm 2020-2026 | 40 | 16.55 | 0.22 | 0.81 | 1.030 | 0.009 | 40.6 | .919/.873 | .49 |
 | 2024-2026 (old holdout) | 17 | 18.41 | 0.54 | 1.23 | 0.834 | 0.020 | 44.3 | .953/.895 | .44 |
 
-`uv run python backtest.py --models Ar --seeds 0-4 --start 200401`.
-The E10 headline (18.2 on 17 basho, one unset-seed draw) sits inside
+`backtest.py --models Ar --seeds 0-4 --start 200401` with the pre-round
+defaults above. The E10 headline (18.2 on 17 basho, one unset-seed draw) sits inside
 this distribution. 2020+ is genuinely harder: the committee created an
 extra S/K slot in 37% of basho since 2020 vs 18% over 2004-2019.
 
@@ -101,7 +106,7 @@ extra S/K slot in 37% of basho since 2020 vs 18% over 2004-2019.
 - Within predicted S/K blocks whose membership is right, 40 of 184 are
   misordered (86 slots, 0.64/basho); 11 of those are forced claimants
   placed ahead of a higher-scored fill by the resolver (22 slots, the
-  ceiling on that ordering rule).
+  ceiling on that ordering rule; fixed in E15a).
 - Seed spread is informative: slots where three seeds agree (71%) are
   exact 51% of the time, spread 1 (22%) 31%, spread 2 (5.5%) 19%
   (Spearman rho with |error| .26). It is a sensitivity signal, not an
@@ -463,6 +468,23 @@ wrong about them; the retrained one is right on 76% of a wider set, so
 the optimum moved (E13c brackets it upward). Pair capacity and
 `oof_gap` are flat; 150 rounds / 63 leaves / min_child 30 stay.
 
+### E13c gate, wider (vs gap 1.0, cap 4)
+
+| gap / cluster_max | pairs/basho | pair acc | exact/42 | MAE | dExact [CI] | dMAE [CI] | p | halves |
+|---|---:|---:|---:|---:|---|---|---:|---|
+| 1.0 / 4 (ref) | 59 | .758 | 20.33 | 0.851 | ref | ref | | |
+| 1.0 / 6 | 77 | .772 | 20.27 | 0.838 | -0.05 [-0.29, +0.17] | -0.013 [-0.023, -0.002] | .049 | -.018 / -.008 |
+| 1.5 / 6 | 112 | .818 | 20.39 | 0.840 | +0.06 | -0.011 [-0.028, +0.006] | .19 | -.028 / +.005 |
+| 2.0 / 8 | 178 | .863 | 20.27 | 0.840 | -0.05 | -0.011 | .27 | -.017 / -.005 |
+| 1.0 / 4, oof_gap 3 | 59 | .755 | 20.33 | 0.850 | 0.00 | -0.001 | .99 | |
+| 2.0 / 4 | 86 | .816 | 20.26 | 0.860 | -0.06 | +0.009 | .29 | +.008 / +.010 |
+| 1.5 / 4 | 76 | .796 | 20.21 | 0.865 | -0.12 | +0.014 | .09 | +.009 / +.019 |
+
+Widening the gate without raising the cap hurts (clusters saturate and
+split arbitrarily); widening both is neutral-to-slightly-better on MAE
+with exact slots flat. Pair accuracy rises with the gate because easier
+pairs are added, not because adjudication improves.
+
 ## E14: pre-registered side hypotheses (2026-09, protocol v2)
 
 Screen, bag5, on the E13a winner (mixed + context, oof_gap 2, gap .5):
@@ -476,7 +498,10 @@ Screen, bag5, on the E13a winner (mixed + context, oof_gap 2, gap .5):
 
 E3's conclusion stands for L1 as well: down-weighting old transitions
 does not pay. L2 blending only helps the pre-2012 half. Neither is
-adopted.
+adopted. (Caveat: at the time of these runs the rolling OOF scores used
+for near-tie pair selection were built without the recency weights /
+L2 blend; the code now threads both through, so a re-run would differ
+slightly. The screen-window verdicts are clear enough not to repeat.)
 
 **LambdaRank truncation (model B, bag5, 300 rounds).** E3 blamed B's
 poor juryo boundary on "scores with no positional anchor". The 2026-09
@@ -495,24 +520,7 @@ same rounds: 19.64 / 0.896 / .934 / .905) and its default is changed
 to 60. Blending a truncated ranker into Ar's base score is an untested
 lead. `--models B --set n_seeds=5 --set base.n_estimators=300 --set truncation=60`.
 
-### E13c gate, wider (vs gap 1.0, cap 4)
-
-| gap / cluster_max | pairs/basho | pair acc | exact/42 | MAE | dExact [CI] | dMAE [CI] | p | halves |
-|---|---:|---:|---:|---:|---|---|---:|---|
-| 1.0 / 4 (ref) | 59 | .758 | 20.33 | 0.851 | ref | ref | | |
-| 1.0 / 6 | 77 | .772 | 20.27 | 0.838 | -0.05 [-0.29, +0.17] | -0.013 [-0.023, -0.002] | .049 | -.018 / -.008 |
-| 1.5 / 6 | 112 | .818 | 20.39 | 0.840 | +0.06 | -0.011 [-0.028, +0.006] | .19 | -.028 / +.005 |
-| 2.0 / 8 | 178 | .863 | 20.27 | 0.840 | -0.05 | -0.011 | .27 | -.017 / -.005 |
-| 1.0 / 4, oof_gap 3 | 59 | .755 | 20.33 | 0.850 | 0.00 | -0.001 | .99 | |
-| 2.0 / 4 | 86 | .816 | 20.26 | 0.860 | -0.06 | +0.009 | .29 | +.008 / +.010 |
-| 1.5 / 4 | 76 | .796 | 20.21 | 0.865 | -0.12 | +0.014 | .09 | +.009 / +.019 |
-
-Widening the gate without raising the cap hurts (clusters saturate and
-split arbitrarily); widening both is neutral-to-slightly-better on MAE
-with exact slots flat. Pair accuracy rises with the gate because easier
-pairs are added, not because adjudication improves.
-
-### Finalists
+## Finalists and confirmation (2026-09, protocol v2)
 
 Nested bundles sent to the confirm window once, two bag replicates each:
 B1 = bag5 + 300/150 rounds; B2 = B1 + mixed near-tie pairs with context
@@ -547,6 +555,36 @@ near-ties (oof_gap 2) with context features; rerank gate gap 1.0,
 cluster_max 6. LambdaRank (B) truncation 60. Everything else unchanged.
 Not adopted, listed above: capacity and regularization changes, wider
 window pairs, recency weights, L2 blending, lower claim thresholds.
+
+## E15: sanyaku block structure (2026-09)
+
+### E15a within-block order follows the model
+
+`fill_class` laid out forced claimants ahead of fills regardless of
+score (200607: Kisenosato M1E 8-7, a forced K claim, was given K1E
+over Asasekiryu M2E 10-5, whom the model and the committee ranked
+higher). Members now take slots in score order once membership is
+settled; claims still decide who gets in. Ceiling from the miss
+decomposition: 22 slots over 135 basho. Measured on the adopted
+configuration (two bag replicates): screen +0.04 exact [-0.09, +0.19],
+confirm +0.05 [+0.00, +0.15], MAE -0.001 in both, 7-5 W-L overall, never
+worse in any window. Below the tuning acceptance threshold, kept as a
+correctness fix (the resolver docstring already promised the model's
+order within a class).
+
+### E15b learned slot count: scoped out
+
+Whether the committee creates a third komusubi slot turns on a handful
+of historical cases. From all transitions since 1990, M1 8-7 claimants
+reach sanyaku 94% of the time when the S/K zone has spare room, 89%
+when it is one short, but only 58% (7 of 12; 2 of 5 since 2004) when
+kachi-koshi incumbents and stronger claims already fill it, so a slot
+must be created for them. The analogous "zone already full" cells for
+M2 10-5 (2 of 4), M2 9-6 (5 of 10) and M3 10-5 (0 of 2) are as thin.
+Conditioning the M1 8-7 claim on spare room would fix 3 and break 2
+basho since 2004, worth ~0.05 slots/basho; a fitted model would be
+learning from those same 12 cases. Left as a rule table for the next
+data-rich revisit; the ~0.8 slots/basho ceiling stands unclaimed.
 
 ## E16: same-rank E/W "twins" kept adjacent (2026-09)
 
@@ -630,8 +668,6 @@ anchor signal would show up if more data accrues.
   declined; win thresholds cannot fix this (E15 scoping above). A small
   model of "extra slot created?" conditioned on the zone's incumbents
   is the next structural experiment.
-- The resolver places forced claimants ahead of higher-scored fills
-  inside an S/K block (22 slots over 135 basho at most).
 - A LambdaRank model trained through the juryo boundary (B, truncation
   60) is now within 1 slot of Ar; blending its score into Ar's base
   order is untested.
@@ -640,33 +676,3 @@ anchor signal would show up if more data accrues.
   announced Y/O promotions and shin-juryo counts into the resolver as
   constraints (information GTB players have); scraping GTB archives for
   a paired per-basho model-vs-human comparison on identical targets.
-
-## E15: sanyaku block structure (2026-09)
-
-### E15a within-block order follows the model
-
-`fill_class` laid out forced claimants ahead of fills regardless of
-score (200607: Kisenosato M1E 8-7, a forced K claim, was given K1E
-over Asasekiryu M2E 10-5, whom the model and the committee ranked
-higher). Members now take slots in score order once membership is
-settled; claims still decide who gets in. Ceiling from the miss
-decomposition: 22 slots over 135 basho. Measured on the adopted
-configuration (two bag replicates): screen +0.04 exact [-0.09, +0.19],
-confirm +0.05 [+0.00, +0.15], MAE -0.001 in both, 7-5 W-L overall, never
-worse in any window. Below the tuning acceptance threshold, kept as a
-correctness fix (the resolver docstring already promised the model's
-order within a class).
-
-### E15b learned slot count: scoped out
-
-Whether the committee creates a third komusubi slot turns on a handful
-of historical cases. From all transitions since 1990, M1 8-7 claimants
-reach sanyaku 94% of the time when the S/K zone has spare room, 89%
-when it is one short, but only 58% (7 of 12; 2 of 5 since 2004) when
-kachi-koshi incumbents and stronger claims already fill it, so a slot
-must be created for them. The analogous "zone already full" cells for
-M2 10-5 (2 of 4), M2 9-6 (5 of 10) and M3 10-5 (0 of 2) are as thin.
-Conditioning the M1 8-7 claim on spare room would fix 3 and break 2
-basho since 2004, worth ~0.05 slots/basho; a fitted model would be
-learning from those same 12 cases. Left as a rule table for the next
-data-rich revisit; the ~0.8 slots/basho ceiling stands unclaimed.
