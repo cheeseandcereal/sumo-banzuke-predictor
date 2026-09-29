@@ -2,16 +2,19 @@
 """Residual analysis for one model over the dev window: where do exact-slot
 misses come from, and are they systematically biased?
 
-Usage: uv run python analyze.py [--model Aq] [--start 200401] [--end 202311]
+Usage: uv run python analyze.py [--model Ar] [--start 200401] [--end 202311]
+                                [--set base.n_estimators=200 ...]
 """
 import argparse
+import json
+import os
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from banzuke.build import KOMUSUBI, MAEGASHIRA
-from banzuke.harness import run_backtest
+from banzuke.harness import fingerprint, parse_sets, run_backtest
 
 PROCESSED = Path(__file__).parent / "data" / "processed"
 SCRATCH = Path(__file__).parent / "results" / "scratch"
@@ -19,21 +22,28 @@ SCRATCH = Path(__file__).parent / "results" / "scratch"
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default="Aq")
+    ap.add_argument("--model", default="Ar")
     ap.add_argument("--start", type=int, default=200401)
     ap.add_argument("--end", type=int, default=202311)
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="model option override, as in backtest.py")
+    ap.add_argument("--workers", type=int, default=min(16, os.cpu_count() or 1))
     ap.add_argument("--fresh", action="store_true", help="ignore cached predictions")
     args = ap.parse_args()
 
     SCRATCH.mkdir(parents=True, exist_ok=True)
-    cache = SCRATCH / f"preds_{args.model}_{args.start}_{args.end}.parquet"
+    kwargs = parse_sets(args.set)
+    fp = fingerprint(json.dumps({"kwargs": kwargs, "seed": args.seed}, sort_keys=True))
+    cache = SCRATCH / f"preds_{args.model}_{args.start}_{args.end}_{fp}.parquet"
     if cache.exists() and not args.fresh:
         preds = pd.read_parquet(cache)
     else:
         tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
         trans = pd.read_parquet(PROCESSED / "transitions.parquet")
         targets = [b for b in sorted(tidy["basho"].unique()) if args.start <= b <= args.end]
-        _, preds = run_backtest([args.model], targets, trans, tidy, return_preds=True)
+        _, preds = run_backtest([args.model], targets, trans, tidy, return_preds=True,
+                                seeds=(args.seed,), model_kwargs=kwargs, workers=args.workers)
         preds.to_parquet(cache, index=False)
 
     # rows whose actual outcome is a makuuchi slot

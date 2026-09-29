@@ -125,30 +125,42 @@ class LinearModel(_Model):
 
 class GBMRegression(_Model):
     """A: gradient-boosted regression on movement delta (L2).
-    half_life: optional exponential recency weight (in basho) on training rows."""
+    half_life: optional exponential recency weight (in basho) on training
+    rows, normalized to mean 1 so regularization strength is unchanged.
+    blend_l2: weight in [0, 1] of an additional L2-objective bag mixed into
+    the movement prediction (0 = this class's objective only)."""
 
     name = "A"
     objective = "regression"
-    OPTIONS = {"half_life": None}
+    OPTIONS = {"half_life": None, "blend_l2": 0.0}
 
     def _weights(self, train):
         if not self.half_life:
             return None
         order = {b: i for i, b in enumerate(sorted(train["basho"].unique()))}
         age = train["basho"].map(order).max() - train["basho"].map(order)
-        return (0.5 ** (age / self.half_life)).to_numpy()
+        w = (0.5 ** (age / self.half_life)).to_numpy()
+        return w / w.mean()
 
     def fit(self, train):
         X, y, w = train[FEATURES], train["delta"], self._weights(train)
-        self.ms = [
-            LGBMRegressor(objective=self.objective, **_seeded(self.base_params, s))
-            .fit(X, y, sample_weight=w)
-            for s in self.seeds
-        ]
+
+        def bag(objective):
+            return [LGBMRegressor(objective=objective, **_seeded(self.base_params, s))
+                    .fit(X, y, sample_weight=w) for s in self.seeds]
+
+        self.ms = bag(self.objective)
+        self.ms2 = bag("regression") if self.blend_l2 else []
 
     def delta(self, cands, k=None):
-        ms = self.ms if k is None else [self.ms[k]]
-        return np.mean([m.predict(cands[FEATURES]) for m in ms], axis=0)
+        def mean(models):
+            ms = models if k is None else [models[k]]
+            return np.mean([m.predict(cands[FEATURES]) for m in ms], axis=0)
+
+        d = mean(self.ms)
+        if self.blend_l2:
+            d = (1 - self.blend_l2) * d + self.blend_l2 * mean(self.ms2)
+        return d
 
     def score(self, cands, k=None):
         return cands["position"].to_numpy() + self.delta(cands, k)
@@ -171,18 +183,22 @@ class GBMRecency(GBMRegression):
 
 class GBMRanker(_Model):
     """B: LambdaRank on the next-basho order within each transition.
-    top: relevance levels (focuses ranking quality on the top of the order)."""
+    top: relevance levels (focuses ranking quality on the top of the order).
+    truncation: lambdarank_truncation_level (LightGBM default 30; the
+    makuuchi boundary sits near position 42)."""
 
     name = "B"
-    OPTIONS = {"top": 60}
+    OPTIONS = {"top": 60, "truncation": None}
 
     def fit(self, train):
         t = train.sort_values(["basho", "position"], kind="stable")
         label = np.clip(self.top - t["position_next"], 0, self.top).astype(int)
         groups = t.groupby("basho", sort=True).size().to_numpy()
+        extra = {"lambdarank_truncation_level": self.truncation} if self.truncation else {}
         self.ms = [
             LGBMRanker(objective="lambdarank", label_gain=list(range(self.top + 1)),
-                       **_seeded(self.base_params, s)).fit(t[FEATURES], label, group=groups)
+                       **_seeded(self.base_params, s), **extra)
+            .fit(t[FEATURES], label, group=groups)
             for s in self.seeds
         ]
 
@@ -194,6 +210,13 @@ class GBMRanker(_Model):
 # --- pairwise stage -------------------------------------------------------
 
 _H2H: set | None = None  # {(basho, winner_id, loser_id)}
+
+# context appended to pair feature differences when context=True: columns
+# that differencing zeroes out (era, division sizes), the pair's absolute
+# location (means), and each endpoint's class/division
+CONTEXT_SHARED = ["year", "kosho", "mak_size", "jur_size"]
+CONTEXT_MEAN = ["position", "rank_number", "wins", "boundary_dist"]
+CONTEXT_ENDS = ["rank_class", "division"]
 
 
 def _h2h_wins():
@@ -214,12 +237,30 @@ def _window_pairs(n, window):
     return i_arr, j_grid[mask]
 
 
-def _pair_matrix(df, i_arr, j_arr, h2h=False):
+def _gap_pairs(scores, pos, gap):
+    """All index pairs whose scores differ by <= gap (near-ties under a base
+    ordering), oriented i = currently higher ranked."""
+    order = np.argsort(scores, kind="stable")
+    s = scores[order]
+    ii, jj = [], []
+    for a in range(len(s)):
+        b = a + 1
+        while b < len(s) and s[b] - s[a] <= gap:
+            ii.append(order[a])
+            jj.append(order[b])
+            b += 1
+    i_arr, j_arr = np.array(ii, dtype=int), np.array(jj, dtype=int)
+    swap = pos[i_arr] > pos[j_arr]
+    return np.where(swap, j_arr, i_arr), np.where(swap, i_arr, j_arr)
+
+
+def _pair_matrix(df, i_arr, j_arr, h2h=False, context=False, base=None):
     """Feature rows for index pairs of one basho's rows, oriented i = currently
-    higher ranked: feature differences, optionally the pair's head-to-head
-    bout this basho (+1 i won, -1 i lost, 0)."""
+    higher ranked: feature differences, then optionally the pair's
+    head-to-head bout this basho (+1 i won, -1 i lost, 0), context columns,
+    and the base-score gap base[i] - base[j]."""
     X = df[FEATURES].to_numpy(dtype=float)
-    out = X[i_arr] - X[j_arr]
+    cols = [X[i_arr] - X[j_arr]]
     if h2h:
         wins = _h2h_wins()
         rid = df["rikishi_id"].to_numpy()
@@ -229,27 +270,152 @@ def _pair_matrix(df, i_arr, j_arr, h2h=False):
         ) - np.array(
             [(basho, rid[j], rid[i]) in wins for i, j in zip(i_arr, j_arr)], dtype=float
         )
-        out = np.column_stack([out, col])
+        cols.append(col[:, None])
+    if context:
+        shared = df[CONTEXT_SHARED].to_numpy(dtype=float)[i_arr]
+        means = df[CONTEXT_MEAN].to_numpy(dtype=float)
+        ends = df[CONTEXT_ENDS].to_numpy(dtype=float)
+        cols += [shared, (means[i_arr] + means[j_arr]) / 2, ends[i_arr], ends[j_arr]]
+    if base is not None:
+        cols.append((base[i_arr] - base[j_arr])[:, None])
+    return np.column_stack(cols) if len(cols) > 1 else cols[0]
+
+
+class _PairStage:
+    """Pair classifier bag shared by C and Ar.
+
+    pairs: how training pairs are chosen per training basho
+      'window' - all pairs within `window` rows of each other in the current
+                 order (label: i stays above j)
+      'oof'    - pairs whose rolling out-of-fold base scores differ by at most
+                 `oof_gap`: the near-ties the reranker actually adjudicates
+      'mixed'  - both
+    With 'oof'/'mixed' the base-score gap is a pair feature, so `oof` (a
+    frame basho, rikishi_id, oof from oof_base_scores) is required."""
+
+    def __init__(self, seeds, params, window, h2h=False, context=False,
+                 pairs="window", oof=None, oof_gap=1.0):
+        if pairs not in ("window", "oof", "mixed"):
+            raise ValueError(f"pairs must be window|oof|mixed, got {pairs!r}")
+        if pairs != "window" and oof is None:
+            raise ValueError("pairs='oof'/'mixed' need rolling OOF base scores "
+                             "(call Model.prepare first)")
+        self.seeds, self.params, self.window, self.h2h = seeds, params, window, h2h
+        self.context, self.pairs, self.oof_gap = context, pairs, oof_gap
+        self.use_base = pairs != "window"
+        self.oof = None if oof is None else oof.set_index(["basho", "rikishi_id"])["oof"]
+
+    def _oof_for(self, df):
+        key = pd.MultiIndex.from_arrays([df["basho"], df["rikishi_id"]])
+        s = self.oof.reindex(key).to_numpy(dtype=float)
+        return None if np.isnan(s).all() else s
+
+    def fit(self, train):
+        Xs, ys = [], []
+        for _, grp in train.groupby("basho"):
+            df = grp.sort_values("position", kind="stable")
+            pos, nxt = df["position"].to_numpy(), df["position_next"].to_numpy()
+            base = self._oof_for(df) if self.use_base else None
+            parts = []
+            if self.pairs in ("window", "mixed"):
+                parts.append(_window_pairs(len(df), self.window))
+            if self.pairs in ("oof", "mixed") and base is not None:
+                parts.append(_gap_pairs(base, pos, self.oof_gap))
+            if self.use_base and base is None:
+                base = np.full(len(df), np.nan)  # before the OOF history floor
+            for i_arr, j_arr in parts:
+                if len(i_arr) == 0:
+                    continue
+                Xs.append(_pair_matrix(df, i_arr, j_arr, self.h2h, self.context,
+                                       base if self.use_base else None))
+                ys.append((nxt[i_arr] < nxt[j_arr]).astype(int))
+        if not ys:
+            raise ValueError(f"no training pairs (pairs={self.pairs!r}); with 'oof' the "
+                             "OOF table must cover training basho")
+        X, y = np.vstack(Xs), np.concatenate(ys)
+        self.n_train_pairs = len(y)
+        self.ms = [LGBMClassifier(**_seeded(self.params, s)).fit(X, y) for s in self.seeds]
+        return self
+
+    def proba(self, df, i_arr, j_arr, base=None, k=None):
+        """P(i stays above j) for index pairs of df; base = df's base scores."""
+        X = _pair_matrix(df, i_arr, j_arr, self.h2h, self.context,
+                         base if self.use_base else None)
+        ms = self.ms if k is None else [self.ms[k]]
+        return np.mean([m.predict_proba(X)[:, 1] for m in ms], axis=0)
+
+
+def oof_base_scores(trans, base_params, objective, seeds, min_history=60, workers=1,
+                    cache_dir=None):
+    """Rolling out-of-fold base scores for every labeled transition: rows of
+    source basho b are scored by a base bag trained on transitions labeled at
+    or before b (next_basho <= b), i.e. the backtest's own base prediction for
+    target next(b), so no row is scored by a model that saw its label.
+    Basho with fewer than `min_history` labeled predecessors get no score.
+    Cached on disk under a key of the configuration and the data."""
+    import hashlib
+    import json
+    from concurrent.futures import ProcessPoolExecutor
+    from multiprocessing import get_context
+    from pathlib import Path
+
+    from banzuke.build import PROCESSED
+
+    lab = trans[trans["position_next"].notna()]
+    key_src = json.dumps({"base": base_params, "objective": objective, "seeds": seeds,
+                          "min_history": min_history, "features": FEATURES}, sort_keys=True)
+    data_hash = pd.util.hash_pandas_object(
+        lab[["basho", "rikishi_id", "position_next"] + FEATURES], index=False).to_numpy()
+    key = hashlib.sha256(key_src.encode() + data_hash.tobytes()).hexdigest()[:16]
+    cache_dir = Path(cache_dir or PROCESSED.parent.parent / "results" / "scratch" / "oof")
+    path = cache_dir / f"{key}.parquet"
+    if path.exists():
+        return pd.read_parquet(path)
+
+    bashos = sorted(lab["basho"].unique())
+    todo = bashos[min_history:]
+    args = [(b, base_params, objective, seeds) for b in todo]
+    if workers > 1:
+        with ProcessPoolExecutor(workers, mp_context=get_context("spawn"),
+                                 initializer=_oof_init, initargs=(lab,)) as ex:
+            parts = list(ex.map(_oof_one, args, chunksize=4))
+    else:
+        _oof_init(lab)
+        parts = [_oof_one(a) for a in args]
+    out = pd.concat(parts, ignore_index=True)
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp.parquet")
+    out.to_parquet(tmp, index=False)
+    tmp.replace(path)
     return out
 
 
-def _fit_pair_classifiers(train, seeds, params, window, h2h=False):
-    """One classifier per seed on all pairs within `window` of each other in
-    the current order of every training basho; label = i stays above j."""
-    Xs, ys = [], []
-    for _, grp in train.groupby("basho"):
-        df = grp.sort_values("position", kind="stable")
-        i_arr, j_arr = _window_pairs(len(df), window)
-        nxt = df["position_next"].to_numpy()
-        Xs.append(_pair_matrix(df, i_arr, j_arr, h2h))
-        ys.append((nxt[i_arr] < nxt[j_arr]).astype(int))
-    X, y = np.vstack(Xs), np.concatenate(ys)
-    return [LGBMClassifier(**_seeded(params, s)).fit(X, y) for s in seeds]
+_OOF_LAB = None
 
 
-def _pair_proba(models, X, k=None):
-    ms = models if k is None else [models[k]]
-    return np.mean([m.predict_proba(X)[:, 1] for m in ms], axis=0)
+def _oof_init(lab):
+    global _OOF_LAB
+    _OOF_LAB = lab
+    try:
+        from threadpoolctl import threadpool_limits
+        threadpool_limits(1)
+    except ImportError:
+        pass
+
+
+def _oof_one(args):
+    b, base_params, objective, seeds = args
+    lab = _OOF_LAB
+    train = lab[lab["next_basho"] <= b]
+    rows = lab[lab["basho"] == b]
+    preds = np.mean([
+        LGBMRegressor(objective=objective, **_seeded(base_params, s))
+        .fit(train[FEATURES], train["delta"]).predict(rows[FEATURES])
+        for s in seeds
+    ], axis=0)
+    return pd.DataFrame({"basho": rows["basho"].to_numpy(),
+                         "rikishi_id": rows["rikishi_id"].to_numpy(),
+                         "oof": rows["position"].to_numpy() + preds})
 
 
 class PairwiseBT(_Model):
@@ -257,16 +423,16 @@ class PairwiseBT(_Model):
     into local movement from the current order (approximate Bradley-Terry)."""
 
     name = "C"
-    OPTIONS = {"pair_window": 12, "scale": 2.0, "h2h": False}
+    OPTIONS = {"pair_window": 12, "scale": 2.0, "h2h": False, "context": False}
 
     def fit(self, train):
-        self.pair = _fit_pair_classifiers(train, self.seeds, self.pair_params,
-                                          self.pair_window, self.h2h)
+        self.pair = _PairStage(self.seeds, self.pair_params, self.pair_window,
+                               self.h2h, self.context).fit(train)
 
     def score(self, cands, k=None):
         df = cands.sort_values("position", kind="stable")
         i_arr, j_arr = _window_pairs(len(df), self.pair_window)
-        p = _pair_proba(self.pair, _pair_matrix(df, i_arr, j_arr, self.h2h), k)
+        p = self.pair.proba(df, i_arr, j_arr, k=k)
         movement = np.zeros(len(df))
         np.add.at(movement, i_arr, p - 0.5)
         np.add.at(movement, j_arr, 0.5 - p)
@@ -285,16 +451,35 @@ class GBMRerank(GBMMedian):
     gap: cluster break when consecutive base scores differ by more
     cluster_max: largest cluster the reranker may reorder
     h2h: include the pair's head-to-head bout this basho as a pair feature
+    context: append absolute/era context to the pair feature differences
+    pairs, oof_gap, oof: training-pair selection, see _PairStage; 'oof' and
+        'mixed' need Model.prepare(kwargs, trans) to supply rolling OOF scores
+    After score(), `last_pairs` holds (i, j, p, in_window) for the pairs the
+    reranker adjudicated, for diagnostics.
     """
 
     name = "Ar"
     OPTIONS = {**GBMMedian.OPTIONS, "pair_window": 6, "gap": 0.5, "cluster_max": 4,
-               "h2h": False}
+               "h2h": False, "context": False, "pairs": "window", "oof_gap": 1.0,
+               "oof": None, "oof_min_history": 60}
+
+    @classmethod
+    def prepare(cls, kwargs, trans, workers=1):
+        """Target-independent inputs computed once per configuration: rolling
+        OOF base scores when training pairs are selected by base near-ties.
+        Returns kwargs extended with them. Uses the configuration's seed-0
+        (replicate 0) bag; later replicates reuse the same OOF table."""
+        if kwargs.get("pairs", "window") == "window" or kwargs.get("oof") is not None:
+            return kwargs
+        proto = cls(**{k: v for k, v in kwargs.items() if k != "seed"})
+        oof = oof_base_scores(trans, proto.base_params, proto.objective, proto.seeds,
+                              proto.oof_min_history, workers)
+        return {**kwargs, "oof": oof}
 
     def fit(self, train):
         super().fit(train)
-        self.pair = _fit_pair_classifiers(train, self.seeds, self.pair_params,
-                                          self.pair_window, self.h2h)
+        self.pair = _PairStage(self.seeds, self.pair_params, self.pair_window, self.h2h,
+                               self.context, self.pairs, self.oof, self.oof_gap).fit(train)
 
     def _clusters(self, base, pos):
         order = np.lexsort((pos, base))
@@ -318,10 +503,15 @@ class GBMRerank(GBMMedian):
         borda = np.zeros(len(cands))
         if pairs:
             i_arr, j_arr = np.array(pairs).T
-            probs = _pair_proba(self.pair, _pair_matrix(cands, i_arr, j_arr, self.h2h), k)
+            probs = self.pair.proba(cands, i_arr, j_arr, base, k)
             for i, j, p in zip(i_arr, j_arr, probs):
                 borda[i] += p
                 borda[j] += 1 - p
+            rank_now = np.argsort(np.argsort(pos, kind="stable"), kind="stable")
+            self.last_pairs = (i_arr, j_arr, probs,
+                               rank_now[j_arr] - rank_now[i_arr] <= self.pair_window)
+        else:
+            self.last_pairs = None
         final = []
         for cl in clusters:
             final.extend(sorted(cl, key=lambda i: (-borda[i], base[i])))
