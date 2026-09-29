@@ -5,9 +5,12 @@ signals (banzuke.confidence) separate reliable rows from shaky ones? Ends
 with the convention audit (banzuke.conventions): every hard-coded resolver
 rule re-measured against the committee's actual decisions.
 
-Usage: uv run python analyze.py [--model Ar] [--start 200401] [--end 202609] [--seeds 3]
+Usage: uv run python analyze.py [--model Ar] [--start 200401] [--end 202311]
+                                [--set base.n_estimators=200 ...]
 """
 import argparse
+import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -16,7 +19,7 @@ from scipy.stats import spearmanr
 
 from banzuke import confidence, conventions
 from banzuke.build import OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA
-from banzuke.harness import run_backtest
+from banzuke.harness import fingerprint, parse_sets, run_backtest
 
 PROCESSED = Path(__file__).parent / "data" / "processed"
 SCRATCH = Path(__file__).parent / "results" / "scratch"
@@ -36,12 +39,13 @@ def rate_table(m, groups, title):
 
 
 def calibration(preds, trans):
-    """Confidence signals on the seed-0 banzuke, using base scores averaged
-    over seeds and per-seed orders for the spread."""
+    """Confidence signals on the first seed's banzuke, using base scores
+    averaged over seeds and per-seed orders for the spread."""
     seeds = sorted(preds["seed"].unique())
+    s0 = seeds[0]
     out = []
     for target, g in preds.groupby("target"):
-        pred = g[g["seed"] == 0].reset_index(drop=True)
+        pred = g[g["seed"] == s0].reset_index(drop=True)
         base = g.pivot(index="rikishi_id", columns="seed", values="base").mean(axis=1)
         final = pred.set_index("rikishi_id")["score"]
         seed_preds = [g.loc[g["seed"] == s, ["rikishi_id", "pred_pos"]] for s in seeds]
@@ -112,13 +116,18 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", default="Ar")
     ap.add_argument("--start", type=int, default=200401)
-    ap.add_argument("--end", type=int, default=202609)
-    ap.add_argument("--seeds", type=int, default=3, help="fits per basho, seeds 0..n-1")
+    ap.add_argument("--end", type=int, default=202311)
+    ap.add_argument("--seed", type=int, default=0)
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="model option override, as in backtest.py")
+    ap.add_argument("--workers", type=int, default=min(16, os.cpu_count() or 1))
     ap.add_argument("--fresh", action="store_true", help="ignore cached predictions")
     args = ap.parse_args()
 
     SCRATCH.mkdir(parents=True, exist_ok=True)
-    cache = SCRATCH / f"preds_{args.model}_{args.start}_{args.end}_s{args.seeds}.parquet"
+    kwargs = parse_sets(args.set)
+    fp = fingerprint(json.dumps({"kwargs": kwargs, "seed": args.seed}, sort_keys=True))
+    cache = SCRATCH / f"preds_{args.model}_{args.start}_{args.end}_{fp}.parquet"
     trans = pd.read_parquet(PROCESSED / "transitions.parquet")
     if cache.exists() and not args.fresh:
         preds = pd.read_parquet(cache)
@@ -126,9 +135,9 @@ def main():
         tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
         targets = [b for b in sorted(tidy["basho"].unique()) if args.start <= b <= args.end]
         _, preds = run_backtest([args.model], targets, trans, tidy, return_preds=True,
-                                seeds=range(args.seeds))
+                                seeds=(args.seed,), model_kwargs=kwargs, workers=args.workers)
         preds.to_parquet(cache, index=False)
-    all_preds, preds = preds, preds[preds["seed"] == 0]
+    all_preds, preds = preds, preds[preds["seed"] == args.seed]
 
     # rows whose actual outcome is a makuuchi slot
     m = preds[preds["class_next"] <= MAEGASHIRA].copy()

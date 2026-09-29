@@ -29,6 +29,7 @@ import pandas as pd
 
 from banzuke import confidence, models
 from banzuke.build import JURYO, KOMUSUBI, OZEKI, SEKIWAKE
+from banzuke.harness import parse_sets
 from banzuke.overrides import OverrideError, parse, splice, verify
 from banzuke.resolver import resolve
 
@@ -48,14 +49,17 @@ def label(c, n, s):
     return f"{CLS[int(c)]}{int(n)}{'EW'[int(s)]}"
 
 
-def predict(cands, scores_list, ov, mak_size, base=None, rates=None):
-    """Splice relative overrides into each seed's order, resolve with the
-    structural overrides. Returns (merged seed-0 pred, warnings, review items).
+def predict(cands, point, per_seed, ov, mak_size, base=None, rates=None):
+    """Splice relative overrides into the point forecast's order (the seed
+    bag) and into each single seed's order, resolve with the structural
+    overrides. Returns (point pred with a `spread` column, warnings, review
+    items); spread is the range of a rikishi's resolved position across single
+    seeds, a sensitivity diagnostic rather than a calibrated interval.
     base: mean base score per rikishi (Series); drives the confidence markers."""
     rids = cands["rikishi_id"].to_numpy()
     pos = cands["position"].to_numpy()
     preds, pseudos, warnings = [], [], []
-    for k, sc in enumerate(scores_list):
+    for k, sc in enumerate([point, *per_seed]):
         order = [rids[i] for i in np.lexsort((pos, sc))]
         rank = {r: j for j, r in enumerate(splice(order, ov["relative"]))}
         pseudos.append(np.array([rank[r] for r in rids], dtype=float))
@@ -63,11 +67,11 @@ def predict(cands, scores_list, ov, mak_size, base=None, rates=None):
                              warnings=warnings if k == 0 else None))
     pred = preds[0].merge(cands, on="rikishi_id")
     if base is None:
-        base = pd.Series(scores_list[0], index=rids)
+        base = pd.Series(point, index=rids)
     final = pd.Series(pseudos[0], index=rids)
     named = {r for _, chain, _ in ov["relative"] for seg in chain for r in seg}
     named |= set(ov["class"]) | set(ov["pins"])
-    sig = confidence.signals(pred, base, final, preds, skip=named)
+    sig = confidence.signals(pred, base, final, preds[1:], skip=named)
     pred = pred.join(sig)
     items = confidence.review(pred, sig, base, final, preds, skip=named)
     if rates is not None:
@@ -79,8 +83,9 @@ def predict(cands, scores_list, ov, mak_size, base=None, rates=None):
 
 
 def render(pred, ov, warnings, items, baseline, target, latest, args):
+    how = f"{args.seeds}-seed bag" if args.seeds > 1 else "seed 0"
     print(f"predicted makuuchi banzuke for {target} "
-          f"(from {latest} results, model {args.model}, {args.seeds} seeds)\n")
+          f"(from {latest} results, model {args.model}, {how})\n")
     mak = pred[pred["pred_class"] < JURYO].sort_values("pred_pos")
 
     def cell(r):
@@ -215,7 +220,10 @@ def main():
     ap.add_argument("--mak-size", type=int, default=None,
                     help="makuuchi size (default: same as the latest banzuke)")
     ap.add_argument("--seeds", type=int, default=5,
-                    help="ensemble size; seed disagreement feeds the confidence markers")
+                    help="bag size: the forecast averages this many seeds; single "
+                         "seeds also feed the +-N sensitivity column and the markers")
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="model option override, as in backtest.py (base.n_estimators=200)")
     ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
                     help="ignore training transitions before this basho")
     ap.add_argument("--above", action="append", default=[], metavar='"A > B"')
@@ -233,7 +241,9 @@ def main():
     trans = pd.read_parquet(transitions_path)
     latest = int(trans.loc[trans["yusho"].eq(1), "basho"].max())
     target = next_basho_id(latest)
-    train = trans[trans["position_next"].notna()]
+    # labels published by `latest`: a fetched-but-unplayed next banzuke must
+    # not supply the transition being predicted
+    train = trans[trans["position_next"].notna() & (trans["next_basho"] <= latest)]
     if args.train_start:
         train = train[train["basho"] >= args.train_start]
         print(f"training restricted to {train['basho'].nunique()} basho "
@@ -252,19 +262,20 @@ def main():
         print(f"excluding: {', '.join(cands.loc[gone, 'shikona'])}\n")
     cands = cands[~gone].reset_index(drop=True)
 
-    # train once per seed; everything downstream is instant
+    # train once; everything downstream is instant
     print("training...", file=sys.stderr)
-    scores_list, bases = [], []
-    for seed in range(args.seeds):
-        model = models.MODELS[args.model](seed=seed)
-        model.fit(train)
-        scores_list.append(model.score(cands))
-        bases.append(getattr(model, "base_score", model.score)(cands))
-    base = pd.Series(np.mean(bases, axis=0), index=cands["rikishi_id"].to_numpy())
+    kwargs = models.MODELS[args.model].prepare(parse_sets(args.set), trans) \
+        if hasattr(models.MODELS[args.model], "prepare") else parse_sets(args.set)
+    model = models.MODELS[args.model](seed=0, n_seeds=args.seeds, **kwargs)
+    model.fit(train)
+    point = model.score(cands)
+    per_seed = [model.score(cands, k) for k in range(args.seeds)] if args.seeds > 1 else []
+    base = pd.Series(getattr(model, "base_score", model.score)(cands),
+                     index=cands["rikishi_id"].to_numpy())
     rates = confidence.claim_rates(trans)
 
     mak_size = args.mak_size or int(cands["mak_size"].iloc[0])
-    base_pred = resolve(cands, scores_list[0], mak_size)
+    base_pred = resolve(cands, point, mak_size)
     baseline = {r: label(c, n, s) for r, c, n, s in zip(
         base_pred["rikishi_id"], base_pred["pred_class"], base_pred["pred_number"],
         base_pred["pred_side"])}
@@ -272,7 +283,7 @@ def main():
     def run(state):
         ov = parse(cands, above=state["above"], below=state["below"],
                    classes=state["class"], counts=state["count"], pins=state["pin"])
-        pred, warnings, items = predict(cands, scores_list, ov, mak_size, base, rates)
+        pred, warnings, items = predict(cands, point, per_seed, ov, mak_size, base, rates)
         render(pred, ov, warnings, items, baseline, target, latest, args)
 
     state = {"above": args.above, "below": args.below, "class": args.cls,

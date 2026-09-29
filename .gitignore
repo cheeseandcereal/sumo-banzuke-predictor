@@ -4,3 +4,4 @@ __pycache__/
 models/
 results/scratch/
 results/*.log
+.pytest_cache/
