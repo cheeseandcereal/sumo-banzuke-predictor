@@ -6,15 +6,13 @@ from the results of the previous basho.
 Multiple ordering models (rules formula, linear, gradient-boosted
 regression/ranking/pairwise variants) competed on a shared
 rolling-origin backtest covering every banzuke transition since 1959.
-The promoted default, `Ar`, is a 5-seed bag of L1 gradient-boosted
-movement models whose near-tie clusters are reordered by a pairwise
-classifier that learned the committee's conflict-resolution habits
-(trained on the near-ties it actually adjudicates, via rolling
-out-of-fold base scores), feeding a resolver that applies the
-near-inviolable structure (Y/O conventions, sanyaku minimums,
-empirically-derived E/W layout, no promotion after make-koshi for
-S/K/M). See `docs/EXPERIMENTS.md` for the full experiment log and
-selection rationale.
+The promoted default, `Ar`, is a seed-bagged L1 gradient-boosted
+movement model whose near-tie clusters are reordered by a pairwise
+classifier that learned the committee's conflict-resolution habits,
+feeding a resolver that applies the near-inviolable structure (Y/O
+conventions, sanyaku minimums, empirically-derived E/W layout, no
+promotion after make-koshi for S/K/M). See `docs/EXPERIMENTS.md` for
+the full experiment log and selection rationale.
 
 The model trains on historical transitions between consecutive basho,
 using rank, win-loss results, prizes, recent form, career context, and
@@ -22,23 +20,15 @@ era features to predict each wrestler's movement. Evaluation uses a
 rolling-origin backtest that retrains on strictly earlier tournaments,
 so each prediction only uses information available at the time.
 
-Backtested performance of the current default (two independent 5-seed
-bags, averaged per basho; +- is the standard error over basho):
-
-| window | basho | exact slots /42 | GTB points | within 1 | MAE (half-ranks) | promo / demo F1 |
-|---|---:|---:|---:|---:|---:|---:|
-| 2004-2019 (tuning) | 95 | **20.3** +- 0.5 | 46.9 | 81% | 0.84 | .94 / .91 |
-| 2020-2026 (confirmation) | 40 | **17.9** +- 1.0 | 43.0 | 80% | 0.94 | .91 / .88 |
-| 2024-2026 | 17 | 20.8 +- 1.6 | 48.2 | 84% | 0.71 | .95 / .91 |
-
-GTB points are 2 per exact slot and 1 per right-rank-wrong-side. The
-2020s are harder than the 2000s-2010s for every model tried (the
-committee has created extra sanyaku slots twice as often since 2020).
-The 2020-2026 figures were used once to choose among four finalist
-configurations, so they carry some selection optimism; the first
-untouched test is the 202611 banzuke. The previous default (a single
-seed, 600/400 rounds, window-trained reranker) scored 19.2 / 16.6 /
-18.4 on the same windows.
+Backtested performance (202001-202609, 40 basho): **17.9 of 42 slots
+exactly right** per basho on average (+-1.0 standard error), **80% of
+wrestlers placed within one position**, mean absolute error 0.94
+half-ranks, juryo promotion/demotion F1 0.91/0.88, GTB score 43
+points/basho (2 per exact slot, 1 per right-rank-wrong-side). Over the
+2004-2019 window used for tuning it scores 20.3 exact slots; the 2020s
+are harder for every model tried. These figures were used to pick the
+current configuration, so the first untouched test is the 202611
+banzuke.
 
 For scale, in the long-running human "Guess the Banzuke" game
 ([dichne.com](https://www.dichne.com/Guess.htm), scored the same way:
@@ -101,39 +91,25 @@ uv run python backtest.py --end 202311         # original dev window only
 uv run python analyze.py --model Ar            # residual analysis
 ```
 
-Backtests run one target per worker process (`--workers`, up to 16)
-and report paired comparisons against a baseline you name: mean
-differences in exact slots and MAE with block-bootstrap confidence
-intervals and Wilcoxon p-values, seeds averaged within each basho.
-Parameter experiments need no code changes:
+Parameter experiments need no code changes: `--set base.n_estimators=600`
+overrides a LightGBM parameter of the movement (`base.*`) or pair
+(`pair.*`) stage or a model option, and `--baseline Ar` pairs every
+result against the defaults per basho (mean difference, bootstrap
+interval, Wilcoxon p). Results are cached per (configuration, model,
+seed, basho) in `results/scratch/`; the cache key hashes the processed
+dataset, all result-affecting source files and the configuration, so
+edits, data rebuilds and parameter changes invalidate it automatically
+(`--fresh` to force). Model training itself is never persisted:
+`predict.py` retrains on every invocation (about 30 s; `--seeds 1` for
+the fastest run), plus a one-off two minutes after each data update for
+the reranker's out-of-fold training scores.
 
-```sh
-uv run python backtest.py --models Ar --seeds 0-1 --start 200401 --end 201911 \
-    --set base.n_estimators=600 --set gap=0.5 --name old_gate --baseline Ar
-uv run python backtest.py --models Ar --config sweep.json --baseline Ar:bag5
-```
-
-`--set stage.key=value` overrides LightGBM parameters of the movement
-(`base.*`) or pair (`pair.*`) stage; bare keys are model options
-(`n_seeds`, `gap`, `cluster_max`, `pairs`, `context`, `half_life`, ...).
-Results are cached per (configuration, model, seed, basho) in
-`results/scratch/`; the cache key hashes the processed dataset, all
-result-affecting source files, the lockfile and the resolved
-configuration, so edits, data rebuilds and parameter changes
-invalidate it automatically (`--fresh` to force).
-
-Model training itself is never persisted: `predict.py` retrains on
-every invocation (~30 s for the 5-seed bag; `--seeds 1` for a single
-seed). The reranker's out-of-fold training scores are computed once per
-data update and base configuration (about two minutes, parallel) and
-cached in `results/scratch/oof/`.
-
-Both CLIs accept `--train-start BASHO` to restrict training to newer
-transitions. Tested and neutral-to-worse (docs/EXPERIMENTS.md E9, E14):
+`predict.py` and `backtest.py` accept `--train-start BASHO` to restrict
+training to newer transitions. Tested and neutral-to-worse (docs/EXPERIMENTS.md E9):
 the era features already let the models specialize to the modern
 regime, so full history remains the default.
 
-Run the tests with `uv run pytest -q` (about 10 s).
+`uv run pytest -q` runs the regression tests (a few seconds).
 
 ## Layout
 
@@ -142,8 +118,6 @@ Run the tests with `uv run pytest -q` (about 10 s).
 - `data/processed/`: committed, reproducible Parquet datasets
 - `banzuke/`: dataset build, features, models, resolver, backtest harness
 - `predict.py`, `backtest.py`, `analyze.py`: CLIs
-- `tests/`: pytest suite (resolver conventions, feature chronology,
-  model semantics, harness determinism)
-- `results/`: generated backtest reports and caches (git-ignored)
-- `docs/EXPERIMENTS.md`: experiment log, tuning protocol and
-  model-selection rationale
+- `tests/`: regression tests
+- `results/`: generated backtest reports and caches
+- `docs/EXPERIMENTS.md`: experiment log and model-selection rationale

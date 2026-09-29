@@ -51,8 +51,8 @@ change correlates -0.96 with the change in exact slots.
   in E10. LightGBM's unset seed (used before this round) is a different
   model; backtest and predict.py now share one seeded configuration.
 - Information policy: the forecast is sized like the previous banzuke
-  (`mak_size_policy=prior`; constant 42 since 2004, -0.02 slots vs
-  reading the target's size). Candidate exclusion of announced
+  (constant 42 since 2004; -0.02 slots vs reading the target's size,
+  which the harness did before). Candidate exclusion of announced
   departures is unchanged.
 - Seeds are averaged within a basho before any comparison; the paired
   unit is the basho, never rows, pairs or seeds. Bagged configurations
@@ -60,8 +60,9 @@ change correlates -0.96 with the change in exact slots.
 - Decision metric: paired **MAE** (Wilcoxon signed-rank, 6-basho
   block-bootstrap 95% CI). Secondary: GTB points (per-basho correlation
   with exact slots .93). Exact slots remain the headline and a
-  guardrail, not the selector. Reranker experiments also report
-  within-cluster pair accuracy against the prior-order baseline.
+  guardrail, not the selector. Reranker experiments (E13) also report
+  within-cluster pair accuracy against the prior-order baseline, from a
+  diagnostic used during that block.
 - Search: staged coordinate sweeps of ~40 configurations in small
   families, each a one-dimensional decision; at most 4 nested finalist
   bundles go to the confirm window. Losers are listed.
@@ -70,13 +71,14 @@ change correlates -0.96 with the change in exact slots.
   2012-2019); guardrails dExact >= -0.2, promotion/demotion F1 and
   sanyaku-set exactness >= -0.01. Ties go to the simpler configuration.
   p-values after a search are exploratory and reported as such.
-- Reproduction: every row below has a `backtest.py --set` command,
-  written against the pre-round defaults. With the current defaults the
-  round's starting point is
+- Reproduction: rows quote `backtest.py --set` overrides relative to
+  the pre-round defaults, which from the current ones are
   `--set n_seeds=1 --set base.n_estimators=600 --set pair.n_estimators=400
-  --set pairs=window --set context=false --set gap=0.5 --set cluster_max=4`
-  (add `--set n_seeds=5` for "bag5"); per-basho CSVs live in the
-  git-ignored `results/scratch/`.
+  --set near_ties=false --set context=false --set gap=0.5 --set cluster_max=4`
+  (`--set n_seeds=5` for "bag5"). Options that lost and were removed
+  afterwards (near-tie-only pair training, L2 blending, h2h/context for
+  C) are not reproducible without restoring them from git history.
+  Per-basho CSVs live in the git-ignored `results/scratch/`.
 
 ### Baseline under protocol v2 (Ar, seeds 0-4 averaged)
 
@@ -91,7 +93,7 @@ defaults above. The E10 headline (18.2 on 17 basho, one unset-seed draw) sits in
 this distribution. 2020+ is genuinely harder: the committee created an
 extra S/K slot in 37% of basho since 2020 vs 18% over 2004-2019.
 
-### Where the misses are (analyze.py, Ar seeds 0-2, 2004-2026)
+### Where the misses are (Ar seeds 0-2, 2004-2026; from analyze.py sections since trimmed)
 
 - Of 5,662 makuuchi slots, 44.3% exact; misses: 27.6% pure E/W flips,
   33.3% off by one position, 39.1% farther.
@@ -423,7 +425,7 @@ pairs it actually adjudicates: log loss 1.14 against a 0.69 coin flip.
 
 Fixes: `context=true` appends era/size columns, pair means of
 position/rank/wins/boundary distance, and both endpoints' class and
-division; `pairs=mixed` adds, to the window pairs, every pair whose
+division; `near_ties` adds, to the window pairs, every pair whose
 rolling out-of-fold base scores differ by at most `oof_gap` (OOF score
 of basho b = the backtest's own base prediction for target next(b), so
 no label is seen), with the base-score gap as a pair feature.
@@ -498,9 +500,9 @@ Screen, bag5, on the E13a winner (mixed + context, oof_gap 2, gap .5):
 
 E3's conclusion stands for L1 as well: down-weighting old transitions
 does not pay. L2 blending only helps the pre-2012 half. Neither is
-adopted. (Caveat: at the time of these runs the rolling OOF scores used
-for near-tie pair selection were built without the recency weights /
-L2 blend; the code now threads both through, so a re-run would differ
+adopted; the blend option was removed. (Caveat: the rolling OOF scores
+used for near-tie pair selection in these runs came from the unweighted,
+unblended base, so a re-run with a matching OOF table would differ
 slightly. The screen-window verdicts are clear enough not to repeat.)
 
 **LambdaRank truncation (model B, bag5, 300 rounds).** E3 blamed B's
