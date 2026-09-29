@@ -1,6 +1,6 @@
 """Ordering models. Shared interface:
 
-    Model(seed=0, n_seeds=1, base=None, pair=None, **options)
+    Model(seed=0, n_seeds=None, base=None, pair=None, **options)
     fit(train)    train: transition rows with position_next targets
     score(cands)  -> np.ndarray, lower = ranked higher
 
@@ -41,6 +41,8 @@ PAIR_PARAMS = {**BASE_PARAMS, "n_estimators": 150}
 
 
 def _seeds(seed, n_seeds):
+    if n_seeds < 1:
+        raise ValueError("n_seeds must be at least 1")
     if seed is None:
         if n_seeds != 1:
             raise ValueError("seed=None (library defaults) cannot be bagged")
@@ -186,7 +188,7 @@ class GBMRecency(GBMRegression):
     biasing training toward the modern committee's behavior."""
 
     name = "Aw"
-    OPTIONS = {"half_life": 60}
+    OPTIONS = {**GBMRegression.OPTIONS, "half_life": 60}
 
 
 class GBMRanker(_Model):
@@ -298,7 +300,8 @@ class _PairStage:
                  order (label: i stays above j)
       'oof'    - pairs whose rolling out-of-fold base scores differ by at most
                  `oof_gap`: the near-ties the reranker actually adjudicates
-      'mixed'  - both
+      'mixed'  - both (a near-tie that is also a local pair appears twice,
+                 i.e. carries double weight; this is the tuned/confirmed form)
     With 'oof'/'mixed' the base-score gap is a pair feature, so `oof` (a
     frame basho, rikishi_id, oof from oof_base_scores) is required."""
 
@@ -355,14 +358,17 @@ class _PairStage:
 
 
 def oof_base_scores(trans, base_params, objective, seeds, min_history=60, workers=1,
-                    cache_dir=None):
+                    cache_dir=None, half_life=None, blend_l2=0.0, train_start=None):
     """Rolling out-of-fold base scores for every labeled transition: rows of
     source basho b are scored by a base bag trained on transitions labeled at
     or before b (next_basho <= b), i.e. the backtest's own base prediction for
-    target next(b), so no row is scored by a model that saw its label.
-    Basho with fewer than `min_history` labeled predecessors get no score.
-    Cached on disk under a key of the configuration and the data."""
+    target next(b), so no row is scored by a model that saw its label. The
+    base bag is built exactly as the model's own (params, objective, seeds,
+    recency weights, L2 blend, training cutoff). Basho with fewer than
+    `min_history` labeled predecessors get no score. Cached on disk under a
+    key of the configuration, this code and the data."""
     import hashlib
+    import inspect
     import json
     from concurrent.futures import ProcessPoolExecutor
     from multiprocessing import get_context
@@ -371,8 +377,10 @@ def oof_base_scores(trans, base_params, objective, seeds, min_history=60, worker
     from banzuke.build import PROCESSED
 
     lab = trans[trans["position_next"].notna()]
-    key_src = json.dumps({"base": base_params, "objective": objective, "seeds": seeds,
-                          "min_history": min_history, "features": FEATURES}, sort_keys=True)
+    spec = {"base": base_params, "objective": objective, "seeds": list(seeds),
+            "half_life": half_life, "blend_l2": blend_l2, "train_start": train_start}
+    key_src = json.dumps({**spec, "min_history": min_history, "features": FEATURES},
+                         sort_keys=True) + inspect.getsource(_oof_one)
     data_hash = pd.util.hash_pandas_object(
         lab[["basho", "rikishi_id", "position_next"] + FEATURES], index=False).to_numpy()
     key = hashlib.sha256(key_src.encode() + data_hash.tobytes()).hexdigest()[:16]
@@ -386,13 +394,13 @@ def oof_base_scores(trans, base_params, objective, seeds, min_history=60, worker
     print(f"computing rolling out-of-fold base scores for {len(todo)} basho x "
           f"{len(seeds)} seed(s) ({workers} workers; cached afterwards)...",
           file=sys.stderr, flush=True)
-    args = [(b, base_params, objective, seeds) for b in todo]
+    args = [(b, spec) for b in todo]
     if workers > 1:
         with ProcessPoolExecutor(workers, mp_context=get_context("spawn"),
                                  initializer=_oof_init, initargs=(lab,)) as ex:
             parts = list(ex.map(_oof_one, args, chunksize=4))
     else:
-        _oof_init(lab)
+        _oof_init(lab, limit_threads=False)
         parts = [_oof_one(a) for a in args]
     out = pd.concat(parts, ignore_index=True)
     cache_dir.mkdir(parents=True, exist_ok=True)
@@ -405,29 +413,32 @@ def oof_base_scores(trans, base_params, objective, seeds, min_history=60, worker
 _OOF_LAB = None
 
 
-def _oof_init(lab):
+def _oof_init(lab, limit_threads=True):
     global _OOF_LAB
     _OOF_LAB = lab
-    try:
-        from threadpoolctl import threadpool_limits
-        threadpool_limits(1)
-    except ImportError:
-        pass
+    if limit_threads:
+        try:
+            from threadpoolctl import threadpool_limits
+            threadpool_limits(1)
+        except ImportError:
+            pass
 
 
 def _oof_one(args):
-    b, base_params, objective, seeds = args
+    b, spec = args
     lab = _OOF_LAB
     train = lab[lab["next_basho"] <= b]
+    if spec["train_start"]:
+        train = train[train["basho"] >= spec["train_start"]]
     rows = lab[lab["basho"] == b]
-    preds = np.mean([
-        LGBMRegressor(objective=objective, **_seeded(base_params, s))
-        .fit(train[FEATURES], train["delta"]).predict(rows[FEATURES])
-        for s in seeds
-    ], axis=0)
+    base = type("_OOFBase", (GBMRegression,), {"objective": spec["objective"]})(
+        seed=0, n_seeds=len(spec["seeds"]), base=spec["base"],
+        half_life=spec["half_life"], blend_l2=spec["blend_l2"])
+    base.seeds = list(spec["seeds"])
+    base.fit(train)
     return pd.DataFrame({"basho": rows["basho"].to_numpy(),
                          "rikishi_id": rows["rikishi_id"].to_numpy(),
-                         "oof": rows["position"].to_numpy() + preds})
+                         "oof": base.score(rows)})
 
 
 class PairwiseBT(_Model):
@@ -467,6 +478,7 @@ class GBMRerank(GBMMedian):
     context: append absolute/era context to the pair feature differences
     pairs, oof_gap, oof: training-pair selection, see _PairStage; 'oof' and
         'mixed' need Model.prepare(kwargs, trans) to supply rolling OOF scores
+    oof_min_history: labeled basho required before a basho gets an OOF score
     After score(), `last_pairs` holds (i, j, p, in_window) for the pairs the
     reranker adjudicated, for diagnostics.
     """
@@ -477,7 +489,7 @@ class GBMRerank(GBMMedian):
                "oof": None, "oof_min_history": 60}
 
     @classmethod
-    def prepare(cls, kwargs, trans, workers=1):
+    def prepare(cls, kwargs, trans, workers=1, train_start=None):
         """Target-independent inputs computed once per configuration: rolling
         OOF base scores when training pairs are selected by base near-ties.
         Returns kwargs extended with them. Uses the configuration's seed-0
@@ -486,7 +498,8 @@ class GBMRerank(GBMMedian):
             return kwargs
         proto = cls(**{k: v for k, v in kwargs.items() if k != "seed"})
         oof = oof_base_scores(trans, proto.base_params, proto.objective, proto.seeds,
-                              proto.oof_min_history, workers)
+                              proto.oof_min_history, workers, half_life=proto.half_life,
+                              blend_l2=proto.blend_l2, train_start=train_start)
         return {**kwargs, "oof": oof}
 
     def fit(self, train):

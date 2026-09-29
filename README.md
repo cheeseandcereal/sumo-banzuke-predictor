@@ -101,7 +101,7 @@ uv run python backtest.py --end 202311         # original dev window only
 uv run python analyze.py --model Ar            # residual analysis
 ```
 
-Backtests run one target per worker process (`--workers`, default 16)
+Backtests run one target per worker process (`--workers`, up to 16)
 and report paired comparisons against a baseline you name: mean
 differences in exact slots and MAE with block-bootstrap confidence
 intervals and Wilcoxon p-values, seeds averaged within each basho.
@@ -125,8 +125,8 @@ invalidate it automatically (`--fresh` to force).
 Model training itself is never persisted: `predict.py` retrains on
 every invocation (~30 s for the 5-seed bag; `--seeds 1` for a single
 seed). The reranker's out-of-fold training scores are computed once per
-data update (about two minutes, parallel) and cached in
-`results/scratch/oof/`.
+data update and base configuration (about two minutes, parallel) and
+cached in `results/scratch/oof/`.
 
 Both CLIs accept `--train-start BASHO` to restrict training to newer
 transitions. Tested and neutral-to-worse (docs/EXPERIMENTS.md E9, E14):
