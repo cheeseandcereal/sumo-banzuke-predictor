@@ -15,9 +15,10 @@ Overrides (constrain the assignment; the model fills everything else):
     --interactive       train once, then iterate on overrides instantly
 
 Markers before each name flag where to look: ! occupies an S/K slot the
-rules created, ?/?? one/two uncertainty signals (tight ordering call,
-seed disagreement), ~ big move. The review list under the sheet names
-the decisions behind them with an override to test the alternative.
+rules created, ? low confidence, ?? very low confidence (from tight
+ordering calls and seed disagreement), ~ big move. The review list under
+the sheet names the decisions behind them with an override to test the
+alternative.
 """
 import argparse
 import sys
@@ -120,8 +121,8 @@ def render(pred, ov, warnings, items, baseline, target, latest, args):
             print(f"  - {w}")
 
     if items:
-        print("\nreview (least confident first; ! created slot, ?? two signals, "
-              "? one signal, ~ big move):")
+        print("\nreview (least confident first; ! created slot, ?? very low confidence, "
+              "? low confidence, ~ big move):")
         print("  base score: the model's predicted position in cells before reranking; "
               "neighbours under .25 apart are coin flips")
         fmt = (lambda f, s: f"{f} {s}") if args.interactive else (lambda f, s: f'--{f} "{s}"')

@@ -71,9 +71,9 @@ and warns when an override breaks a banzuke convention (demoting a
 yokozuna, dropping a kachi-koshi sanyaku incumbent, etc.).
 
 A marker column before each name says where to look: `!` occupies an
-S/K slot the rules created for a promotion claim, `?`/`??` one/two
-uncertainty signals (a tight ordering call the model made itself,
-seed disagreement), `~` a big move whose landing spot is noisy. A
+S/K slot the rules created for a promotion claim, `?` low and `??` very
+low confidence (scored from tight ordering calls the model made itself
+and from seed disagreement), `~` a big move whose landing spot is noisy. A
 `review` list under the sheet names the decisions behind them, least
 confident first, with the override that tests the alternative and, for
 created slots, how often the committee honoured such claims and how many

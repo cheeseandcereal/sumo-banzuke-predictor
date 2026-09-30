@@ -1,8 +1,9 @@
 """Confidence markers and review items for a predicted banzuke.
 
-Signals per rikishi: a tight ordering boundary (small base-score gap to a
-neighbour the model itself ranked, not a rule), seed spread >= 1, and
-seed spread >= 2. Big moves get their own flag. Structural items cover
+Uncertainty score per rikishi: +1 for a tight ordering boundary (small
+base-score gap to a neighbour the model itself ranked, not a rule), +1 for
+seed spread >= 1, +1 more for spread >= 2. Score 1 = low confidence (?),
+2+ = very low (??). Big moves get their own flag. Structural items cover
 created S/K slots, with historical precedent for the claim behind them.
 Pure functions, no I/O.
 """
@@ -14,7 +15,7 @@ from banzuke.overrides import CLS_CHARS, OverrideError, fmt_slot
 from banzuke.resolver import forced_claims, resolve
 
 # Ar model, 2024-2026 backtest, 3 seeds, exact / far (>1 position off):
-# 0 signals 60% / 11%, 1 signal 35% / 22%, 2+ signals 25% / 37%.
+# score 0 60% / 11%, score 1 35% / 22%, score 2+ 25% / 37%.
 # Incumbents moving 8+ half-ranks: climbs 36% exact, drops 25% / 43% far;
 # juryo promotees landing 8+ cells above the last makuuchi cell 25% / 67%.
 TIGHT_GAP = 0.25  # base-score gap below which a boundary is a tight call
