@@ -70,6 +70,17 @@ Output annotates pinned cells, marks every wrestler your override moved
 and warns when an override breaks a banzuke convention (demoting a
 yokozuna, dropping a kachi-koshi sanyaku incumbent, etc.).
 
+A marker column before each name says where to look: `!` occupies an
+S/K slot the rules created for a promotion claim, `?`/`??` one/two
+uncertainty signals (a tight ordering call the model made itself,
+seed disagreement), `~` a big move whose landing spot is noisy. A
+`review` list under the sheet names the decisions behind them, least
+confident first, with the override that tests the alternative and, for
+created slots, how often the committee honoured such claims and how many
+cells shift without one. Backtested on 2024-2026: unmarked cells are
+exact 60% of the time, `?` 35%, `??` 25%; `uv run python analyze.py`
+prints the calibration.
+
 Fetch available data and rebuild the processed datasets after a banzuke
 release or completed basho (completed tournaments are skipped):
 

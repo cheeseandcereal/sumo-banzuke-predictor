@@ -13,6 +13,11 @@ Overrides (constrain the assignment; the model fills everything else):
     --count S=3         force the sekiwake/komusubi slot count
     --pin X=M2E         exact cell
     --interactive       train once, then iterate on overrides instantly
+
+Markers before each name flag where to look: ! occupies an S/K slot the
+rules created, ?/?? one/two uncertainty signals (tight ordering call,
+seed disagreement), ~ big move. The review list under the sheet names
+the decisions behind them with an override to test the alternative.
 """
 import argparse
 import sys
@@ -21,7 +26,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from banzuke import models
+from banzuke import confidence, models
 from banzuke.build import JURYO, KOMUSUBI, OZEKI, SEKIWAKE
 from banzuke.overrides import OverrideError, parse, splice, verify
 from banzuke.resolver import resolve
@@ -42,27 +47,37 @@ def label(c, n, s):
     return f"{CLS[int(c)]}{int(n)}{'EW'[int(s)]}"
 
 
-def predict(cands, scores_list, ov, mak_size):
+def predict(cands, scores_list, ov, mak_size, base=None, rates=None):
     """Splice relative overrides into each seed's order, resolve with the
-    structural overrides. Returns (merged seed-0 pred, warnings)."""
+    structural overrides. Returns (merged seed-0 pred, warnings, review items).
+    base: mean base score per rikishi (Series); drives the confidence markers."""
     rids = cands["rikishi_id"].to_numpy()
     pos = cands["position"].to_numpy()
-    preds, warnings = [], []
+    preds, pseudos, warnings = [], [], []
     for k, sc in enumerate(scores_list):
         order = [rids[i] for i in np.lexsort((pos, sc))]
         rank = {r: j for j, r in enumerate(splice(order, ov["relative"]))}
-        pseudo = np.array([rank[r] for r in rids], dtype=float)
-        preds.append(resolve(cands, pseudo, mak_size, overrides=ov,
+        pseudos.append(np.array([rank[r] for r in rids], dtype=float))
+        preds.append(resolve(cands, pseudos[-1], mak_size, overrides=ov,
                              warnings=warnings if k == 0 else None))
     pred = preds[0].merge(cands, on="rikishi_id")
-    spread = (
-        pd.concat(preds).groupby("rikishi_id")["pred_pos"].agg(lambda s: s.max() - s.min())
-    )
-    pred["spread"] = pred["rikishi_id"].map(spread)
-    return pred, warnings
+    if base is None:
+        base = pd.Series(scores_list[0], index=rids)
+    final = pd.Series(pseudos[0], index=rids)
+    named = {r for _, chain, _ in ov["relative"] for seg in chain for r in seg}
+    named |= set(ov["class"]) | set(ov["pins"])
+    sig = confidence.signals(pred, base, final, preds, skip=named)
+    pred = pred.join(sig)
+    items = confidence.review(pred, sig, base, final, skip=named)
+    if rates is not None:
+        items = confidence.structural(pred, cands, pseudos[0], mak_size, ov, rates) + items
+    for it in items:
+        if it["marker"] == "!":
+            pred.loc[pred["rikishi_id"] == it["rid"], "marker"] = "!"
+    return pred, warnings, items
 
 
-def render(pred, ov, warnings, baseline, target, latest, args):
+def render(pred, ov, warnings, items, baseline, target, latest, args):
     print(f"predicted makuuchi banzuke for {target} "
           f"(from {latest} results, model {args.model}, {args.seeds} seeds)\n")
     mak = pred[pred["pred_class"] < JURYO].sort_values("pred_pos")
@@ -74,23 +89,21 @@ def render(pred, ov, warnings, baseline, target, latest, args):
         rec = f"{int(r['wins'])}-{int(r['losses'])}"
         if r["absences"]:
             rec += f"-{int(r['absences'])}"
-        out = f"{r['shikona']:<14} ({prev:>4} {rec})"
+        out = f"{r['marker']:<3} {r['shikona']:<14} ({prev:>4} {rec})"
         if r["rikishi_id"] in ov["pins"]:
             out += " [pin]"
         now = label(r["pred_class"], r["pred_number"], r["pred_side"])
         was = baseline.get(r["rikishi_id"])
         if was and was != now:
             out += f" <-{was}"
-        if r["spread"] > 2:
-            out += f" +-{r['spread']:.0f}"
         return out
 
     slots: dict = {}
     for _, r in mak.iterrows():
         slots.setdefault((r["pred_class"], r["pred_number"]), {})[r["pred_side"]] = r
     east = {k: cell(s.get(0)) for k, s in slots.items()}
-    width = max([34] + [len(c) + 2 for c in east.values()])
-    print(f"       {'EAST':<{width}}{'WEST'}")
+    width = max([38] + [len(c) + 2 for c in east.values()])
+    print(f"{'':11}{'EAST':<{width}}WEST")
     for key in sorted(slots):
         lab = f"{CLS[int(key[0])]}{int(key[1])}"
         print(f"  {lab:>3}  {east[key]:<{width}}{cell(slots[key].get(1))}".rstrip())
@@ -105,6 +118,17 @@ def render(pred, ov, warnings, baseline, target, latest, args):
         print("\nwarnings:")
         for w in warnings:
             print(f"  - {w}")
+
+    if items:
+        print("\nreview (least confident first; ! created slot, ?? two signals, "
+              "? one signal, ~ big move):")
+        fmt = (lambda f, s: f"{f} {s}") if args.interactive else (lambda f, s: f'--{f} "{s}"')
+        for it in items:
+            head = f"  {it['marker']:<2} {it['range']:<10}"
+            who = " > ".join(it["members"]) + "   " if "members" in it else ""
+            print(f"{head} {who}{it['text']}")
+            if it["hints"]:
+                print(f"{'':16}try " + "  or  ".join(fmt(f, s) for f, s in it["hints"]))
 
     notes = []
     for _, r in pred.iterrows():
@@ -187,7 +211,7 @@ def main():
     ap.add_argument("--retired", default="", help="comma-separated shikona to exclude")
     ap.add_argument("--mak-size", type=int, default=42)
     ap.add_argument("--seeds", type=int, default=5,
-                    help="ensemble size for the uncertainty column")
+                    help="ensemble size; seed disagreement feeds the confidence markers")
     ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
                     help="ignore training transitions before this basho")
     ap.add_argument("--above", action="append", default=[], metavar='"A > B"')
@@ -226,22 +250,26 @@ def main():
 
     # train once per seed; everything downstream is instant
     print("training...", file=sys.stderr)
-    scores_list = []
+    scores_list, bases = [], []
     for seed in range(args.seeds):
         models.LGB_PARAMS["random_state"] = seed
         model = models.MODELS[args.model]()
         model.fit(train)
         scores_list.append(model.score(cands))
+        bases.append(getattr(model, "base_score", model.score)(cands))
+    base = pd.Series(np.mean(bases, axis=0), index=cands["rikishi_id"].to_numpy())
+    rates = confidence.claim_rates(trans)
 
-    base = resolve(cands, scores_list[0], args.mak_size)
+    base_pred = resolve(cands, scores_list[0], args.mak_size)
     baseline = {r: label(c, n, s) for r, c, n, s in zip(
-        base["rikishi_id"], base["pred_class"], base["pred_number"], base["pred_side"])}
+        base_pred["rikishi_id"], base_pred["pred_class"], base_pred["pred_number"],
+        base_pred["pred_side"])}
 
     def run(state):
         ov = parse(cands, above=state["above"], below=state["below"],
                    classes=state["class"], counts=state["count"], pins=state["pin"])
-        pred, warnings = predict(cands, scores_list, ov, args.mak_size)
-        render(pred, ov, warnings, baseline, target, latest, args)
+        pred, warnings, items = predict(cands, scores_list, ov, args.mak_size, base, rates)
+        render(pred, ov, warnings, items, baseline, target, latest, args)
 
     state = {"above": args.above, "below": args.below, "class": args.cls,
              "count": args.count, "pin": args.pin}
