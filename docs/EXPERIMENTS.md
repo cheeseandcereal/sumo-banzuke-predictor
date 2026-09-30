@@ -654,6 +654,40 @@ after. Re-run `uv run python -m experiments.grouping describe|backtest`
 after future model changes; the events parquet it writes is where an
 anchor signal would show up if more data accrues.
 
+### E16 on the tuned Ar (this branch, bag of 5, 3 seeds)
+
+Same harness, same cache window, baseline 19.61 exact / MAE .867. The
+tuned reranker behaves differently around twins:
+
+- it keeps identical-record twins adjacent in only 46% of its orders vs
+  the committee's 69% (main's Ar: 65%); one-interloper splits 170 vs 97.
+  It inverts twins once in 438, so `keep_twin_order` touches 1 frame
+  (-1 slot, noise) here.
+- the anchor is still a coin flip: on 142 kept splits the interloper
+  went where the base-midpoint rule says 54%, the came-from rule 50%.
+- glue twins whatever the interloper count, midpoint anchor: full +0.17
+  exact/basho (50-32, Wilcoxon p=.036, CI -0.00..+0.33), screen
+  2004-2019 +0.19, 2014+ +0.14, confirm 2020+ +0.11 (13-10, CI
+  -0.20..+0.43); MAE +.004 full, .000 confirm. One-interloper only:
+  +0.14 / +0.18 / +0.11 / +0.07 with MAE neutral everywhere.
+- the pre-registered primary here (one interloper, all-below anchor,
+  q=.50 on the screen) made +0.17 on the full window (Wilcoxon p=.024)
+  but -0.03 on the confirm window with MAE +.004: fails the bar.
+- per event (162 split twin pairs touching makuuchi, glued in
+  isolation): +0.19 slots each under the midpoint anchor (72-44-46, sign
+  p=.012), and positive whether the committee kept the pair (+0.20) or
+  split it (+0.18). The tuned reranker's placement of the interloper is
+  itself noisy, so consolidating the trio helps either way.
+- oracle ceiling is larger than on main: +0.50/basho for twins, +0.71
+  for identical-record chains.
+
+Status: suggestive, not confirmed. The mechanism is significant, the
+global effect (+0.1 to +0.17/basho, one slot every 6-10 basho) has a
+confirm-window CI that includes zero, and the variant was one of a
+grid. If pursued: make it an Ar option so it runs through the seeded
+protocol with `--set`, and first look at why the near-tie pair stage
+splits twins 1.5x more often than the committee does.
+
 ## Known limitations / future leads (updated 2026-09)
 
 - Juryo promotee placement is still under-promoted (+0.64 positions
