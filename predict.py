@@ -69,7 +69,7 @@ def predict(cands, scores_list, ov, mak_size, base=None, rates=None):
     named |= set(ov["class"]) | set(ov["pins"])
     sig = confidence.signals(pred, base, final, preds, skip=named)
     pred = pred.join(sig)
-    items = confidence.review(pred, sig, base, final, skip=named)
+    items = confidence.review(pred, sig, base, final, preds, skip=named)
     if rates is not None:
         items = confidence.structural(pred, cands, pseudos[0], mak_size, ov, rates) + items
     for it in items:

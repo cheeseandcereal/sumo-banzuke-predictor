@@ -22,10 +22,11 @@ TIGHT_GAP = 0.25  # base-score gap below which a boundary is a tight call
 BIG_MOVE = 8      # half-ranks
 
 
-def boundaries(pred, base, final, skip=()):
+def boundaries(pred, base, final, skip=(), seed_preds=()):
     """One row per consecutive pair in the resolved order. `decided` marks
     boundaries the model ordered itself: final order agrees, outside Y/O
-    (base scores there are compressed and meaningless), no override."""
+    (base scores there are compressed and meaningless), no override.
+    `flips` counts the single-seed runs that order the pair the other way."""
     p = pred.sort_values("pred_pos")
     rid, cls = p["rikishi_id"].to_numpy(), p["pred_class"].to_numpy()
     b = pd.DataFrame({"upper": rid[:-1], "lower": rid[1:]})
@@ -37,6 +38,11 @@ def boundaries(pred, base, final, skip=()):
     )
     b["tight"] = b["decided"] & (b["gap"] < TIGHT_GAP)
     b["inverted"] = b["decided"] & (b["gap"] < 0)
+    b["flips"] = 0
+    for sp in seed_preds:
+        pos = sp.set_index("rikishi_id")["pred_pos"]
+        b["flips"] += (pos.reindex(b["lower"]).to_numpy()
+                       < pos.reindex(b["upper"]).to_numpy()) & b["decided"]
     return b
 
 
@@ -73,17 +79,18 @@ def _gap(g):
     return s.replace("0.", ".", 1) if s.lstrip("-").startswith("0.") else s
 
 
-def review(pred, sig, base, final, skip=()):
-    """Review items, one per run of consecutive tight boundaries starting in
-    makuuchi, sorted least-confident first (most "??" members, then gap)."""
+def review(pred, sig, base, final, seed_preds=(), skip=()):
+    """Review items, one per run of consecutive boundaries that are tight or
+    flip across seeds, starting in makuuchi, sorted least-confident first
+    (most "??" members, then gap)."""
     p = pred.sort_values("pred_pos").reset_index(drop=True)
-    b = boundaries(p, base, final, skip)
+    b = boundaries(p, base, final, skip, seed_preds)
     sg = sig.set_axis(pred["rikishi_id"].to_numpy())
     name = dict(zip(p["rikishi_id"], p["shikona"]))
     slot = [fmt_slot(c, n, s) for c, n, s in
             zip(p["pred_class"], p["pred_number"], p["pred_side"])]
     items = []
-    t = b.index[b["tight"]]
+    t = b.index[b["tight"] | (b["flips"] > 0)]
     for _, run in pd.Series(t).groupby((t - np.arange(len(t))).to_numpy()):
         i, j = run.iloc[0], run.iloc[-1]
         if p["pred_class"].iat[i] == JURYO:
@@ -102,7 +109,14 @@ def review(pred, sig, base, final, skip=()):
                 + ")")
             hints += [("above", f"{name[lo]} > {name[up]}")
                       for up, lo in zip(inv["upper"], inv["lower"])]
-        if rows["spread"].max() >= 1:
+        fl = bnd[bnd["flips"] > 0]
+        if len(fl):
+            parts.append(", ".join(
+                f"{f} of {len(seed_preds)} seeds put {name[lo]} above {name[up]}"
+                for up, lo, f in zip(fl["upper"], fl["lower"], fl["flips"])))
+            hints += [("above", f"{name[lo]} > {name[up]}")
+                      for up, lo in zip(fl["upper"], fl["lower"])]
+        if rows["spread"].max() >= 1 and not len(fl):
             parts.append(f"position varies by up to {rows['spread'].max()} across seeds")
         for r in rids[rows["big_move"].to_numpy()]:
             if any(name[r] in s for _, s in hints):
