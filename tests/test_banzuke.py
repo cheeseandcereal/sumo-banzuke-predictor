@@ -131,6 +131,26 @@ def test_resolver_make_koshi_ceiling_and_block_order(cands_for):
         assert len(mk) > 10 and all(q >= p for p, q in zip(prior, zip(*[mk[c] for c in CELL])))
 
 
+def test_resolver_keeps_identical_record_twins_in_order(cands_for):
+    # E16: E and W of one M/J rank with the same record never swap. 202609:
+    # Gonoyama (M2E) / Churanoumi (M2W), both 7-8, landed M2E/M2W; with their
+    # scores exchanged the resolver still emits them in prior order, and the
+    # rest of the sheet is untouched
+    cands, pred = _true_order(cands_for, 202609)
+    scores = cands["position_next"].to_numpy(dtype=float)
+    names = cands["shikona"]
+    e, w = names.eq("Gonoyama").idxmax(), names.eq("Churanoumi").idxmax()
+    assert cands.loc[[e, w], ["rank_class", "rank_number", "wins", "losses"]].nunique().eq(1).all()
+    swapped = scores.copy()
+    swapped[[e, w]] = swapped[[w, e]]
+    assert (resolve(cands, swapped, 42).to_numpy() == pred.to_numpy()).all()
+    # a pair with different records is not protected: swapping does swap
+    others = names.eq("Kotoeiho").idxmax(), names.eq("Gonoyama").idxmax()
+    swapped = scores.copy()
+    swapped[list(others)] = swapped[list(others)[::-1]]
+    assert not (resolve(cands, swapped, 42).to_numpy() == pred.to_numpy()).all()
+
+
 def test_seed_and_option_semantics():
     assert _seeds(0, 1) == [0] and _seeds(1, 5) == [5, 6, 7, 8, 9] and _seeds(None, 1) == [None]
     with pytest.raises(ValueError):
