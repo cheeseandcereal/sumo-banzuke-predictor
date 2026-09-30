@@ -1,6 +1,7 @@
 """Invariant suite on the committed processed data: chronological features,
 resolver conventions, model seed/option semantics, bagging, reranking, OOF
-scores, backtest determinism, summarize() statistics, predict() assembly."""
+scores, backtest determinism, summarize() statistics, predict() assembly,
+forced S/K claims, confidence signals and review items."""
 import sys
 from itertools import product
 from pathlib import Path
@@ -14,14 +15,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import predict  # noqa: E402
-from banzuke.build import KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE  # noqa: E402
+from banzuke import confidence  # noqa: E402
+from banzuke.build import KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA  # noqa: E402
 from banzuke.features import FEATURES, build_transitions  # noqa: E402
 from banzuke.harness import METRICS, parse_seeds, parse_sets, run_backtest, summarize  # noqa: E402
 from banzuke.metrics import evaluate  # noqa: E402
 from banzuke.models import (MODELS, GBMMedian, GBMRanker, GBMRerank, RulesBaseline,  # noqa: E402
                             _gap_pairs, _seeds, _window_pairs, oof_base_scores)
 from banzuke.overrides import parse  # noqa: E402
-from banzuke.resolver import block_slots, resolve  # noqa: E402
+from banzuke.resolver import block_slots, forced_claims, resolve  # noqa: E402
 
 PROCESSED = ROOT / "data" / "processed"
 SMALL = {"n_seeds": 1, "base": {"n_estimators": 20}}  # the GBMs default to a 5-seed bag
@@ -257,3 +259,83 @@ def test_predict_spread(trans):
     assert (pred["spread"] == 0).all()  # a constant shift keeps the order
     pred, _, _ = predict.predict(cands, point, [point, point[::-1]], ov, 42)
     assert (pred["spread"] > 0).any()
+
+
+def test_forced_claims_matches_resolver(trans):
+    cands = trans[(trans["basho"] == 202609) & ~trans["dropped"]].reset_index(drop=True)
+    claims = forced_claims(cands)
+    assert all(v.dtype == bool and v.shape == (len(cands),) for v in claims.values())
+    kk_s = (cands["rank_class"] == SEKIWAKE) & (cands["kk"] == 1)
+    assert kk_s.any() and (claims["s"] | ~kk_s).all()
+    # claims are honoured, and a block only grows past 2 when claims force it
+    pred = resolve(cands, cands["position"].to_numpy(dtype=float), 42)
+    m = cands.merge(pred, on="rikishi_id")
+    for c, mask in ((SEKIWAKE, claims["s"]), (KOMUSUBI, claims["k"])):
+        holders = set(cands.loc[mask, "rikishi_id"])
+        assert (m.loc[m["rikishi_id"].isin(holders), "pred_class"] <= c).all()
+        block = set(m.loc[m["pred_class"] == c, "rikishi_id"])
+        assert len(block) == max(2, len(block & holders))
+
+
+def _synthetic(invert=False):
+    """Eight-row makuuchi: Y, O, then six maegashira in pred order. Base scores
+    put rows 2-3 0.1 apart (a tight call) and the rest 2 apart; `invert` has
+    the base order of that pair disagree with the resolved order."""
+    n = 8
+    pred = pd.DataFrame({
+        "rikishi_id": np.arange(n), "shikona": [f"R{i}" for i in range(n)],
+        "pred_pos": np.arange(n), "pred_class": [YOKOZUNA, OZEKI] + [MAEGASHIRA] * 6,
+        "pred_number": [1, 1, 1, 1, 2, 2, 3, 3], "pred_side": [0, 0, 0, 1, 0, 1, 0, 1],
+        "position": np.arange(n), "division": 0, "rank_class": MAEGASHIRA,
+        "rank_number": 1, "side": 0, "wins": 8, "losses": 7, "absences": 0,
+    })
+    base = pd.Series([0.0, 1.0, 2.0, 2.1, 4.1, 6.1, 8.1, 10.1], index=pred["rikishi_id"])
+    if invert:
+        base[2], base[3] = 2.1, 2.0
+    final = pd.Series(pred["pred_pos"].to_numpy(), index=pred["rikishi_id"])
+    return pred, base, final
+
+
+def test_confidence_signals_tiers():
+    pred, base, final = _synthetic()
+    pred.loc[6, "position"] = 16  # incumbent climbing 10 half-ranks
+    sig = confidence.signals(pred, base, final)
+    assert sig.index.equals(pred.index)
+    assert (sig.loc[[0, 1], "gap"] == np.inf).all() and (sig.loc[[0, 1], "tier"] == "").all()
+    assert sig.loc[[2, 3], "tight"].all() and (sig.loc[[2, 3], "tier"] == "?").all()
+    assert (sig.loc[[4, 5, 6, 7], "tier"] == "").all() and (sig["spread"] == 0).all()
+    assert sig["big_move"].tolist() == [False] * 6 + [True, False]
+    assert sig.loc[6, "marker"] == "~" and sig.loc[6, "move"] == -10
+    # two seed orders that swap rows 5 and 7: spread 2 for both, "??" without tightness
+    s1 = pred[["rikishi_id", "pred_pos"]]
+    s2 = s1.assign(pred_pos=s1["pred_pos"].replace({5: 7, 7: 5}))
+    sig = confidence.signals(pred, base, final, [s1, s2])
+    assert sig.loc[5, "spread"] == 2 and sig.loc[5, "tier"] == "??" and not sig.loc[5, "tight"]
+    assert sig.loc[7, "tier"] == "??" and (sig.loc[[2, 3], "tier"] == "?").all()
+    assert sig["marker"].str.len().max() <= 3
+
+
+def test_confidence_review_hint_restores_base_order():
+    pred, base, final = _synthetic(invert=True)
+    sig = confidence.signals(pred, base, final)
+    assert sig.loc[[2, 3], "inverted"].all() and sig.loc[2, "gap"] == pytest.approx(-0.1)
+    items = confidence.review(pred, sig, base, final)
+    assert len(items) == 1
+    it = items[0]
+    assert it["marker"] == "?" and it["range"] == "M1E-M1W" and it["members"] == ["R2", "R3"]
+    assert ("above", "R3 > R2") in it["hints"]  # base-higher R3 named first
+    assert "model put R3 below R2" in it["text"]
+    # a skipped (overridden) pair is not a model decision: no item
+    assert confidence.review(pred, sig, base, final, skip={2}) == []
+
+
+def test_claim_rates_reference(trans):
+    rates = confidence.claim_rates(trans)
+    assert rates.attrs["since"] == 199001
+    s = rates[rates["claimed"] == SEKIWAKE]
+    assert int(s["n"].sum()) == 18 and int(s["honoured"].sum()) == 18
+    cell = rates.set_index(["claimed", "rank_class", "rank_number", "wins"]).loc[
+        (KOMUSUBI, MAEGASHIRA, 1, 8)]
+    assert int(cell["n"]) == 17 and int(cell["honoured"]) == 10
+    txt = confidence.precedent(rates, KOMUSUBI, MAEGASHIRA, 1, 8)
+    assert txt == "M1 claims with 8 wins needing a created slot were honoured 10 of 17 since 1990"
