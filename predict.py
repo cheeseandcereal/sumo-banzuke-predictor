@@ -71,7 +71,7 @@ def predict(cands, point, per_seed, ov, mak_size, base=None, rates=None):
     named |= set(ov["class"]) | set(ov["pins"])
     sig = confidence.signals(pred, base, final, preds[1:], skip=named)
     pred = pred.join(sig)
-    items = confidence.review(pred, sig, base, final, preds, skip=named)
+    items = confidence.review(pred, sig, base, final, preds[1:], skip=named)
     if rates is not None:
         items = confidence.structural(pred, cands, pseudos[0], mak_size, ov, rates) + items
     for it in items:
