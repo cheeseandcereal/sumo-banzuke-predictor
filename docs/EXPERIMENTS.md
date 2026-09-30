@@ -240,6 +240,72 @@ silently overriding the convention. The resolver refactor that made
 slots addressable (block_slots) reproduced the committed holdout
 results exactly, 144/144 (model, basho) rows.
 
+## E16: same-rank E/W "twins" kept adjacent (2026-09)
+
+(Numbered after the protocol-v2 round E11-E15 on the tuning branch.)
+
+Hypothesis: when M8e and M8w post the same record, the committee keeps
+them adjacent on the next banzuke even if a third wrestler's individual
+movement would land between them, and the per-rikishi model splits such
+pairs too often. Tooling: `experiments/grouping.py`, a post-processing
+harness on analyze.py's cached Ar predictions (2004-2026, 135 targets,
+3 seeds). A variant permutes the model's order, re-resolves and
+re-evaluates, so every comparison is exactly paired with no retraining.
+
+Committee behavior (237 maegashira twin pairs, 201 juryo):
+
+- identical-record E/W twins stay adjacent 66% (M) / 72% (J) of the time
+  vs 2.5% for E/W pairs with different records; prior order (E above W)
+  is kept in 100% of cases. Stable across eras (66/66/66%) and zones.
+- identical-record pairs that are adjacent but straddle a rank number
+  (M8w + M9e) are only 47% adjacent: the effect is specific to twins.
+- 89% of maegashira twin splits are by exactly one intruder, a faller
+  with fewer wins or a climber with more (47/53%).
+- 7-8 twins are the stickiest (86% adjacent, n=90); 8-7 62%, 9-6 62%.
+
+Model behavior (Ar): twins land adjacent in 65% of its orders vs the
+committee's 68%; both agree in 62% of pairs. The model's interloper count
+barely predicts the committee (kept 73% with no interloper, 60% with
+one, 58% with two or more). Ar inverts twins in 12 of 438 pairs where
+the committee never does. Crucially, when the committee keeps a pair the
+model split, which side the interloper ends up on is a coin flip for
+every simple rule (base-score midpoint .43, came-from side .51, climber
+passes .37, on 87 kept splits); the rule that scored best on 2004-2019
+(climber, .44) was the worst on 2020+ (.17).
+
+Grid (paired per-basho deltas vs the cached Ar baseline, exact slots):
+
+- pre-registered primary, twins glued when split by one interloper,
+  climber anchor: full -0.08 (26-34, CI -0.19..+0.02), MAE +0.007
+  (CI excludes 0); 2020+ -0.06, MAE +0.011. Fails.
+- midpoint / came-from anchors: null overall (-0.02/-0.01), slightly
+  negative 2004-2019 (-0.10), slightly positive 2020+ (+0.18, 12-5).
+- cross-rank and chained groups: negative everywhere (up to -0.4/basho,
+  p<.001), as their 47% adjacency predicts.
+- glue only when every interloper's base score is >= 0.5 from the pair's
+  midpoint (0.47 events/basho): +0.06 full (CI -0.01..+0.14), MAE -0.003
+  (CI -0.006..-0.0002); 2020+ +0.16 (9-2, Wilcoxon p=.016). Post hoc
+  and worth one slot per 16 basho.
+- oracle ceilings: knowing which twins stay together AND which side the
+  interloper goes is worth +0.33/basho (CI .19-.47); knowing only the
+  first and using a rule anchor is worth +0.04. The anchor is the whole
+  problem and no feature in hand predicts it (small record gaps tend not
+  to pass the pair, large ones do, but n is ~100 events over 22 years).
+
+**Decision: glue not adopted; the order constraint is.** The committee
+habit is real but the model already reproduces most of it implicitly, and
+the exploitable residue (~0.06 slots/basho with the best post-hoc rule,
+~0.33 with an oracle) sits at the noise floor. The one part with no
+exceptions, twins never swap E/W order (0 of 436 M/J pairs since 2004;
+the two Y twins and one S twin that did swap are sanyaku), is now a
+resolver rule (`keep_twin_order`): where the model ranks W above E the
+two exchange places in its order. Ar did this in 31 of 405 backtest
+frames (12 of 438 seed-0 pairs); paired effect exact +0.0025/basho
+(5-5), MAE -0.0015. Free, principled, and not the win the hypothesis was
+after. Re-run `uv run python -m experiments.grouping describe|backtest`
+after future model changes; the events parquet it writes is where an
+anchor signal would show up if more data accrues.
+
 ## Known limitations / future leads
 
 - Juryo promotee placement still +0.78 under-promoted; bottom-of-sheet

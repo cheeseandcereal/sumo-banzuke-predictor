@@ -7,6 +7,7 @@ the near-inviolable structure. Hard-coded here:
 - a sanyaku incumbent with kachi-koshi does not drop out of his class
 - minimum 2 sekiwake and 2 komusubi; extra slots emerge when forced
 - no-promotion ceiling for make-koshi S/K/M, including E/W
+- E/W of one M/J rank number with identical records keep their order
 Vacancies, maegashira placement, and the juryo boundary follow the model's
 ordering subject to these constraints.
 
@@ -65,6 +66,22 @@ def forced_claims(df: pd.DataFrame) -> dict:
     }
 
 
+def keep_twin_order(df: pd.DataFrame) -> pd.DataFrame:
+    """df in score order. E and W of one maegashira/juryo rank number with
+    identical W-L-A records never swap on the next banzuke (0 of 436 pairs
+    since 2004, docs/EXPERIMENTS.md E16); where the model ranks W above E
+    the two exchange places in its order, everyone else stays put."""
+    order = np.arange(len(df))
+    side = df["side"].to_numpy()
+    mj = df[df["rank_class"] >= MAEGASHIRA]
+    for rows in mj.groupby(["rank_class", "rank_number", "wins", "losses", "absences"]).indices.values():
+        if len(rows) == 2:
+            a, b = mj.index[rows]  # positions in df (score order)
+            if side[a] > side[b]:
+                order[a], order[b] = b, a
+    return df.iloc[order].reset_index(drop=True)
+
+
 def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
             overrides: dict | None = None, warnings: list | None = None) -> pd.DataFrame:
     """cands: transition rows at basho N. scores: lower = ranked higher.
@@ -74,6 +91,7 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
     df = cands.copy()
     df["_score"] = scores
     df = df.sort_values(["_score", "position"], kind="stable").reset_index(drop=True)
+    df = keep_twin_order(df)
     ov = overrides or {}
     warn = warnings if warnings is not None else []
 
