@@ -122,6 +122,8 @@ def render(pred, ov, warnings, items, baseline, target, latest, args):
     if items:
         print("\nreview (least confident first; ! created slot, ?? two signals, "
               "? one signal, ~ big move):")
+        print("  base score: the model's predicted position in cells before reranking; "
+              "neighbours under .25 apart are coin flips")
         fmt = (lambda f, s: f"{f} {s}") if args.interactive else (lambda f, s: f'--{f} "{s}"')
         for it in items:
             head = f"  {it['marker']:<2} {it['range']:<10}"

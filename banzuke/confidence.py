@@ -90,16 +90,19 @@ def review(pred, sig, base, final, skip=()):
         rids = p["rikishi_id"].to_numpy()[i:j + 2]
         bnd = b.iloc[i:j + 1]
         rows = sg.loc[rids]
-        parts = ["gaps " + " ".join(_gap(g) for g in bnd["gap"])]
+        gaps = [_gap(abs(g)) for g in bnd["gap"]]  # reversals are spelled out below
+        parts = [f"base scores {gaps[0]} apart" if len(gaps) == 1
+                 else "base score gaps " + ", ".join(gaps)]
         hints = []
         inv = bnd[bnd["inverted"]]
         if len(inv):
-            parts.append("model put " + ", ".join(
-                f"{name[lo]} below {name[up]}" for up, lo in zip(inv["upper"], inv["lower"])))
+            parts.append("reranker reversed the base order (" + ", ".join(
+                f"{name[lo]} below {name[up]}" for up, lo in zip(inv["upper"], inv["lower"]))
+                + ")")
             hints += [("above", f"{name[lo]} > {name[up]}")
                       for up, lo in zip(inv["upper"], inv["lower"])]
         if rows["spread"].max() >= 1:
-            parts.append(f"seeds shift up to {rows['spread'].max()}")
+            parts.append(f"position varies by up to {rows['spread'].max()} across seeds")
         for r in rids[rows["big_move"].to_numpy()]:
             if any(name[r] in s for _, s in hints):
                 continue  # the inversion hint already tests this mover
