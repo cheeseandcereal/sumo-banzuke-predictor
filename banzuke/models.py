@@ -83,6 +83,10 @@ class GBMRegression:
     def score(self, cands):
         return cands["position"].to_numpy() + self.m.predict(cands[FEATURES])
 
+    # the regression stage's predicted next position; for Ar this is the base
+    # order its reranker works within (confidence signals need it)
+    base_score = score
+
 
 class GBMMedian(GBMRegression):
     """A': L1 objective (median regression), less shrinkage on big movers."""
@@ -220,7 +224,7 @@ class GBMRerank(GBMMedian):
         self.pair = _fit_pair_classifier(train, self.PAIR_WINDOW, self.H2H)
 
     def score(self, cands):
-        base = super().score(cands)
+        base = self.base_score(cands)
         order = np.lexsort((cands["position"].to_numpy(), base))
         X = cands[FEATURES].to_numpy(dtype=float)
         pos = cands["position"].to_numpy()

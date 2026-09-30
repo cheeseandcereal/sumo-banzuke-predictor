@@ -41,6 +41,30 @@ def block_slots(c, n, ne, nw):
     return slots
 
 
+def forced_claims(df: pd.DataFrame) -> dict:
+    """Boolean masks (aligned with df) of who holds a forced claim on an S/K
+    slot: kk incumbents, kadoban make-koshi ozeki dropping to S, komusubi
+    with 11+ wins (historically always given a sekiwake slot), and upper
+    maegashira whose scores land sanyaku >=85% of the time (1990+). Blocks
+    grow past the minimum of 2 when claims exceed it."""
+    cls = df["rank_class"].to_numpy()
+    num = df["rank_number"].to_numpy()
+    wins = df["wins"].to_numpy()
+    kk = df["kk"].to_numpy() == 1
+    kadoban_out = (cls == OZEKI) & (df["kadoban"].to_numpy() == 1) & ~kk
+    m_claim = (cls == MAEGASHIRA) & (
+        ((num == 1) & (wins >= 8)) | ((num == 2) & (wins >= 11))
+        | ((num == 3) & (wins >= 10)) | ((num == 4) & (wins >= 12))
+        | ((num == 5) & (wins >= 13))
+    )
+    return {
+        "kadoban_out": kadoban_out,
+        "s": kadoban_out | ((cls == SEKIWAKE) & kk) | ((cls == KOMUSUBI) & (wins >= 11)),
+        "k": ((cls == KOMUSUBI) & kk) | m_claim,
+        "m_claim": m_claim,
+    }
+
+
 def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
             overrides: dict | None = None, warnings: list | None = None) -> pd.DataFrame:
     """cands: transition rows at basho N. scores: lower = ranked higher.
@@ -61,10 +85,10 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
     yusho1 = df["yusho1"].to_numpy() == 1
     junyusho1 = df["junyusho1"].to_numpy() == 1
     w1 = df["w1"].to_numpy()
-    kadoban = df["kadoban"].to_numpy() == 1
     demoted_ozeki = df["demoted_ozeki"].to_numpy() == 1
     run3 = df["ozeki_run3"].to_numpy()
     shik = df["shikona"].to_numpy()
+    claims = forced_claims(df)
 
     rid2i = {r: i for i, r in enumerate(df["rikishi_id"])}
     cassert = {rid2i[r]: c for r, c in (ov.get("class") or {}).items() if r in rid2i}
@@ -100,7 +124,7 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
     # yokozuna: incumbents (never demoted) + rule-promoted ozeki
     y_promo = (cls == OZEKI) & yusho & (yusho1 | (junyusho1 & (w1 >= 12)))
     # ozeki: incumbents minus kadoban make-koshi, plus promotions/returns
-    kadoban_out = (cls == OZEKI) & kadoban & ~kk
+    kadoban_out = claims["kadoban_out"]
     o_stay = (cls == OZEKI) & ~kadoban_out & ~y_promo
     o_promo = (
         np.isin(cls, (SEKIWAKE, KOMUSUBI))
@@ -177,18 +201,8 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
         upper_blocks.append((c, members))
         return members
 
-    # komusubi with 11+ wins historically always get a sekiwake slot created
-    s_members = fill_class(SEKIWAKE, kadoban_out | ((cls == SEKIWAKE) & kk)
-                           | ((cls == KOMUSUBI) & (wins >= 11)))
-    # upper maegashira whose scores land sanyaku >=85% of the time (1990+)
-    # get komusubi slots created for them when the zone is full
-    num = df["rank_number"].to_numpy()
-    m_claim = (cls == MAEGASHIRA) & (
-        ((num == 1) & (wins >= 8)) | ((num == 2) & (wins >= 11))
-        | ((num == 3) & (wins >= 10)) | ((num == 4) & (wins >= 12))
-        | ((num == 5) & (wins >= 13))
-    )
-    k_members = fill_class(KOMUSUBI, ((cls == KOMUSUBI) & kk) | m_claim)
+    s_members = fill_class(SEKIWAKE, claims["s"])
+    k_members = fill_class(KOMUSUBI, claims["k"])
 
     remaining = [i for i in idx if i not in taken]
     n_m = max(0, mak_size - len(y_members) - len(o_members)
