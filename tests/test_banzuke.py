@@ -324,7 +324,7 @@ def test_confidence_review_hint_restores_base_order():
     it = items[0]
     assert it["marker"] == "?" and it["range"] == "M1E-M1W" and it["members"] == ["R2", "R3"]
     assert ("above", "R3 > R2") in it["hints"]  # base-higher R3 named first
-    assert "model put R3 below R2" in it["text"]
+    assert "reranker reversed the base order (R3 below R2)" in it["text"]
     # a skipped (overridden) pair is not a model decision: no item
     assert confidence.review(pred, sig, base, final, skip={2}) == []
 
