@@ -386,3 +386,46 @@ def test_claim_rates_reference(trans):
     assert int(cell["n"]) == 17 and int(cell["honoured"]) == 10
     txt = confidence.precedent(rates, KOMUSUBI, MAEGASHIRA, 1, 8)
     assert txt == "M1 claims with 8 wins needing a created slot were honoured 10 of 17 since 1990"
+
+
+def test_explain_reconstructs_rerank_and_isolates_structural_shift(small_train, cands_for, tidy):
+    """experiments.explain: the step-by-step reranker reconstruction reproduces
+    GBMRerank.score (with and without twin units), and the miss decomposition
+    charges an over-created komusubi slot to the structure, not to the rows below."""
+    from experiments.explain import decompose, rerank_detail
+
+    kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
+    for twin_unit, target in (("sk", 200401), ("all", 202609)):
+        m = GBMRerank(**kw, twin_unit=twin_unit)
+        m.fit(small_train)
+        cands = cands_for(target)
+        base = m.base_score(cands)
+        d = rerank_detail(m, cands, base)
+        assert np.array_equal(d["score"], m.score(cands))
+        assert len(d["cluster_of"]) == len(cands) and (d["cluster_size"] >= 1).all()
+        if twin_unit == "all":
+            assert any(len(u) == 2 for u in d["units"])
+
+    target = 202309
+    cands = cands_for(target)
+    actual = tidy[tidy["basho"] == target]
+    truth = cands["position_next"].to_numpy(dtype=float)
+    pred = resolve(cands, truth, 42, overrides={"count": {KOMUSUBI: int((actual["rank_class"] == KOMUSUBI).sum()) + 1}})
+    pb = pred.rename(columns={c: f"{c}_base" for c in CELL + ["pred_pos"]})
+    p = cands.assign(score=truth.argsort().argsort(), base=truth).merge(pred, on="rikishi_id").merge(pb, on="rikishi_id")
+    p = decompose(p, actual)
+    mak = p[p["class_next"] == MAEGASHIRA]
+    extra = p[(p["pred_class"] == KOMUSUBI) & (p["class_next"] == MAEGASHIRA)]
+    assert len(extra) == 1 and extra["stage"].iloc[0] == "structural"
+    rest = mak.drop(extra.index)
+    assert (rest["block_offset"] == -1).all()  # one extra label above every maegashira
+    # the shifted labels push some make-koshi men past their ceiling, which the
+    # resolver repairs by swapping neighbours: those rows are its misses, not cascades
+    shifted, swapped = rest[rest["err"] == 0], rest[rest["err"] != 0]
+    assert len(shifted) > len(swapped) > 0
+    assert (shifted["cell_err"] == -1).all() and (shifted["local_err"] == 0).all()
+    assert shifted["cascade"].all() and (shifted["stage"] == "cascade").all()
+    assert not swapped["cascade"].any()
+    assert ((swapped["stage"] == "resolver") | (swapped["hit"] & (swapped["stage"] == ""))).all()
+    assert (p.loc[p["class_next"] <= SEKIWAKE, "block_offset"] == 0).all()
+    assert p.loc[p["class_next"] <= SEKIWAKE, "hit"].all()
