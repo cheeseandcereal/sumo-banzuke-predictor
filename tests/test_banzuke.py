@@ -582,3 +582,33 @@ def test_explain_reconstructs_rerank_and_isolates_structural_shift(small_train, 
     assert ((swapped["stage"] == "resolver") | (swapped["hit"] & (swapped["stage"] == ""))).all()
     assert (p.loc[p["class_next"] <= SEKIWAKE, "block_offset"] == 0).all()
     assert p.loc[p["class_next"] <= SEKIWAKE, "hit"].all()
+
+
+def test_rerank_offline_rebuilds_borda_from_pairs(small_train, cands_for):
+    """experiments.rerank_offline: the reranker rebuilt from a frame's base
+    scores and its pair table reproduces GBMRerank.score; Kemeny and Copeland
+    are valid permutations; excluded men keep their base-score slot."""
+    from experiments.explain import PAIR_GAP, pair_table, rerank_detail
+    from experiments.rerank_offline import excluded, rerank
+
+    kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
+    m = GBMRerank(**kw)
+    m.fit(small_train)
+    for target in (200401, 202309):
+        cands = cands_for(target)
+        base = m.base_score(cands)
+        g = cands.assign(base=base, score=m.score(cands), cluster=0)
+        pairs = pair_table(m, cands, base, rerank_detail(m, cands, base))
+        assert pairs["gap"].max() <= PAIR_GAP
+        p_of = dict(zip(zip(pairs["rid_i"], pairs["rid_j"]), pairs["p"]))
+        assert np.array_equal(rerank(g, p_of, "borda"), g["score"].to_numpy())
+        for how in ("kemeny", "copeland"):
+            assert sorted(rerank(g, p_of, how).tolist()) == list(range(len(g)))
+        ex = excluded(g)
+        assert ex.sum() >= 4 and (g.loc[ex, "rank_class"] <= OZEKI).any()
+        out = rerank(g, p_of, "borda", ex)
+        assert sorted(out.tolist()) == list(range(len(g)))
+        # excluded men hold the base-score slot they would have taken anyway
+        by_base = np.lexsort((g["position"].to_numpy(), base))
+        rank_base = np.empty(len(g)); rank_base[by_base] = np.arange(len(g))
+        assert (out[ex] == rank_base[ex]).all()
