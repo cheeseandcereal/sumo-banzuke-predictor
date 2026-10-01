@@ -194,7 +194,7 @@ def test_twin_unit_keeps_identical_record_twins_together(small_train, cands_for)
     # adjacent and in prior order; a sheet without twins is scored exactly as
     # without the option
     kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
-    plain, unit = GBMRerank(**kw), GBMRerank(**kw, twin_unit="all")
+    plain, unit = GBMRerank(**kw, twin_unit=""), GBMRerank(**kw, twin_unit="all")
     plain.fit(small_train)
     unit.fit(small_train)
     changed = 0

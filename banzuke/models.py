@@ -427,13 +427,14 @@ class GBMRerank(GBMMedian):
         members' pair probabilities, expanded E then W. Borda otherwise
         separates such a pair by a full point (their mutual comparison is
         certain) and drops any rival the classifier is unsure about between
-        them; the committee never splits S/K twins (E16, E17)
+        them. The committee never splits S/K twins, so "sk" is the default;
+        "all" was neutral-to-worse (E17)
     """
 
     name = "Ar"
     OPTIONS = {**GBMMedian.OPTIONS, "pair_window": 6, "near_ties": True, "oof_gap": 2.0,
                "oof": None, "context": True, "gap": 1.0, "cluster_max": 6, "h2h": False,
-               "twin_unit": ""}
+               "twin_unit": "sk"}
 
     @classmethod
     def prepare(cls, kwargs, trans, workers=1, train_start=None):

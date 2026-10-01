@@ -684,9 +684,62 @@ tuned reranker behaves differently around twins:
 Status: suggestive, not confirmed. The mechanism is significant, the
 global effect (+0.1 to +0.17/basho, one slot every 6-10 basho) has a
 confirm-window CI that includes zero, and the variant was one of a
-grid. If pursued: make it an Ar option so it runs through the seeded
-protocol with `--set`, and first look at why the near-tie pair stage
-splits twins 1.5x more often than the committee does.
+grid. Pursued as E17: the split is a Borda artifact, and the
+S/K-scoped unit became the default.
+
+## E17: twins as one reranker unit (2026-09, protocol v2)
+
+Follow-up to E16, prompted by the 202611 forecast: Ar put Ura and
+Fujiseiun between Hakunofuji (K1E 5-10) and Daieisho (K1W 5-10). The
+committee has never done that: identical-record S/K twins stayed
+adjacent in 26 of 26 cases since 2004 (92 of 98 since 1959, the last
+split in 1993), while both branches' Ar split them in ~28% of backtest
+frames.
+
+Diagnosis: an aggregation artifact, not a classifier error. Within a
+cluster {E, W, X} the twins' mutual comparison is certain (P = .999),
+so Borda separates them by a full point, and any rival X the
+classifier is honestly unsure about (roughly .33 < P < .67 against
+each twin) lands between them. The calibrated reranker (E13) is
+*more* exposed than main's overconfident one: it correctly rates a K
+5-10 against an M9 10-5 near .5 (the committee: 56% since 2004), and
+Borda converts "unsure" into "between", the one outcome the committee
+never chooses. No pair feature can fix this; the algebra holds with
+identical probabilities.
+
+Change: option `twin_unit` ("sk" or "all"). E and W of one rank number
+with identical W-L-A records are one unit in the reranker: clustered at
+their mean base score, compared with a rival by the mean of the
+members' pair probabilities, expanded E then W. Adjacency is assumed,
+the rival's side is learned, so the classifier still decides where the
+unit goes. predict.py gains `--set` so options can be used live.
+
+Screen and confirm, two bag replicates, paired vs the current default:
+
+| config | window | exact/42 | MAE | dExact [CI] | W-L | dMAE [CI] | p |
+|---|---|---:|---:|---|---|---|---:|
+| default | screen | 20.28 | 0.840 | ref | | ref | |
+| twin_unit=sk | screen | 20.30 | 0.840 | +0.02 [-0.05, +0.08] | 4-3 | +0.000 [-0.002, +0.002] | 1.0 |
+| twin_unit=all | screen | 20.46 | 0.849 | +0.18 [-0.11, +0.47] | 36-25 | +0.009 [-0.002, +0.021] | .10 |
+| default | confirm | 17.93 | 0.938 | ref | | ref | |
+| twin_unit=sk | confirm | 17.93 | 0.937 | +0.00 [-0.05, +0.06] | 1-2 | -0.001 [-0.002, +0.000] | .16 |
+| twin_unit=all | confirm | 17.94 | 0.936 | +0.01 [-0.30, +0.38] | 10-14 | -0.002 [-0.013, +0.009] | .79 |
+
+"sk" touches ~0.2 pairs per basho and is metric-neutral everywhere
+(never worse in any window; GTB +0.03 on confirm). "all" gains exact
+slots on the screen (+0.18, 36-25) while worsening MAE there (+0.009,
+p=.10), and is flat on the confirm window: the M/J twin split is a
+real committee habit a third of the time, and forcing adjacency trades
+E/W-flip-sized wins for occasional two-slot losses. Fails the bar.
+
+**Adopted: `twin_unit="sk"` as the default**, on the E15a precedent
+(a convention with no exceptions in the modern record, neutral on the
+metrics, kept as a correctness fix). The convention audit
+(`banzuke.conventions`, main) tracks S/K twin adjacency so the first
+counter-example will be visible. The 202611 forecast now reads
+Takayasu / Ura, Hakunofuji / Daieisho, Fujiseiun / Kotoshoho at M2-M4;
+the committee's choice among those three rows is historically a coin
+flip, the pair staying together is not.
 
 ## Known limitations / future leads (updated 2026-09)
 

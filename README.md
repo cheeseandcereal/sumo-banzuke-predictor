@@ -8,7 +8,8 @@ regression/ranking/pairwise variants) competed on a shared
 rolling-origin backtest covering every banzuke transition since 1959.
 The promoted default, `Ar`, is a seed-bagged L1 gradient-boosted
 movement model whose near-tie clusters are reordered by a pairwise
-classifier that learned the committee's conflict-resolution habits,
+classifier that learned the committee's conflict-resolution habits
+(identical-record sanyaku E/W pairs move as one unit),
 feeding a resolver that applies the near-inviolable structure (Y/O
 conventions, sanyaku minimums, empirically-derived E/W layout, no
 promotion after make-koshi for S/K/M). See `docs/EXPERIMENTS.md` for

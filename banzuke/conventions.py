@@ -73,7 +73,7 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
     mj, sk = tw["rank_class"] >= MAEGASHIRA, tw["rank_class"].isin((SEKIWAKE, KOMUSUBI))
     add("identical-record M/J E/W twins keep their order", "resolver",
         tw.loc[mj, "basho"], tw.loc[mj, "position_next_e"] < tw.loc[mj, "position_next_w"])
-    add("identical-record S/K E/W twins stay adjacent", "watch",
+    add("identical-record S/K E/W twins stay adjacent", "Ar twin_unit",
         tw.loc[sk, "basho"], (tw.loc[sk, "position_next_w"] - tw.loc[sk, "position_next_e"]).abs() == 1)
 
     for basho, g in trans.groupby("basho"):  # per banzuke, latest included
