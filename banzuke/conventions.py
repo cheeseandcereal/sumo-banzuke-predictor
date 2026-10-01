@@ -68,6 +68,34 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
     rule("make-koshi S/K/M never above the prior cell",
          np.isin(cls, (SEKIWAKE, KOMUSUBI, MAEGASHIRA)) & ~kk, after >= prior)
 
+    # regularities found in the 2019+ case analysis (docs/EXPERIMENTS.md E19/E20),
+    # not enforced by the resolver: "watch" rows so the first exception is loud
+    def watch(name, applies, held):
+        add(name, "watch", b[applies], held[applies])
+
+    watch("make-koshi sekiwake with 7 wins drops to komusubi", (cls == SEKIWAKE) & (wins == 7), nxt == KOMUSUBI)
+    watch("sekiwake with <= 6 wins leaves sanyaku", (cls == SEKIWAKE) & (wins <= 6), nxt >= MAEGASHIRA)
+    watch("komusubi with <= 6 wins leaves sanyaku", (cls == KOMUSUBI) & (wins <= 6), nxt >= MAEGASHIRA)
+    watch("S/K/M with 0 wins and 8+ absences drops 17+ cells (COVID exemptions violate)",
+          np.isin(cls, (SEKIWAKE, KOMUSUBI, MAEGASHIRA)) & (wins == 0) & (t["absences"].to_numpy() >= 8),
+          t["delta"].to_numpy() >= 17)
+
+    def same_basho_pairs(mask, keep):
+        a = t.loc[mask, ["basho", "rikishi_id", "wins", "position", "position_next"]]
+        p = a.merge(a, on="basho", suffixes=("_a", "_b"))
+        p = p[(p["rikishi_id_a"] < p["rikishi_id_b"]) & keep(p)]
+        return p
+
+    for c, name in ((YOKOZUNA, "yokozuna who stay are ordered by wins"), (OZEKI, "ozeki who stay are ordered by wins")):
+        p = same_basho_pairs((cls == c) & (nxt == c), lambda p: p["wins_a"] != p["wins_b"])
+        add(name, "watch", p["basho"], (p["wins_a"] > p["wins_b"]) == (p["position_next_a"] < p["position_next_b"]))
+    s_stay = (cls == SEKIWAKE) & kk & (nxt == SEKIWAKE)
+    dem = claims["kadoban_out"] & (nxt == SEKIWAKE)
+    a = t.loc[dem, ["basho", "rikishi_id", "position_next"]].merge(
+        t.loc[s_stay, ["basho", "position_next"]], on="basho", suffixes=("_o", "_s"))
+    add("demoted ozeki ranks below every kachi-koshi sekiwake incumbent", "watch",
+        a["basho"], a["position_next_o"] > a["position_next_s"])
+
     tw = t[t["side"] == 0].merge(t[t["side"] == 1], suffixes=("_e", "_w"),
                                  on=["basho", "rank_class", "rank_number", "wins", "losses", "absences"])
     mj, sk = tw["rank_class"] >= MAEGASHIRA, tw["rank_class"].isin((SEKIWAKE, KOMUSUBI))
