@@ -252,8 +252,8 @@ def main():
     ap.add_argument("--model", default="Ar", choices=list(models.MODELS))
     ap.add_argument("--retired", default="", help="comma-separated shikona to exclude")
     ap.add_argument("--protected", default="",
-                    help="comma-separated shikona whose absence the JSA exempted (sets "
-                         "rank_protected; needs a model using it, --set extra=rank_protected)")
+                    help="comma-separated shikona whose full absence the JSA exempted "
+                         "(rank frozen); sets the rank_protected feature")
     ap.add_argument("--mak-size", type=int, default=None,
                     help="makuuchi size (default: same as the latest banzuke)")
     ap.add_argument("--seeds", type=int, default=None,

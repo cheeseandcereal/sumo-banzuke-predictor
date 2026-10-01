@@ -259,6 +259,11 @@ def test_rule_masks_yo_promotions(trans):
     assert all(o[k] for k in [(201505, "Terunofuji"), (201805, "Tochinoshin"), (202511, "Aonishiki"), (202603, "Kirishima")])
     assert not any(o[k] for k in [(202011, "Terunofuji"), (202405, "Onosato"), (200509, "Kotooshu")])
     assert not o[(201811, "Takakeisho")] and o[(201903, "Takakeisho")]  # 33 wins over K/S/S: the classic rule
+    # kadoban survives an exempted second make-koshi (Mitakeumi 202207 -> 202209), so
+    # his third one demotes him in the resolver
+    k = trans.set_index(["basho", "shikona"])["kadoban"]
+    assert k[(202207, "Mitakeumi")] == 1 and k[(202209, "Mitakeumi")] == 1
+    assert pd.Series(rm["kadoban_out"], index=index)[(202209, "Mitakeumi")]
 
 
 def test_seed_and_option_semantics():
@@ -327,11 +332,11 @@ def test_twin_unit_keeps_identical_record_twins_together(small_train, cands_for)
 
 
 def test_protected_and_supply_columns(trans):
-    """E23/E25 opt-in inputs. rank_protected marks exactly the full-kyujo rows
-    whose rank was frozen (kosho granted, or a listed modern exemption); the
-    supply columns describe the source basho's makuuchi field."""
-    from banzuke.features import EXTRA_FEATURES, PROTECTED, SUPPLY_FEATURES
-    assert set(EXTRA_FEATURES + SUPPLY_FEATURES).isdisjoint(FEATURES)
+    """E23/E25 columns. rank_protected (a feature) marks exactly the full-kyujo
+    rows whose rank was frozen (kosho granted, or a listed modern exemption);
+    the supply columns (opt-in) describe the source basho's makuuchi field."""
+    from banzuke.features import PROTECTED, SUPPLY_FEATURES
+    assert "rank_protected" in FEATURES and set(SUPPLY_FEATURES).isdisjoint(FEATURES)
     full = trans[(trans["wins"] == 0) & (trans["absences"] >= 8) & (trans["rank_class"] >= SEKIWAKE)
                  & trans["delta"].notna()]
     kept, dropped = full[full["rank_protected"] == 1], full[full["rank_protected"] == 0]
@@ -352,8 +357,8 @@ def test_extra_feature_options(small_train, cands_for):
     cands = cands_for(200401)
     kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
     plain = GBMRerank(**kw)
-    more = GBMRerank(**kw, extra="rank_protected", extra_shared=["mk_joi", "n_absent"])
-    assert more.features == FEATURES + ["rank_protected", "mk_joi", "n_absent"] and plain.features == FEATURES
+    more = GBMRerank(**kw, extra="strong_below", extra_shared=["mk_joi", "n_absent"])
+    assert more.features == FEATURES + ["strong_below", "mk_joi", "n_absent"] and plain.features == FEATURES
     plain.fit(small_train)
     more.fit(small_train)
     assert more.ms[0].n_features_ == len(FEATURES) + 3
@@ -365,7 +370,7 @@ def test_extra_feature_options(small_train, cands_for):
         kw_oof = {"n_seeds": 1, "base": {"n_estimators": 5}}
         n = len(small_train["basho"].unique()) - 1
         oof_base_scores(small_train, GBMRerank, kw_oof, min_history=n, cache_dir=d)
-        oof_base_scores(small_train, GBMRerank, {**kw_oof, "extra": "rank_protected"}, min_history=n, cache_dir=d)
+        oof_base_scores(small_train, GBMRerank, {**kw_oof, "extra": "strong_below"}, min_history=n, cache_dir=d)
         assert len(list(Path(d).glob("*.parquet"))) == 2
 
 

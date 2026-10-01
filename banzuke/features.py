@@ -20,17 +20,18 @@ FEATURES = [
     "kadoban", "demoted_ozeki", "ozeki_run3", "sanyaku3",
     "yusho1", "junyusho1",
     "year", "kosho", "mak_size", "jur_size", "boundary_dist",
+    "rank_protected",
 ]
 
 # computed into the dataset but excluded from model inputs: joi/schedule
 # awareness tested as a null result, see docs/EXPERIMENTS.md E8
 SCHEDULE_FEATURES = ["opp_pos_mean", "n_joi_opp", "wins_vs_joi", "kinboshi"]
 
-# opt-in model inputs (`--set extra=...` / `--set extra_shared=...`, E23/E25):
-# rank_protected: the committee did not count a full absence against the man
-# (kosho era 1972-2003: kosho granted; 2004+: the PROTECTED table). The
-# supply columns describe the source basho's makuuchi field (zone pressure).
-EXTRA_FEATURES = ["rank_protected"]
+# rank_protected (in FEATURES since E23): the committee did not count a full
+# absence against the man (kosho era 1972-2003: kosho granted; 2004+: the
+# PROTECTED table). The supply columns describe the source basho's makuuchi
+# field (zone pressure); computed, excluded from model inputs (E25 null),
+# available through `--set extra_shared=mk_joi,...`.
 SUPPLY_FEATURES = ["mk_joi", "kk_upper", "strong_below", "kk_sanyaku", "n_absent"]
 
 # (basho, rikishi_id) of full-kyujo men (0 wins, 8+ absences) since the kosho
@@ -153,13 +154,14 @@ def build_transitions(tidy: pd.DataFrame, bouts: pd.DataFrame) -> pd.DataFrame:
             sansho_career[i] = sansho_career[prev_i] + sansho[i]
         kk_streak[i] = kk_arr[i] * ((kk_streak[prev_i] if contig else 0) + 1)
         tenure[i] = (cls[i] <= KOMUSUBI) * ((tenure[prev_i] if contig else 0) + 1)
-        # ozeki who MK'd last basho while not kadoban is now kadoban
+        # an ozeki who MK'd last basho and is still ozeki is kadoban now; an
+        # exempted second make-koshi (Mitakeumi 202209, kosho-protected ozeki
+        # before 2004) keeps him kadoban rather than resetting the flag (E22)
         kadoban[i] = int(
             cls[i] == OZEKI
             and contig
             and cls[prev_i] == OZEKI
             and kk_arr[prev_i] == 0
-            and kadoban[prev_i] == 0
         )
         prev_i = i
 
