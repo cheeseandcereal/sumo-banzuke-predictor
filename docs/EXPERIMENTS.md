@@ -833,8 +833,9 @@ sheet reviews and the triage are under `results/scratch/explain/`
 Regularities established (counts 2004+ unless stated), all now rows in the
 convention audit as "watch":
 
-- Y who stay are ordered by wins (113/113 pairs), as are O who stay
-  (472/472); a full-kyujo Y ranks below every Y who fought (25/25). Ar put
+- Y who stay and O who stay are ordered by wins, then the yusho winner,
+  then a man who fought above a full-kyujo man, then prior position: all
+  139 Y pairs and 554 O pairs since 2004. Ar put
   Kisenosato 0-5-10 above two 0-0-15 yokozuna with p = 1.00 the wrong way
   (201901) and called two make-koshi ozeki at .51 (202309).
 - A demoted ozeki is the bottom sekiwake: never S1E (0/24 since 1990), never
@@ -888,15 +889,15 @@ MAE is the decision metric where quoted. Nothing adopted in this round.
 | rule | precedent | full 2004-2026 dExact [CI] | 2004-2018 | 2019+ | W-L full |
 |---|---|---|---:|---:|---|
 | R4 demoted ozeki is the bottom sekiwake | 0/22, 0/24 | +0.15 [+0.07, +0.23], dMAE -.004 | +0.11 | +0.22 (6-0) | 12-0 |
-| R14 Y/O who stay ordered by wins, then prior | 113/113, 472/472 | +0.12 [+0.04, +0.23], dMAE -.003 | +0.16 | +0.06 | 8-0 |
+| R14 Y/O who stay ordered by wins, yusho first, fought before idle, then prior | 693/693 pairs | +0.18 [+0.08, +0.29], dMAE -.005 | +0.20 | +0.12 | 11-0 |
 | R2 MK sekiwake: 7 -> K, <= 6 -> M, S 7-8 over weak M1 claims | 31/32, 26/26 | +0.27 [-0.02, +0.66], dMAE -.005 | +0.03 | +0.73 (6-0) | 13-1 |
 | R3 MK komusubi <= 6 wins -> M | 0/47 | +0.02 | +0.02 | +0.03 | 4-2 |
 | R7 Y rule only after a yusho fought as ozeki | 0/3 vs 6/8 | +0.06 | +0.06 | +0.07 | 3-0 |
 | R8 O rule accepts one M1-M3 basho in the run (12+ now) | 4/5 | +0.31 [0.00, +0.74] | +0.18 | +0.57 (2-0) | 4-0 |
 | R12 K newcomers below KK K incumbents | 2/49 | +0.05 | +0.05 | +0.07 | 4-0 |
 | R1 0 wins, 8+ absences at S/K/M lands +24 / +23 | q50 +24, n=70 | +0.20 [0.00, +0.48], dMAE -.013 | +0.06 | +0.47 (8-8) | 20-16 |
-| **bundle of the eight** | | **+1.22 [+0.76, +1.76], dMAE -.030 [-.055, -.005]** | +0.78 (32-5) | +2.09 (23-6) | 55-11 |
-| bundle without R1 | | +1.06 [+0.63, +1.58], dMAE -.017 [-.025, -.011] | +0.71 (22-1) | +1.73 (19-1) | 41-2 |
+| **bundle of the eight** | | **+1.29 [+0.83, +1.83], dMAE -.032 [-.057, -.007]** | +0.82 (34-5) | +2.20 (23-6) | 57-11 |
+| bundle without R1 | | +1.13 [+0.70, +1.65], dMAE -.019 [-.027, -.012] | +0.76 (24-1) | +1.84 (19-1) | 43-2 |
 
 Also measured, not recommended: R9/R13 (weak M1 claims never create a third
 K slot) +0.21 / +0.14 full but 5-2 / 6-4 with one -8 frame, the E15b
@@ -938,9 +939,9 @@ the override shown. Counts are 2004+ unless stated.
 - Demoted ozeki: bottom of the sekiwake block, below every kachi-koshi S
   incumbent and below a komusubi promoted to S (0/22, 0/5); never S1E.
   `--below "Name < <last S incumbent>"`.
-- Y/O order: yokozuna who stay and ozeki who stay are ordered by wins
-  (113/113, 472/472); a full-kyujo yokozuna is below every yokozuna who
-  fought. `--above`.
+- Y/O order: yokozuna who stay and ozeki who stay are ordered by wins,
+  then yusho winner first, then a man who fought above a full-kyujo man,
+  then prior position (693/693 pairs since 2004). `--above`.
 - Yokozuna promotion: only when the previous yusho or jun-yusho was fought
   as ozeki (0/3 otherwise); a 13-2 yusho after a 12-3 jun-yusho has never
   been enough (0/3). Ozeki promotion: a 33+ run counts an M1-M3 basho when

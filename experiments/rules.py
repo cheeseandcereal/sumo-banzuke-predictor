@@ -19,8 +19,9 @@ Rules (precedent counts in results/scratch/explain/review/adhoc.md):
   R5  a yokozuna with no bouts ranks below every yokozuna who fought
   R6  make-koshi ozeki who stay ozeki are ordered by wins
   R7  yokozuna rule needs the previous yusho / jun-yusho fought as ozeki
-  R14 yokozuna who stay and ozeki who stay are ordered by wins, then prior
-      position (generalises R5 and R6)
+  R14 yokozuna who stay and ozeki who stay are ordered by wins, yusho winner
+      first, a man who fought above a full-kyujo man, then prior position
+      (contains R5 and R6)
   R8  ozeki rule also fires on 33+ over three basho with 12+ now when exactly
       one of the three was fought at M1-M3
   R9  an M1W claimant with <= 9 wins never gets a created (third) K slot
@@ -49,7 +50,7 @@ SCRATCH = Path(__file__).resolve().parent.parent / "results" / "scratch" / "expl
 WINDOWS = [("full 2004-2026", 0, 999999), ("2004-2018", 0, 201811), ("2019+", 201901, 999999),
            ("confirm 2020+", 202001, 999999)]
 RULES = ["R1", "R2", "R3", "R4", "R5", "R6", "R7", "R8", "R9", "R10", "R11", "R12", "R13", "R14"]
-BUNDLE = ["R1", "R2", "R3", "R4", "R7", "R8", "R12", "R14"]  # 100%-precedent (or near) rules; R5/R6 are inside R14
+BUNDLE = ["R1", "R2", "R3", "R4", "R7", "R8", "R12", "R14"]  # 100%-precedent (or near) rules; R14 contains R5 and R6
 
 
 class Frame:
@@ -197,14 +198,16 @@ def r7_yokozuna_rule(f, pseudo, ov):
 
 
 def r14_yo_order_by_wins(f, pseudo, ov):
-    """Yokozuna who stay, and ozeki who stay, are ordered by wins then prior
-    position (113/113 Y pairs, 472/472 O pairs since 2004; ties keep order)."""
+    """Yokozuna who stay, and ozeki who stay, are ordered by wins, then the
+    yusho winner first, then a man who fought above a full-kyujo man, then
+    prior position (all 139 Y pairs and 554 O pairs since 2004)."""
     n = 0
     for c in (YOKOZUNA, OZEKI):
         rows = np.flatnonzero((f.rank_class == c) & ~f.claims["kadoban_out"])
         if len(rows) < 2:
             continue
-        want = rows[np.lexsort((f.position[rows], -f.wins[rows]))]
+        fought = (f.wins[rows] + f.losses[rows]) > 0
+        want = rows[np.lexsort((f.position[rows], ~fought, -f.yusho[rows], -f.wins[rows]))]
         have = rows[np.argsort(pseudo[rows], kind="stable")]
         if not np.array_equal(want, have):
             slots = np.sort(pseudo[rows])
