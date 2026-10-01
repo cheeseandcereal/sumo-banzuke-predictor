@@ -22,7 +22,7 @@ from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from banzuke.build import KOMUSUBI, MAEGASHIRA
+from banzuke.build import SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO
 from banzuke.features import FEATURES
 
 BASE_PARAMS = dict(
@@ -391,6 +391,23 @@ class PairwiseBT(_Model):
         return pd.Series(score, index=df.index).reindex(cands.index).to_numpy()
 
 
+TWIN_SCOPE = {"sk": (SEKIWAKE, KOMUSUBI), "all": (SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO)}
+
+
+def _twin_units(cands, scope):
+    """[e, w] row-index pairs of E/W twins: one rank number, identical W-L-A
+    record, class within `scope` ("sk" or "all" = S/K/M/J)."""
+    if scope not in TWIN_SCOPE:
+        raise ValueError(f"twin_unit must be one of {sorted(TWIN_SCOPE)} or empty, got {scope!r}")
+    cols = [cands[c].to_numpy() for c in ("rank_class", "rank_number", "wins", "losses", "absences")]
+    side = cands["side"].to_numpy()
+    groups: dict[tuple, list] = {}
+    for i in np.flatnonzero(np.isin(cols[0], TWIN_SCOPE[scope])):
+        groups.setdefault(tuple(int(c[i]) for c in cols), []).append(int(i))
+    return [sorted(g, key=lambda i: side[i]) for g in groups.values()
+            if len(g) == 2 and {side[i] for i in g} == {0, 1}]
+
+
 class GBMRerank(GBMMedian):
     """Ar: Aq's global order, with a pair classifier reordering clusters of
     near-equal base scores (E/W flips and off-by-one placements are most of
@@ -404,11 +421,19 @@ class GBMRerank(GBMMedian):
     gap, cluster_max: cluster break when consecutive base scores differ by
         more than gap; largest cluster the reranker may reorder
     h2h: include the pair's head-to-head bout this basho as a pair feature
+    twin_unit: "" / "sk" / "all": E and W of one rank number with identical
+        records (of S/K, or S/K/M/J) form one unit in the reranker: clustered
+        at their mean base score, compared with a rival by the mean of the
+        members' pair probabilities, expanded E then W. Borda otherwise
+        separates such a pair by a full point (their mutual comparison is
+        certain) and drops any rival the classifier is unsure about between
+        them; the committee never splits S/K twins (E16, E17)
     """
 
     name = "Ar"
     OPTIONS = {**GBMMedian.OPTIONS, "pair_window": 6, "near_ties": True, "oof_gap": 2.0,
-               "oof": None, "context": True, "gap": 1.0, "cluster_max": 6, "h2h": False}
+               "oof": None, "context": True, "gap": 1.0, "cluster_max": 6, "h2h": False,
+               "twin_unit": ""}
 
     @classmethod
     def prepare(cls, kwargs, trans, workers=1, train_start=None):
@@ -428,25 +453,36 @@ class GBMRerank(GBMMedian):
     def score(self, cands, k=None):
         base = self.base_score(cands, k)
         pos = cands["position"].to_numpy()
-        order = np.lexsort((pos, base))
+        units = [[i] for i in range(len(cands))]
+        if self.twin_unit:
+            for e, w in _twin_units(cands, self.twin_unit):
+                units[e], units[w] = [e, w], []
+        units = [u for u in units if u]
+        ubase = np.array([base[u].mean() for u in units])
+        upos = np.array([pos[u].min() for u in units])
+        order = np.lexsort((upos, ubase))
         clusters, cur = [], [order[0]]
         for prev, i in zip(order, order[1:]):
-            if base[i] - base[prev] <= self.gap and len(cur) < self.cluster_max:
+            if ubase[i] - ubase[prev] <= self.gap and len(cur) < self.cluster_max:
                 cur.append(i)
             else:
                 clusters.append(cur)
                 cur = [i]
         clusters.append(cur)
-        # every within-cluster pair, oriented by current position to match training
-        pairs = [(i, j) if pos[i] <= pos[j] else (j, i)
-                 for cl in clusters for i, j in combinations(cl, 2)]
-        borda = np.zeros(len(cands))
-        if pairs:
-            i_arr, j_arr = np.array(pairs).T
-            for i, j, p in zip(i_arr, j_arr, self.pair.proba(cands, i_arr, j_arr, base, k)):
-                borda[i] += p
-                borda[j] += 1 - p
-        final = [i for cl in clusters for i in sorted(cl, key=lambda i: (-borda[i], base[i]))]
+        # every within-cluster pair of units, oriented by current position to match
+        # training; a unit pair's probability is the mean over its member pairs
+        upairs = [(a, b) if upos[a] <= upos[b] else (b, a)
+                  for cl in clusters for a, b in combinations(cl, 2)]
+        borda = np.zeros(len(units))
+        if upairs:
+            i_arr, j_arr, owner = map(np.array, zip(*[
+                (i, j, q) for q, (a, b) in enumerate(upairs) for i in units[a] for j in units[b]]))
+            p = self.pair.proba(cands, i_arr, j_arr, base, k)
+            for (a, b), pu in zip(upairs, np.bincount(owner, p) / np.bincount(owner)):
+                borda[a] += pu
+                borda[b] += 1 - pu
+        final = [i for cl in clusters for u in sorted(cl, key=lambda u: (-borda[u], ubase[u]))
+                 for i in sorted(units[u], key=lambda i: pos[i])]
         out = np.empty(len(cands))
         out[final] = np.arange(len(final))
         return out

@@ -5,6 +5,7 @@ Usage:
     uv run python predict.py                      # predict the next banzuke
     uv run python predict.py --retired Tamawashi  # exclude announced retirees
     uv run python predict.py --model Aq --seeds 1
+    uv run python predict.py --set twin_unit=sk      # model option, as in backtest.py
 
 Overrides (constrain the assignment; the model fills everything else):
     --above "A > B"     A rises to immediately above B
@@ -30,6 +31,7 @@ import pandas as pd
 
 from banzuke import confidence, models
 from banzuke.build import JURYO, KOMUSUBI, OZEKI, SEKIWAKE
+from banzuke.harness import parse_sets
 from banzuke.overrides import OverrideError, parse, splice, verify
 from banzuke.resolver import resolve
 
@@ -220,6 +222,8 @@ def main():
     ap.add_argument("--seeds", type=int, default=None,
                     help="bag size (default: the model's, 5 for the GBMs); single seeds "
                          "also feed the confidence markers")
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="model option override (e.g. twin_unit=sk, gap=0.5), as in backtest.py")
     ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
                     help="ignore training transitions before this basho")
     ap.add_argument("--above", action="append", default=[], metavar='"A > B"')
@@ -260,7 +264,7 @@ def main():
     # train once; everything downstream is instant
     print("training...", file=sys.stderr)
     cls = models.MODELS[args.model]
-    kwargs = {"n_seeds": args.seeds} if args.seeds else {}
+    kwargs = {**parse_sets(args.set), **({"n_seeds": args.seeds} if args.seeds else {})}
     kwargs = cls.prepare(kwargs, trans, min(16, os.cpu_count() or 1), args.train_start)
     model = cls(**kwargs)
     model.fit(train)

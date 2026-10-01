@@ -21,7 +21,7 @@ from banzuke.features import FEATURES, build_transitions  # noqa: E402
 from banzuke.harness import METRICS, parse_seeds, parse_sets, run_backtest, summarize  # noqa: E402
 from banzuke.metrics import evaluate  # noqa: E402
 from banzuke.models import (MODELS, GBMMedian, GBMRanker, GBMRerank, RulesBaseline,  # noqa: E402
-                            _gap_pairs, _seeds, _window_pairs, oof_base_scores)
+                            _gap_pairs, _seeds, _twin_units, _window_pairs, oof_base_scores)
 from banzuke.overrides import parse  # noqa: E402
 from banzuke.resolver import block_slots, forced_claims, resolve  # noqa: E402
 
@@ -187,6 +187,33 @@ def test_rerank_is_deterministic_permutation(small_train, cands_for):
     assert np.array_equal(scores[0], scores[1])
     with pytest.raises(ValueError, match="OOF|prepare"):  # default near_ties needs prepare()
         GBMRerank(seed=0, n_seeds=1, base={"n_estimators": 1}).fit(small_train)
+
+
+def test_twin_unit_keeps_identical_record_twins_together(small_train, cands_for):
+    # E17: with twin_unit, E/W twins with the same record leave the reranker
+    # adjacent and in prior order; a sheet without twins is scored exactly as
+    # without the option
+    kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
+    plain, unit = GBMRerank(**kw), GBMRerank(**kw, twin_unit="all")
+    plain.fit(small_train)
+    unit.fit(small_train)
+    changed = 0
+    for target in (200401, 200607, 202309, 202609):
+        cands = cands_for(target)
+        twins = _twin_units(cands, "all")
+        assert twins and all(cands.loc[e, "side"] == 0 and cands.loc[w, "side"] == 1
+                             and cands.loc[e, "wins"] == cands.loc[w, "wins"] for e, w in twins)
+        assert len(_twin_units(cands, "sk")) <= len(twins)
+        s_plain, s_unit = plain.score(cands), unit.score(cands)
+        assert sorted(s_unit.tolist()) == list(range(len(cands)))
+        assert all(s_unit[w] == s_unit[e] + 1 for e, w in twins)
+        changed += not np.array_equal(s_plain, s_unit)
+        solo = cands.drop(index=[w for _, w in twins]).reset_index(drop=True)
+        assert not _twin_units(solo, "all")
+        assert np.array_equal(plain.score(solo), unit.score(solo))
+    assert changed  # the option does something on at least one of these sheets
+    with pytest.raises(ValueError, match="twin_unit"):
+        _twin_units(cands, "yo")
 
 
 def test_pair_helpers():
