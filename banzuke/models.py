@@ -129,18 +129,17 @@ class LinearModel(_Model):
 class GBMRegression(_Model):
     """A: gradient-boosted regression on movement delta (L2). half_life:
     optional exponential recency weight in basho, normalized to mean 1.
-    extra: dataset columns appended to FEATURES (per-rikishi inputs);
-    extra_shared: per-basho columns appended too (the field the committee
-    must fit, see features.SUPPLY_FEATURES)."""
+    extra: dataset columns appended to FEATURES, for measuring a candidate
+    input without a code change (`--set extra=kinboshi`)."""
 
     name = "A"
     objective = "regression"
     N_SEEDS = 5
-    OPTIONS = {"half_life": None, "extra": (), "extra_shared": ()}
+    OPTIONS = {"half_life": None, "extra": ()}
 
     @property
     def features(self):
-        return FEATURES + _cols(self.extra) + _cols(self.extra_shared)
+        return FEATURES + _cols(self.extra)
 
     def fit(self, train):
         w = None
@@ -252,12 +251,11 @@ def _gap_pairs(scores, pos, gap):
     return np.where(swap, j_arr, i_arr), np.where(swap, i_arr, j_arr)
 
 
-def _pair_matrix(df, i_arr, j_arr, h2h=False, context=False, base=None, extra=(), extra_shared=()):
+def _pair_matrix(df, i_arr, j_arr, h2h=False, context=False, base=None, extra=()):
     """Feature rows for index pairs of one basho's rows (i = currently higher
     ranked): feature differences (FEATURES + extra), then optionally the
-    pair's head-to-head bout this basho (+1 i won, -1 i lost), context columns
-    (CONTEXT_SHARED + extra_shared, the pair's location, both endpoints'
-    class), base-score gap."""
+    pair's head-to-head bout this basho (+1 i won, -1 i lost), context
+    columns, base-score gap."""
     X = df[FEATURES + list(extra)].to_numpy(dtype=float)
     cols = [X[i_arr] - X[j_arr]]
     if h2h:
@@ -269,7 +267,7 @@ def _pair_matrix(df, i_arr, j_arr, h2h=False, context=False, base=None, extra=()
     if context:
         means = df[CONTEXT_MEAN].to_numpy(dtype=float)
         ends = df[CONTEXT_ENDS].to_numpy(dtype=float)
-        cols += [df[CONTEXT_SHARED + list(extra_shared)].to_numpy(dtype=float)[i_arr],
+        cols += [df[CONTEXT_SHARED].to_numpy(dtype=float)[i_arr],
                  (means[i_arr] + means[j_arr]) / 2, ends[i_arr], ends[j_arr]]
     if base is not None:
         cols.append((base[i_arr] - base[j_arr])[:, None])
@@ -284,15 +282,14 @@ class _PairStage:
     the base-score gap as a feature)."""
 
     def __init__(self, seeds, params, window, h2h=False, context=False, oof=None,
-                 oof_gap=2.0, extra=(), extra_shared=()):
+                 oof_gap=2.0, extra=()):
         self.seeds, self.params, self.window = seeds, params, window
         self.h2h, self.context, self.oof_gap = h2h, context, oof_gap
-        self.extra, self.extra_shared = _cols(extra), _cols(extra_shared)
+        self.extra = _cols(extra)
         self.oof = None if oof is None else oof.set_index(["basho", "rikishi_id"])["oof"]
 
     def _matrix(self, df, i_arr, j_arr, base):
-        return _pair_matrix(df, i_arr, j_arr, self.h2h, self.context, base,
-                            self.extra, self.extra_shared)
+        return _pair_matrix(df, i_arr, j_arr, self.h2h, self.context, base, self.extra)
 
     def _base(self, df):
         if self.oof is None:
@@ -341,12 +338,11 @@ def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, workers=1,
 
     lab = trans[trans["position_next"].notna()]
     kwargs = {k: v for k, v in kwargs.items() if k not in ("oof", "seed")}
-    base_kw = {k: kwargs[k] for k in ("n_seeds", "base", "half_life", "extra", "extra_shared")
-               if k in kwargs}
+    base_kw = {k: kwargs[k] for k in ("n_seeds", "base", "half_life", "extra") if k in kwargs}
     base_spec = [cls.objective, base_kw, BASE_PARAMS, min_history, train_start]
     key = hashlib.sha256(json.dumps(base_spec, sort_keys=True).encode())
     key.update((inspect.getsource(GBMRegression) + inspect.getsource(_oof_one)).encode())
-    cols = FEATURES + _cols(kwargs.get("extra")) + _cols(kwargs.get("extra_shared"))
+    cols = FEATURES + _cols(kwargs.get("extra"))
     key.update(pd.util.hash_pandas_object(lab[["basho", "rikishi_id", "position_next"] + cols],
                                           index=False).to_numpy().tobytes())
     cache_dir = Path(cache_dir or PROCESSED.parent.parent / "results" / "scratch" / "oof")
@@ -472,7 +468,7 @@ class GBMRerank(GBMMedian):
         super().fit(train)
         self.pair = _PairStage(self.seeds, self.pair_params, self.pair_window, self.h2h,
                                self.context, self.oof if self.near_ties else None,
-                               self.oof_gap, self.extra, self.extra_shared).fit(train)
+                               self.oof_gap, self.extra).fit(train)
 
     def score(self, cands, k=None):
         base = self.base_score(cands, k)

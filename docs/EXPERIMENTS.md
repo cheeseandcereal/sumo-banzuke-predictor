@@ -1199,14 +1199,31 @@ Two bag replicates, paired against the E22 default (same data):
 **Not adopted.** Flat on the screen with the halves disagreeing, a
 suggestive but insignificant MAE gain on the confirm window that is not
 concentrated in the COVID frames (without 202207/202209 it is -0.029).
-The columns stay in the dataset (`SUPPLY_FEATURES`) for a later angle: a
-pair-stage-only form, or the interaction with the riser's own record.
+Code and columns removed afterwards (the E18 convention); a later angle
+would be a pair-stage-only form, or the interaction with the riser's own
+record, and the `extra` option measures any new column without a code
+change.
 Diagnostic (seed-0 bag, KK risers from M9+ with 9-11 wins, signed error
 by `mk_joi` bucket <= 5 / 6-7 / 8-9 / 10+): default -0.65 / -0.38 / +0.16 /
 +0.67 (Spearman with `mk_joi` .13), with `mk_joi,kk_upper` -0.33 / -0.15 /
 +0.10 / -0.03 (Spearman .00). The model learns the field; the correction
 is worth about half a cell on 4-5 men per basho and does not reach the
 slot or MAE metrics.
+
+## Housekeeping (2026-10, after E25)
+
+Removed, recoverable from git history before this note: `experiments/
+grouping.py` (E16; the twin question is settled, `keep_twin_order` and
+`twin_unit` are in the package and the convention audit tracks adjacency;
+the tool also read a predictions cache that no longer exists under that
+name), `experiments/rerank_offline.py` (E24 null; a Kemeny retest is
+cheaper as a `GBMRerank` option and one backtest), the fourteen E20 rule
+functions in `experiments/rules.py` (adopted ones are no-ops against the
+resolver, rejected ones are logged above; the harness stays with the two
+open leads R11 and R13 as worked examples), the E25 supply columns and the
+`extra_shared` option. Kept for the next rule search: `explain.py` (frame
+cache, side-by-side sheets, per-rikishi stage table, miss docket, pair
+calibration), `precedent.py`, `rules.py`, and the `extra` model option.
 
 ## Reading a forecast: reviewer checklist (from E19, updated E22-E25)
 

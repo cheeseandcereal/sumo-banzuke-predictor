@@ -26,14 +26,7 @@ Backtested performance (202001-202609, 40 basho, two bag replicates):
 **21.1 of 42 slots exactly right** per basho on average, **83% of
 wrestlers placed within one position**, mean absolute error 0.75
 half-ranks, juryo promotion/demotion F1 0.92/0.94, GTB score 49
-points/basho (2 per exact slot, 1 per right-rank-wrong-side). Over the
-2004-2019 window used for tuning it scores 21.2 exact slots (MAE 0.80).
-The 2026-10 round (docs/EXPERIMENTS.md E21-E25) added the committee's
-sanyaku and Y/O conventions to the resolver and a flag for absences the
-JSA exempted, worth +3.2 exact slots and -0.19 MAE on the 2020s window
-over the previous default (+0.9 / -0.04 on 2004-2019). These figures
-were used to pick the current configuration, so the first untouched test
-is the 202611 banzuke.
+points/basho (2 per exact slot, 1 per right-rank-wrong-side).
 
 For scale, in the long-running human "Guess the Banzuke" game
 ([dichne.com](https://www.dichne.com/Guess.htm), scored the same way:
@@ -147,7 +140,7 @@ regime, so full history remains the default.
 - `data/banzuke/`, `data/basho/`: committed raw API responses
 - `data/processed/`: committed, reproducible Parquet datasets
 - `banzuke/`: dataset build, features, models, resolver, backtest harness
-- `experiments/`: case-analysis and offline measurement tools (`explain`, `rules`, `rerank_offline`, `precedent`, `grouping`)
+- `experiments/`: tools for finding and testing committee conventions without retraining (`explain`, `precedent`, `rules`)
 - `predict.py`, `backtest.py`, `analyze.py`: CLIs
 - `tests/`: regression tests
 - `results/`: generated backtest reports and caches

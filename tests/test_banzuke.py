@@ -331,12 +331,11 @@ def test_twin_unit_keeps_identical_record_twins_together(small_train, cands_for)
         _twin_units(cands, "yo")
 
 
-def test_protected_and_supply_columns(trans):
-    """E23/E25 columns. rank_protected (a feature) marks exactly the full-kyujo
-    rows whose rank was frozen (kosho granted, or a listed modern exemption);
-    the supply columns (opt-in) describe the source basho's makuuchi field."""
-    from banzuke.features import PROTECTED, SUPPLY_FEATURES
-    assert "rank_protected" in FEATURES and set(SUPPLY_FEATURES).isdisjoint(FEATURES)
+def test_protected_column(trans):
+    """E23: rank_protected marks exactly the full-kyujo rows whose rank was
+    frozen (kosho granted, or a listed modern exemption)."""
+    from banzuke.features import PROTECTED
+    assert "rank_protected" in FEATURES
     full = trans[(trans["wins"] == 0) & (trans["absences"] >= 8) & (trans["rank_class"] >= SEKIWAKE)
                  & trans["delta"].notna()]
     kept, dropped = full[full["rank_protected"] == 1], full[full["rank_protected"] == 0]
@@ -346,23 +345,20 @@ def test_protected_and_supply_columns(trans):
     assert (trans.loc[trans["rank_class"] <= OZEKI, "rank_protected"] == 0).all()
     assert trans.loc[(trans["basho"] == 202201) & (trans["shikona"] == "Takayasu"), "rank_protected"].item() == 1
     assert trans.loc[(trans["basho"] == 202207) & (trans["shikona"] == "Takanosho"), "rank_protected"].item() == 0
-    b = trans[trans["basho"] == 202207].iloc[0]
-    assert [b[c] for c in SUPPLY_FEATURES] == [9, 4, 3, 3, 14]  # Nagoya 2022: 14 men with an absence
-    assert trans.groupby("basho")[SUPPLY_FEATURES].nunique().eq(1).all().all()
 
 
-def test_extra_feature_options(small_train, cands_for):
-    """`extra` / `extra_shared` append dataset columns to the GBM inputs (base
-    model, pair differences, pair context) and the OOF cache key."""
+def test_extra_feature_option(small_train, cands_for):
+    """`extra` appends dataset columns to the GBM inputs (base model and pair
+    differences) and to the OOF cache key."""
     cands = cands_for(200401)
     kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
     plain = GBMRerank(**kw)
-    more = GBMRerank(**kw, extra="strong_below", extra_shared=["mk_joi", "n_absent"])
-    assert more.features == FEATURES + ["strong_below", "mk_joi", "n_absent"] and plain.features == FEATURES
+    more = GBMRerank(**kw, extra="kinboshi,wins_vs_joi")
+    assert more.features == FEATURES + ["kinboshi", "wins_vs_joi"] and plain.features == FEATURES
     plain.fit(small_train)
     more.fit(small_train)
-    assert more.ms[0].n_features_ == len(FEATURES) + 3
-    assert more.pair.ms[0].n_features_ == plain.pair.ms[0].n_features_ + 1 + 2
+    assert more.ms[0].n_features_ == len(FEATURES) + 2
+    assert more.pair.ms[0].n_features_ == plain.pair.ms[0].n_features_ + 2
     assert sorted(more.score(cands).tolist()) == list(range(len(cands)))
     assert not np.array_equal(plain.base_score(cands), more.base_score(cands))
     import tempfile
@@ -370,7 +366,7 @@ def test_extra_feature_options(small_train, cands_for):
         kw_oof = {"n_seeds": 1, "base": {"n_estimators": 5}}
         n = len(small_train["basho"].unique()) - 1
         oof_base_scores(small_train, GBMRerank, kw_oof, min_history=n, cache_dir=d)
-        oof_base_scores(small_train, GBMRerank, {**kw_oof, "extra": "strong_below"}, min_history=n, cache_dir=d)
+        oof_base_scores(small_train, GBMRerank, {**kw_oof, "extra": "kinboshi"}, min_history=n, cache_dir=d)
         assert len(list(Path(d).glob("*.parquet"))) == 2
 
 
@@ -616,33 +612,3 @@ def test_explain_reconstructs_rerank_and_isolates_structural_shift(small_train, 
     assert ((swapped["stage"] == "resolver") | (swapped["hit"] & (swapped["stage"] == ""))).all()
     assert (p.loc[p["class_next"] <= SEKIWAKE, "block_offset"] == 0).all()
     assert p.loc[p["class_next"] <= SEKIWAKE, "hit"].all()
-
-
-def test_rerank_offline_rebuilds_borda_from_pairs(small_train, cands_for):
-    """experiments.rerank_offline: the reranker rebuilt from a frame's base
-    scores and its pair table reproduces GBMRerank.score; Kemeny and Copeland
-    are valid permutations; excluded men keep their base-score slot."""
-    from experiments.explain import PAIR_GAP, pair_table, rerank_detail
-    from experiments.rerank_offline import excluded, rerank
-
-    kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
-    m = GBMRerank(**kw)
-    m.fit(small_train)
-    for target in (200401, 202309):
-        cands = cands_for(target)
-        base = m.base_score(cands)
-        g = cands.assign(base=base, score=m.score(cands), cluster=0)
-        pairs = pair_table(m, cands, base, rerank_detail(m, cands, base))
-        assert pairs["gap"].max() <= PAIR_GAP
-        p_of = dict(zip(zip(pairs["rid_i"], pairs["rid_j"]), pairs["p"]))
-        assert np.array_equal(rerank(g, p_of, "borda"), g["score"].to_numpy())
-        for how in ("kemeny", "copeland"):
-            assert sorted(rerank(g, p_of, how).tolist()) == list(range(len(g)))
-        ex = excluded(g)
-        assert ex.sum() >= 4 and (g.loc[ex, "rank_class"] <= OZEKI).any()
-        out = rerank(g, p_of, "borda", ex)
-        assert sorted(out.tolist()) == list(range(len(g)))
-        # excluded men hold the base-score slot they would have taken anyway
-        by_base = np.lexsort((g["position"].to_numpy(), base))
-        rank_base = np.empty(len(g)); rank_base[by_base] = np.arange(len(g))
-        assert (out[ex] == rank_base[ex]).all()

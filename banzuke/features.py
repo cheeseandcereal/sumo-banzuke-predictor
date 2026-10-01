@@ -29,11 +29,7 @@ SCHEDULE_FEATURES = ["opp_pos_mean", "n_joi_opp", "wins_vs_joi", "kinboshi"]
 
 # rank_protected (in FEATURES since E23): the committee did not count a full
 # absence against the man (kosho era 1972-2003: kosho granted; 2004+: the
-# PROTECTED table). The supply columns describe the source basho's makuuchi
-# field (zone pressure); computed, excluded from model inputs (E25 null),
-# available through `--set extra_shared=mk_joi,...`.
-SUPPLY_FEATURES = ["mk_joi", "kk_upper", "strong_below", "kk_sanyaku", "n_absent"]
-
+# PROTECTED table).
 # (basho, rikishi_id) of full-kyujo men (0 wins, 8+ absences) since the kosho
 # system ended whose rank was frozen: the last kosho cases (200401), the
 # Tamanoi stable's COVID withdrawal (202009), the JSA's Hatsu 2021 COVID
@@ -197,26 +193,5 @@ def build_transitions(tidy: pd.DataFrame, bouts: pd.DataFrame) -> pd.DataFrame:
     kosho_kept = (df["basho"] <= KOSHO_END) & full & (df["delta"] <= 3)
     listed = pd.Series(list(zip(df["basho"], df["rikishi_id"])), index=df.index).isin(PROTECTED)
     df["rank_protected"] = (kosho_kept | listed).astype(int)
-    df = df.merge(supply_features(tidy), on="basho", how="left")
 
     return df.drop(columns=["bidx", "beat_yokozuna"])
-
-
-def supply_features(tidy: pd.DataFrame) -> pd.DataFrame:
-    """Per basho, the makuuchi field the committee must fit (E19 zone pressure):
-    make-koshi count in M1-M6 (the vacuum above), kachi-koshi count in M1-M8
-    (the crowd), men at M9 or lower with 10+ wins (competition for the
-    vacated cells), kachi-koshi S/K incumbents (zone fullness), men with any
-    absence (a withdrawal-policy proxy)."""
-    m = tidy[tidy["division"] == 0]
-    maeg = m["rank_class"] == MAEGASHIRA
-    kk = m["wins"] >= 8
-    flags = pd.DataFrame({
-        "basho": m["basho"],
-        "mk_joi": maeg & (m["rank_number"] <= 6) & ~kk,
-        "kk_upper": maeg & (m["rank_number"] <= 8) & kk,
-        "strong_below": maeg & (m["rank_number"] >= 9) & (m["wins"] >= 10),
-        "kk_sanyaku": m["rank_class"].isin([SEKIWAKE, KOMUSUBI]) & kk,
-        "n_absent": m["absences"] > 0,
-    })
-    return flags.groupby("basho").sum().astype(int).reset_index()
