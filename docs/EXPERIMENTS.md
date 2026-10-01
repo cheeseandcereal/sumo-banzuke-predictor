@@ -741,6 +741,49 @@ Takayasu / Ura, Hakunofuji / Daieisho, Fujiseiun / Kotoshoho at M2-M4;
 the committee's choice among those three rows is historically a coin
 flip, the pair staying together is not.
 
+## E18: mechanical-formula feature for promotee ordering (2026-09, protocol v2)
+
+Trigger: the 202611 forecast placed Kyokukaiyu (J1W 8-7) above
+Kitanowaka (J6E 11-4). The committee orders juryo promotees almost
+mechanically: `juryo position - 4 x wins` reproduces the relative order
+of 94.2% of 976 promotee pairs since 2004, and at a margin of 3
+half-ranks (this pair) the higher juryo rank lands higher only 4% of
+the time. Ar's base model and reranker match the committee's exchange
+rate (gap slope .51 vs .53 half-ranks per margin unit) and order
+promotee pairs at 93.6%; the pair above was a 1-in-20 near-tie miss
+(pair classifier .551), not a bias.
+
+Hypothesis tested anyway: giving the GBMs the formula directly (model
+R's per-zone linear fit of delta on win8 and absences, refit for every
+basho on the labels known at the time, as `mech_delta` / `mech_pos`
+inputs to both stages, option `mech`) would let trees use the linear
+exchange rate instead of approximating it with splits.
+
+Screen and confirm, two bag replicates, paired vs the default:
+
+| config | window | exact/42 | MAE | dExact [CI] | W-L | dMAE [CI] | p |
+|---|---|---:|---:|---|---|---|---:|
+| mech=true | screen | 20.06 | 0.867 | -0.24 [-0.61, +0.14] | 37-50 | **+0.027 [+0.012, +0.041]** | .022 |
+| mech=true | confirm | 18.00 | 0.919 | +0.08 [-0.50, +0.55] | 17-18 | -0.018 [-0.047, +0.010] | .19 |
+
+Worse on the screen window in both halves (+.019 / +.035), with the
+base stage's own promotee ordering falling from .944 to .903 on a
+screen-window sample: the formula over-spreads promotees (its gap
+slope is .89, 168% of the committee's) and the trees trust it in
+near-ties where the learned features were already right. The confirm
+window's small gain does not rescue a significant screen loss. **Not
+adopted**; code removed, `transitions.parquet` unchanged. With `mech`
+the 202611 sheet fixed Kitanowaka / Kyokukaiyu and broke Daiseizan /
+Arashifuji (margin -1, the lower-ranked lands higher 83%): one
+near-tie traded for another, which is what a null looks like on one
+sheet.
+
+Lesson for reading forecasts: a single inverted promotee pair with a
+3-half-rank margin is a known 5% event, and the confidence markers
+(`?`/`??` on both wrestlers) already flag it; `--above "Kitanowaka >
+Kyokukaiyu"` is the right tool for a user who wants the historical
+favorite.
+
 ## Known limitations / future leads (updated 2026-09)
 
 - Juryo promotee placement is still under-promoted (+0.64 positions
