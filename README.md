@@ -13,8 +13,10 @@ classifier that learned the committee's conflict-resolution habits
 feeding a resolver that applies the near-inviolable structure (Y/O
 promotion rules and order, make-koshi sanyaku exits, sanyaku minimums,
 empirically-derived E/W layout, no promotion after make-koshi for S/K/M).
-See `docs/EXPERIMENTS.md` for the full experiment log and selection
-rationale.
+`docs/MODEL.md` walks through that pipeline stage by stage (every
+dataset column, both model stages, the resolver's rules with their
+precedent, what `predict.py` prints); `docs/EXPERIMENTS.md` is the full
+experiment log and selection rationale.
 
 The model trains on historical transitions between consecutive basho,
 using rank, win-loss results, prizes, recent form, career context, and
@@ -144,4 +146,5 @@ regime, so full history remains the default.
 - `predict.py`, `backtest.py`, `analyze.py`: CLIs
 - `tests/`: regression tests
 - `results/`: generated backtest reports and caches
+- `docs/MODEL.md`: how the default pipeline works, stage by stage (columns, model stages, resolver rules)
 - `docs/EXPERIMENTS.md`: experiment log and model-selection rationale

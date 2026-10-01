@@ -612,3 +612,22 @@ def test_explain_reconstructs_rerank_and_isolates_structural_shift(small_train, 
     assert ((swapped["stage"] == "resolver") | (swapped["hit"] & (swapped["stage"] == ""))).all()
     assert (p.loc[p["class_next"] <= SEKIWAKE, "block_offset"] == 0).all()
     assert p.loc[p["class_next"] <= SEKIWAKE, "hit"].all()
+
+
+def test_model_doc_tables_match_the_code(trans):
+    """docs/MODEL.md lists FEATURES in declared order and names every
+    transitions.parquet column exactly once, so a feature or column change
+    has to touch the documentation."""
+    import re
+
+    doc = (ROOT / "docs" / "MODEL.md").read_text()
+
+    def cells(section):
+        block = re.search(rf"<!-- {section}:begin -->(.*?)<!-- {section}:end -->", doc, re.DOTALL)
+        assert block, f"{section} markers missing from docs/MODEL.md"
+        return re.findall(r"^\| `(\w+)` \|", block.group(1), re.MULTILINE)
+
+    assert cells("FEATURES") == FEATURES
+    documented = cells("COLUMNS")
+    assert len(documented) == len(set(documented)), "a column is documented twice"
+    assert sorted(documented) == sorted(trans.columns)
