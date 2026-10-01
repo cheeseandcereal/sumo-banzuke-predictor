@@ -951,9 +951,11 @@ Worker defaults are now cpu_count - 2 everywhere and `predict.py` gained
 
 Reproduction: the E19 cache rebuilt on the fixed data (135 targets x 3
 seeds, 12 min on 14 workers) gives 19.62 exact / 0.864 MAE over 2004-2026
-(E19: 20.37 / 0.852 on 2004-2018 and 18.14 / 0.892 on 2019+, which it
-matches to the second decimal), seeds 0-1 on 2020-2026 17.94 / 0.932 (E17:
-17.93 / 0.937), every frame with `train_max < target`, `repro` 1.000.
+(E19: 20.37 / 0.852 on 2004-2018, reproduced to the decimal, and 18.14 /
+0.892 on 2019+, now 18.16 / 0.888), seeds 0-1 on 2020-2026 17.94 / 0.932
+(E17's adopted configuration: 17.93 / 0.937 on the old data; the frames
+from 202509 on differ, 202509 -2 exact and 202607 +2 among them), every
+frame with `train_max < target`, `repro` 1.000.
 `experiments.rules` on it reproduces the E20 table: bundle without R1
 +1.13 exact per basho, 43-2 (the two fixed rows change nothing before
 202509).
@@ -1010,7 +1012,7 @@ the `cached` variant (the old sheets) pairs the port against them:
 
 | window | n | old exact / MAE | new exact / MAE | dExact [CI] | W-L | dMAE [CI] |
 |---|---:|---:|---:|---|---|---|
-| full 2004-2026 | 135 | 19.62 / 0.864 | 20.80 / 0.845 | +1.18 [+0.73, +1.70] | 44-2 | -0.020 [-0.029, -0.013] |
+| full 2004-2026 | 135 | 19.62 / 0.864 | 20.80 / 0.844 | +1.18 [+0.73, +1.70] | 44-2 | -0.020 [-0.029, -0.013] |
 | 2004-2018 | 89 | 20.37 / 0.852 | 21.18 / 0.833 | +0.80 [+0.51, +1.13] | 24-1 | -0.019 [-0.032, -0.010] |
 | 2019+ | 46 | 18.16 / 0.888 | 20.06 / 0.867 | +1.90 [+0.82, +3.17] | 20-1 | -0.021 [-0.032, -0.011] |
 | confirm 2020+ | 40 | 17.94 / 0.929 | 19.94 / 0.910 | +2.00 [+0.81, +3.35] | 17-1 | -0.019 [-0.029, -0.009] |
@@ -1030,27 +1032,32 @@ Terunofuji promoted on a 14-1 jun-yusho after a yusho, 3/8 all-time for
 that pattern), and the COVID frames (202209, 202211, 202301).
 
 Protocol v2 (two bag replicates, full retrain on the rebuilt data, paired
-against the E17 default's cached rows):
+against the E17 round's default rows in the backtest cache; those are the
+pre-`twin_unit` rows, which the adopted `twin_unit=sk` configuration beat
+by +0.02 exact on the screen and -0.001 MAE on the confirm window, E17):
 
 | window | n | E17 default exact / MAE | this exact / MAE | dExact [CI] | W-L | dMAE [CI] | p (MAE) |
 |---|---:|---:|---:|---|---|---|---:|
 | screen 2004-2019 | 95 | 20.28 / 0.840 | 21.13 / 0.820 | +0.84 [+0.52, +1.21] | 27-3 | -0.020 [-0.033, -0.011] | <.001 |
-| screen halves | | | | +0.75 / +0.94 | 13-1 / 14-2 | -0.015 / -0.025 | .004 / .001 |
+| screen halves | | | | +0.74 / +0.94 | 13-1 / 14-2 | -0.015 / -0.025 | .004 / .001 |
 | confirm 2020-2026 (soft) | 40 | 17.93 / 0.938 | 19.94 / 0.913 | +2.01 [+0.82, +3.36] | 18-3 | -0.025 [-0.036, -0.015] | .005 |
 | full | 135 | 19.59 / 0.869 | 20.77 / 0.847 | +1.19 [+0.74, +1.72] | 45-6 | -0.022 [-0.031, -0.014] | <.001 |
 
 Guardrails: promotion/demotion F1 .935/.905 -> .935/.905 on the screen,
 .914/.883 -> .917/.881 on the confirm window; sanyaku-set exactness .647 ->
 .753 and .550 -> .612. **Adopted** (all seven rules; R12 in its own
-commit). Worst frames lose 2-3 cells (the COVID freezes), five gain 11 or
-more. Tests: the eight regained banzuke are reproduced from the true order,
+commit). On the cached orders no frame loses more than one cell (201307,
+202507); against the retrained E17 default the worst frame is 202509 at
+-2.0 and four basho gain 11 or more (201807, 202211, 202305, 202605).
+Tests: the eight regained banzuke are reproduced from the true order,
 one fixture per rule on a reversed order, the override path still wins and
 warns. The convention audit's seven watch rows are resolver rows now (the
 7-win sekiwake row counts the guarded cases, 0/29) plus rows for the two
 Y/O corrections and the K1W exit; the kyujo row stays a watch.
 
 Not adopted, measured on the same frames: R9/R13 (weak M1 claims never
-create a third slot) +0.26 / +0.18 full, 4-1 / 5-3 with a -8 frame; R10
+create a third slot) +0.26 / +0.18 full, 4-1 / 5-3 with a -10 frame
+(202303); R10
 (make-koshi <= 6 wins drops >= 2 cells) 0-2; R11 (East incumbent keeps the
 cell unless West has 4+ more wins) +0.03 full, +0.17 on 2019+ (3-0), a
 2016+ lean. Leads seen while porting: a yusho after a 12-3 jun-yusho was
@@ -1179,9 +1186,9 @@ Two bag replicates, paired against the E22 default (same data):
 
 | config | window | exact/42 | MAE | dExact [CI] | W-L | dMAE [CI] | p |
 |---|---|---:|---:|---|---|---|---:|
-| all five | screen 2004-2019 | 21.13 -> 20.94 | 0.820 -> 0.823 | -0.18 [-0.72, +0.38] | 44-43 | +0.003 [-0.021, +0.026] | .51 |
+| all five | screen 2004-2019 | 21.13 -> 20.94 | 0.820 -> 0.823 | -0.18 [-0.72, +0.38] | 44-43 | +0.003 [-0.021, +0.026] | .80 |
 | all five | halves | | | +0.13 / -0.49 | | -0.016 / +0.022 | |
-| all five | confirm 2020-2026 (soft) | 19.94 -> 20.00 | 0.913 -> 0.887 | +0.06 [-0.55, +0.68] | 18-19 | -0.026 [-0.053, +0.004] | .26 |
+| all five | confirm 2020-2026 (soft) | 19.94 -> 20.00 | 0.913 -> 0.887 | +0.06 [-0.55, +0.68] | 18-19 | -0.026 [-0.053, +0.004] | .28 |
 | all five | full | 20.77 -> 20.66 | 0.847 -> 0.842 | -0.11 | 62-62 | -0.006 [-0.025, +0.013] | |
 | `mk_joi,kk_upper` (vs the final default) | screen 2004-2019 | 21.22 -> 21.22 | 0.797 -> 0.797 | 0.00 [-0.51, +0.52] | 43-44 | -0.000 [-0.022, +0.020] | .81 |
 | `mk_joi,kk_upper` | halves | | | +0.19 / -0.19 | | -0.003 / +0.003 | |
