@@ -30,15 +30,13 @@ import numpy as np
 import pandas as pd
 
 from banzuke import confidence, models
-from banzuke.build import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE
+from banzuke.build import JURYO, KOMUSUBI, OZEKI, SEKIWAKE, YOKOZUNA
 from banzuke.harness import DEFAULT_WORKERS, parse_sets
 from banzuke.overrides import OverrideError, parse, splice, verify
-from banzuke.resolver import resolve, rule_masks
+from banzuke.resolver import resolve
 
 PROCESSED = Path(__file__).parent / "data" / "processed"
 CLS = "YOSKMJ"
-CLS_NAMES = ("yokozuna", "ozeki", "sekiwake", "komusubi", "maegashira", "juryo")
-EXIT_PRECEDENT = {SEKIWAKE: "69/70 with <= 6 wins", KOMUSUBI: "131/132 with <= 6 wins, 24/24 with 7 below K1E"}
 BASHO_MONTHS = (1, 3, 5, 7, 9, 11)
 SPEC_KEYS = ("above", "below", "class", "count", "pin")
 
@@ -84,33 +82,7 @@ def predict(cands, point, per_seed, ov, mak_size, base=None, rates=None):
     return pred, warnings, items
 
 
-def rule_notes(pred):
-    """Cells a resolver convention decided (docs/EXPERIMENTS.md E22), with the
-    precedent behind each, so thin ones (the ozeki rule's one-maegashira-basho
-    case rests on four promotions) are visible on the sheet."""
-    rm = rule_masks(pred)
-    notes = []
-    y_old = ((pred["rank_class"] == OZEKI) & (pred["yusho"] == 1)
-             & ((pred["yusho1"] == 1) | ((pred["junyusho1"] == 1) & (pred["w1"] >= 12)))).to_numpy()
-    for i, r in enumerate(pred.itertuples(index=False)):
-        name = r.shikona
-        if rm["o_run_m"][i] and not rm["o_run"][i]:
-            notes.append(f"{name}: ozeki run of {int(r.roll3)} wins with one upper-maegashira "
-                         "basho: promoted 4/4 since 2004 (runs with two maegashira basho 0/3)")
-        if y_old[i] and not rm["y_promo"][i]:
-            notes.append(f"{name}: yusho after a yusho / jun-yusho fought at sekiwake: "
-                         "not promoted to yokozuna 0/3 since 2004")
-        if rm["kadoban_out"][i] and r.pred_class == SEKIWAKE:
-            notes.append(f"{name}: demoted ozeki, bottom sekiwake (0/45 above another sekiwake since 1990)")
-        if rm["k_from_s"][i]:
-            notes.append(f"{name}: 7-win sekiwake takes a komusubi slot (29/29 since 2004)")
-        elif rm["exit"][i] and r.pred_class >= MAEGASHIRA:
-            notes.append(f"{name}: make-koshi {CLS_NAMES[r.rank_class]} leaves sanyaku "
-                         f"({EXIT_PRECEDENT[r.rank_class]} since 2004)")
-    return notes
-
-
-def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds, kyujo=None):
+def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds):
     how = f"{n_seeds}-seed bag" if n_seeds > 1 else "seed 0"
     print(f"predicted makuuchi banzuke for {target} "
           f"(from {latest} results, model {args.model}, {how})\n")
@@ -166,30 +138,35 @@ def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds, k
             if it["hints"]:
                 print(f"{'':16}try " + "  or  ".join(fmt(f, s) for f, s in it["hints"]))
 
-    notes = rule_notes(pred)
-    for _, r in pred.iterrows():
-        if (kyujo and r["rank_class"] >= SEKIWAKE and r["wins"] == 0 and r["absences"] >= 8
-                and not r.get("rank_protected", 0)):
-            n, q = kyujo
-            notes.append(f"{r['shikona']}: full kyujo, committee drop +{q[1]:.0f} cells "
-                         f"(q25/75 +{q[0]:.0f}/+{q[2]:.0f}, n={n} since 2004), "
-                         f"model {int(r['pred_pos'] - r['position']):+d}; --protected if the JSA exempted him")
+    items = notes(pred, target)
+    if items:
+        print("\nnotes:")
+        for n in items:
+            print(f"  - {n}")
+
+
+def notes(pred, target):
+    """Events on the sheet: Y/O promotions (whatever decided them), kadoban,
+    ozeki runs, juryo demotions."""
+    out = []
+    for _, r in pred.sort_values("pred_pos").iterrows():
+        if r["pred_class"] == YOKOZUNA and r["rank_class"] > YOKOZUNA:
+            out.append(f"{r['shikona']}: promoted to yokozuna")
+        if r["pred_class"] == OZEKI and r["rank_class"] > OZEKI:
+            out.append(f"{r['shikona']}: promoted to ozeki")
         if r["rank_class"] == OZEKI and r["pred_class"] == OZEKI and r["wins"] < 8:
-            notes.append(f"{r['shikona']}: kadoban at {target}")
+            out.append(f"{r['shikona']}: kadoban at {target}")
         if (r["rank_class"] in (SEKIWAKE, KOMUSUBI)
                 and r["pred_class"] in (SEKIWAKE, KOMUSUBI)
                 and r["wins"] >= 8 and r["ozeki_run2"] >= 20):
-            notes.append(f"{r['shikona']}: ozeki run, {int(r['ozeki_run2'])} wins "
-                         f"over last 2 basho in sanyaku")
+            out.append(f"{r['shikona']}: ozeki run, {int(r['ozeki_run2'])} wins "
+                       f"over last 2 basho in sanyaku")
     demoted = pred[(pred["rank_class"] < JURYO) & (pred["pred_class"] == JURYO)]
     if len(demoted):
-        notes.append("demoted to juryo: " + ", ".join(
+        out.append("demoted to juryo: " + ", ".join(
             f"{r['shikona']} ({CLS[r['rank_class']]}{r['rank_number']}{'EW'[r['side']]})"
             for _, r in demoted.sort_values("pred_pos").iterrows()))
-    if notes:
-        print("\nnotes:")
-        for n in notes:
-            print(f"  - {n}")
+    return out
 
 
 def interactive(state, run):
@@ -307,7 +284,6 @@ def main():
             ap.error(f"--protected: unknown shikona {missing}")
         cands.loc[keep, "rank_protected"] = 1
         print(f"rank protected: {', '.join(cands.loc[keep, 'shikona'])}\n")
-    kyujo = confidence.kyujo_drop(trans)
 
     # train once; everything downstream is instant
     print("training...", file=sys.stderr)
@@ -333,7 +309,7 @@ def main():
         ov = parse(cands, above=state["above"], below=state["below"],
                    classes=state["class"], counts=state["count"], pins=state["pin"])
         pred, warnings, items = predict(cands, point, per_seed, ov, mak_size, base, rates)
-        render(pred, ov, warnings, items, baseline, target, latest, args, len(model.seeds), kyujo)
+        render(pred, ov, warnings, items, baseline, target, latest, args, len(model.seeds))
 
     state = {"above": args.above, "below": args.below, "class": args.cls,
              "count": args.count, "pin": args.pin}

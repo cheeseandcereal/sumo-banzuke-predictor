@@ -179,14 +179,6 @@ def precedent(rates, claimed, rank_class, rank_number, wins):
             f"since {since} (all win totals; {wins}-win cell has {n})")
 
 
-def kyujo_drop(trans, since=200401):
-    """(n, (q25, q50, q75)) of the committee's drop for full kyujo (0 wins, 8+
-    absences) at S/K/M/J whose absence was not exempted (rank_protected 0)."""
-    t = trans[(trans["basho"] >= since) & trans["delta"].notna() & (trans["rank_class"] >= SEKIWAKE)
-              & (trans["wins"] == 0) & (trans["absences"] >= 8) & (trans["rank_protected"] == 0)]
-    return len(t), tuple(t["delta"].quantile([.25, .5, .75]))
-
-
 def _cells(p):
     return dict(zip(p["rikishi_id"], zip(p["pred_class"], p["pred_number"], p["pred_side"])))
 

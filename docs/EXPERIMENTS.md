@@ -999,8 +999,8 @@ overrides still win and each convention they break is reported):
   exactly one of the two earlier basho was at M1-M3 and the other in
   sanyaku: 4/4 (Terunofuji 201505, Tochinoshin 201805, Aonishiki 202511,
   Kirishima 202603); runs with two maegashira basho 0/3 (Kotooshu 200509,
-  Terunofuji 202011, Onosato 202405). Four cases: an audit row and a
-  predict.py note carry the thin precedent.
+  Terunofuji 202011, Onosato 202405). Four cases: an audit row carries the
+  thin precedent, and predict.py notes every Y/O promotion on the sheet.
 - R12 (own commit, adopted on measured value): komusubi newcomers rank
   below kachi-koshi komusubi incumbents, 47/49 (Takakeisho 11-4 in 201711
   and Tamawashi 13-2 in 202209 went above an 8-7 / 9-6 incumbent).
@@ -1089,8 +1089,7 @@ partial records (Tamawashi 5-8-2 at +2 and the like) stay unflagged:
 documented unknowables. Models take it through the new `extra` option
 (`--set extra=rank_protected`: appended to the base inputs and the pair
 differences, part of the OOF cache key); `predict.py --protected Name`
-sets it live, and a note prints the committee median against the model's
-drop for any unprotected full kyujo on the sheet.
+sets it live.
 
 Two bag replicates, paired against the E22 default on the same data:
 
@@ -1210,17 +1209,16 @@ slot or MAE metrics.
 ## Reading a forecast: reviewer checklist (from E19, updated E22-E25)
 
 Each item is a situation the committee decides lopsidedly; the ones marked
-"enforced" the resolver now applies (E22; `notes:` under the sheet names
-them with their precedent, and an override that breaks one is reported as
-a broken convention). The rest are still the reviewer's job. Counts are
-2004+ unless stated.
+"enforced" the resolver now applies (E22; an override that breaks one is
+reported as a broken convention, and every Y/O promotion is listed under
+`notes:`). The rest are still the reviewer's job. Counts are 2004+ unless
+stated.
 
 - Full or heavy kyujo (0 wins, 8+ absences) at S/K/M: the committee drops
   him about 24 cells from any rank (q25/50/75 +22/+24/+25, n=104 incl.
   juryo); since E23 the model learns this (`rank_protected` marks the
-  exempted rows) and a note compares its drop with the median. If the JSA
-  has exempted the man (stable-wide COVID-style withdrawal), pass
-  `--protected Name`.
+  exempted rows). If the JSA has exempted the man (stable-wide COVID-style
+  withdrawal), pass `--protected Name`.
 - Enforced: make-koshi sekiwake with 7 wins goes to komusubi when two other
   sekiwake candidates exist (29/29), 6 or fewer to maegashira (69/70);
   make-koshi komusubi with 6 or fewer wins (131/132) or 7 wins below K1E
@@ -1281,7 +1279,8 @@ a broken convention). The rest are still the reviewer's job. Counts are
   conditions); the thin cases left to the reviewer are a yusho after a
   12-3 jun-yusho (1/3 since 2004), a jun-yusho after a yusho (1/2),
   Asanoyama's 32-win promotion over the cancelled 202005 and Takakeisho's
-  declined 33 (201903). predict.py notes name them.
+  declined 33 (201903); predict.py lists every Y/O promotion under `notes:`
+  so the call is visible.
 - COVID-era kadoban exemptions (Mitakeumi 2022) are not modeled beyond the
   kadoban flag surviving the exempted basho (E22 note).
 - Structural errors on 2019+ (E22): Y/O/S/K counts wrong in 12 of 46

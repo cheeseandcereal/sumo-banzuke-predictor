@@ -115,8 +115,7 @@ The resolver's hard-coded conventions (yokozuna never demoted, Y/O order
 by wins, make-koshi sekiwake and komusubi exits, the demoted ozeki at the
 bottom of the sekiwake, sanyaku minimums, forced claims, make-koshi
 ceiling, E/W layout, twin order) are empirical regularities read off
-history once; the `notes:` under a forecast name the ones that decided a
-cell, with their precedent. `banzuke.conventions`
+history once. `banzuke.conventions`
 recounts each over the full record and the last 60/30 basho and names
 its last violation, so a committee that changes its habits shows up
 in the table after the next data update rather than silently costing

@@ -466,6 +466,29 @@ def test_predict_spread(trans):
     assert (pred["spread"] > 0).any()
 
 
+def test_predict_notes_name_every_yo_promotion(cands_for):
+    """Notes report Y/O promotions whatever decided them (a rule or an
+    override), kadoban and juryo demotions; nothing else about the rules."""
+    def notes_for(target, **ov):
+        cands = cands_for(target).assign(ozeki_run2=0)
+        pred, _, _ = predict.predict(cands, cands["position_next"].to_numpy(dtype=float), [],
+                                     parse(cands, **ov), 42)
+        return predict.notes(pred, target)
+
+    n = notes_for(202609)  # Aonishiki S2W 12-3, a demoted ozeki returning
+    assert "Aonishiki: promoted to ozeki" in n and not any("yokozuna" in x for x in n)
+    n = notes_for(202601)  # Aonishiki S1E 12-3, 34 wins over K/S with one M1 basho
+    assert "Aonishiki: promoted to ozeki" in n
+    n = notes_for(202507)  # Onosato O1E 14-1 after a 12-3 yusho
+    assert "Onosato: promoted to yokozuna" in n
+    n = notes_for(202511, classes=["Kotozakura=Y"])  # an override promotes too (Kotozakura O 9-5)
+    assert "Kotozakura: promoted to yokozuna" in n
+    n = notes_for(202511)
+    assert not any("promoted" in x for x in n) and any(x.startswith("demoted to juryo") for x in n)
+    assert all(x.split(": ")[1].startswith(("promoted", "kadoban", "ozeki run")) or x.startswith("demoted")
+               for x in notes_for(202609) + notes_for(202507) + notes_for(202511))
+
+
 def test_forced_claims_matches_resolver(trans):
     cands = trans[(trans["basho"] == 202609) & ~trans["dropped"]].reset_index(drop=True)
     claims = forced_claims(cands)
