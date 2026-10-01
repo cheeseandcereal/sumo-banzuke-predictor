@@ -96,7 +96,16 @@ Re-run the model bake-off / evaluation:
 uv run python backtest.py --out results/all    # 2004 through latest basho
 uv run python backtest.py --end 202311         # original dev window only
 uv run python analyze.py --model Ar            # residual analysis
+uv run python -m banzuke.conventions           # resolver rules vs committee history
 ```
+
+The resolver's hard-coded conventions (yokozuna never demoted, sanyaku
+minimums, forced claims, make-koshi ceiling, E/W layout, twin order) are
+empirical regularities read off history once. `banzuke.conventions`
+recounts each over the full record and the last 60/30 basho and names
+its last violation, so a committee that changes its habits shows up
+in the table after the next data update rather than silently costing
+slots; `analyze.py` prints the same table.
 
 Backtest results are cached per (model, basho) in `results/scratch/`;
 re-runs with the same code and data reuse them. The cache key hashes

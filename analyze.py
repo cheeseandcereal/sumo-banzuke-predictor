@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 """Residual analysis for one model over the dev window: where do exact-slot
 misses come from, are they systematically biased, and do the confidence
-signals (banzuke.confidence) separate reliable rows from shaky ones?
+signals (banzuke.confidence) separate reliable rows from shaky ones? Ends
+with the convention audit (banzuke.conventions): every hard-coded resolver
+rule re-measured against the committee's actual decisions.
 
 Usage: uv run python analyze.py [--model Ar] [--start 200401] [--end 202609] [--seeds 3]
 """
@@ -12,7 +14,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
-from banzuke import confidence
+from banzuke import confidence, conventions
 from banzuke.build import OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA
 from banzuke.harness import run_backtest
 
@@ -193,6 +195,8 @@ def main():
           f"  (non-inverted baseline: {np.mean(adj_prior):.3f})")
 
     calibration(all_preds, trans)
+    print()
+    conventions.report(trans)
 
 
 if __name__ == "__main__":
