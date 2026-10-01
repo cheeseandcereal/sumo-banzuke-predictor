@@ -102,6 +102,8 @@ uv run python backtest.py --out results/all    # 2004 through latest basho
 uv run python backtest.py --end 202311         # original dev window only
 uv run python analyze.py --model Ar            # residual analysis
 uv run python -m banzuke.conventions           # resolver rules vs committee history
+uv run python -m experiments.explain sheet 202309   # one historical forecast next to the real banzuke (after `build`)
+uv run python -m experiments.precedent landing "K1 5-10"   # where did the committee put that record
 ```
 
 The resolver's hard-coded conventions (yokozuna never demoted, sanyaku
