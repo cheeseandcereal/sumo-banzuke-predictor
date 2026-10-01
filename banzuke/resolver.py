@@ -9,7 +9,8 @@ the near-inviolable structure. Hard-coded here:
 - a sanyaku incumbent with kachi-koshi does not drop out of his class
 - make-koshi sekiwake and komusubi leave sanyaku, except a 7-win sekiwake
   (a komusubi slot) and a K1E with 7 wins (the model decides)
-- a demoted ozeki is the bottom sekiwake
+- a demoted ozeki is the bottom sekiwake; komusubi newcomers rank below
+  kachi-koshi komusubi incumbents
 - minimum 2 sekiwake and 2 komusubi; extra slots emerge when forced, but
   M1 claims with 8-9 wins never create one for a falling sekiwake
 - no-promotion ceiling for make-koshi S/K/M, including E/W
@@ -300,6 +301,11 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
             # another sekiwake since 1990)
             members = ([i for i in members if not kadoban_out[i]]
                        + [i for i in members if kadoban_out[i]])
+        if c == KOMUSUBI:
+            # ... and komusubi newcomers rank below kachi-koshi komusubi incumbents
+            # (47/49 since 2004; adopted on measured value, E22)
+            inc = [i for i in members if cls[i] == KOMUSUBI and kk[i]]
+            members = inc + [i for i in members if i not in inc]
         taken.update(members)
         upper_blocks.append((c, members))
         return members

@@ -200,6 +200,12 @@ def test_resolver_yo_order_and_demoted_ozeki(cands_for):
             [YOKOZUNA, 1, 0], [YOKOZUNA, 1, 1], [YOKOZUNA, 2, 0]]
         assert cells.loc[["Takayasu", "Goeido", "Tochinoshin"], CELL].to_numpy().tolist() == [
             [OZEKI, 1, 0], [OZEKI, 1, 1], [OZEKI, 2, 1]]
+    # R12, 202009: Okinoumi (K1W 9-6) stays above the newcomer Endo (M1E 8-7)
+    # whatever order the model gives
+    for sign in (1.0, -1.0):
+        cands, pred = _true_order(cands_for, 202009, sign)
+        cells = _cells(cands, pred)
+        assert cells.loc[["Okinoumi", "Endo"], CELL].to_numpy().tolist() == [[KOMUSUBI, 1, 0], [KOMUSUBI, 1, 1]]
     # R4, 202607: Aonishiki (O 0-0-15, kadoban) is the bottom sekiwake even when
     # the model ranks him first among the sekiwake candidates
     cands, pred = _true_order(cands_for, 202607, -1.0)
