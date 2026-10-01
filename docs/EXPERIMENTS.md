@@ -1000,7 +1000,9 @@ overrides still win and each convention they break is reported):
   sanyaku: 4/4 (Terunofuji 201505, Tochinoshin 201805, Aonishiki 202511,
   Kirishima 202603); runs with two maegashira basho 0/3 (Kotooshu 200509,
   Terunofuji 202011, Onosato 202405). Four cases: an audit row carries the
-  thin precedent, and predict.py notes every Y/O promotion on the sheet.
+  thin precedent, and predict.py notes every Y/O promotion on the sheet
+  with the results behind it ("34 wins over last 3 basho, one of them at
+  M1" names this path).
 - R12 (own commit, adopted on measured value): komusubi newcomers rank
   below kachi-koshi komusubi incumbents, 47/49 (Takakeisho 11-4 in 201711
   and Tamawashi 13-2 in 202209 went above an 8-7 / 9-6 incumbent).
@@ -1211,8 +1213,9 @@ slot or MAE metrics.
 Each item is a situation the committee decides lopsidedly; the ones marked
 "enforced" the resolver now applies (E22; an override that breaks one is
 reported as a broken convention, and every Y/O promotion is listed under
-`notes:`). The rest are still the reviewer's job. Counts are 2004+ unless
-stated.
+`notes:` with the results behind it, or "by override" when no convention
+explains it). The rest are still the reviewer's job. Counts are 2004+
+unless stated.
 
 - Full or heavy kyujo (0 wins, 8+ absences) at S/K/M: the committee drops
   him about 24 cells from any rank (q25/50/75 +22/+24/+25, n=104 incl.
@@ -1280,7 +1283,7 @@ stated.
   12-3 jun-yusho (1/3 since 2004), a jun-yusho after a yusho (1/2),
   Asanoyama's 32-win promotion over the cancelled 202005 and Takakeisho's
   declined 33 (201903); predict.py lists every Y/O promotion under `notes:`
-  so the call is visible.
+  with the results behind it, so the call is visible.
 - COVID-era kadoban exemptions (Mitakeumi 2022) are not modeled beyond the
   kadoban flag surviving the exempted basho (E22 note).
 - Structural errors on 2019+ (E22): Y/O/S/K counts wrong in 12 of 46

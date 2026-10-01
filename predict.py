@@ -30,13 +30,14 @@ import numpy as np
 import pandas as pd
 
 from banzuke import confidence, models
-from banzuke.build import JURYO, KOMUSUBI, OZEKI, SEKIWAKE, YOKOZUNA
+from banzuke.build import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
 from banzuke.harness import DEFAULT_WORKERS, parse_sets
 from banzuke.overrides import OverrideError, parse, splice, verify
 from banzuke.resolver import resolve
 
 PROCESSED = Path(__file__).parent / "data" / "processed"
 CLS = "YOSKMJ"
+CLS_NAMES = ("yokozuna", "ozeki", "sekiwake", "komusubi", "maegashira", "juryo")
 BASHO_MONTHS = (1, 3, 5, 7, 9, 11)
 SPEC_KEYS = ("above", "below", "class", "count", "pin")
 
@@ -49,6 +50,25 @@ def next_basho_id(basho: int) -> int:
 
 def label(c, n, s):
     return f"{CLS[int(c)]}{int(n)}{'EW'[int(s)]}"
+
+
+def rec(w, l, a=0):
+    return f"{int(w)}-{int(l)}" + (f"-{int(a)}" if a else "")
+
+
+def context(cands, trans):
+    """Columns the notes need beyond the candidates' own rows: the previous
+    basho's record (rec1, NaN for men who were not on that banzuke) and the
+    two-basho sanyaku win total (ozeki_run2)."""
+    latest = int(cands["basho"].iloc[0])
+    previous = trans.loc[trans["basho"] < latest, "basho"].max()
+    prev = trans[trans["basho"] == previous].set_index("rikishi_id")
+    out = cands.copy()
+    out["rec1"] = out["rikishi_id"].map(
+        {r: rec(w, l, a) for r, w, l, a in zip(prev.index, prev["wins"], prev["losses"], prev["absences"])})
+    sk = prev[prev["rank_class"].isin((SEKIWAKE, KOMUSUBI)) & (prev["wins"] >= 8)]
+    out["ozeki_run2"] = out["wins"] + out["rikishi_id"].map(sk["wins"])
+    return out
 
 
 def predict(cands, point, per_seed, ov, mak_size, base=None, rates=None):
@@ -92,10 +112,7 @@ def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds):
         if r is None:
             return ""
         prev = f"{CLS[r['rank_class']]}{r['rank_number']}{'EW'[r['side']]}"
-        rec = f"{int(r['wins'])}-{int(r['losses'])}"
-        if r["absences"]:
-            rec += f"-{int(r['absences'])}"
-        out = f"{r['marker']:<3} {r['shikona']:<14} ({prev:>4} {rec})"
+        out = f"{r['marker']:<3} {r['shikona']:<14} ({prev:>4} {rec(r['wins'], r['losses'], r['absences'])})"
         if r["rikishi_id"] in ov["pins"]:
             out += " [pin]"
         now = label(r["pred_class"], r["pred_number"], r["pred_side"])
@@ -145,15 +162,41 @@ def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds):
             print(f"  - {n}")
 
 
+def _yokozuna_why(r):
+    if r["yusho"] == 1 and (r["yusho1"] == 1 or r["junyusho1"] == 1):
+        last = "yusho" if r["yusho1"] == 1 else "jun-yusho"
+        where = "" if r["class1"] == OZEKI else f" as {CLS_NAMES[int(r['class1'])]}"
+        return f", yusho {rec(r['wins'], r['losses'], r['absences'])} after {last} {r['rec1']}{where}"
+    return " by override"
+
+
+def _ozeki_why(r):
+    c1, c2 = r["class1"], r["class2"]
+    if np.isnan(r["roll3"]) or r["rank_class"] not in (SEKIWAKE, KOMUSUBI):
+        return " by override"
+    n = int(r["roll3"])
+    if c1 <= KOMUSUBI and c2 <= KOMUSUBI:
+        return f", {n} wins over last 3 basho in sanyaku"
+    if (c1 == MAEGASHIRA) != (c2 == MAEGASHIRA) and min(c1, c2) <= KOMUSUBI:
+        num = r["num1"] if c1 == MAEGASHIRA else r["num2"]
+        return f", {n} wins over last 3 basho, one of them at M{int(num)}"
+    return " by override"
+
+
 def notes(pred, target):
-    """Events on the sheet: Y/O promotions (whatever decided them), kadoban,
-    ozeki runs, juryo demotions."""
+    """Events on the sheet: yokozuna and ozeki promotions with the results
+    behind them (or "by override" when no convention explains one), ozeki
+    returns, kadoban, ozeki runs, juryo demotions. pred needs context()."""
     out = []
     for _, r in pred.sort_values("pred_pos").iterrows():
         if r["pred_class"] == YOKOZUNA and r["rank_class"] > YOKOZUNA:
-            out.append(f"{r['shikona']}: promoted to yokozuna")
+            out.append(f"{r['shikona']}: promoted to yokozuna{_yokozuna_why(r)}")
         if r["pred_class"] == OZEKI and r["rank_class"] > OZEKI:
-            out.append(f"{r['shikona']}: promoted to ozeki")
+            if r["demoted_ozeki"] == 1:
+                out.append(f"{r['shikona']}: returns to ozeki, "
+                           f"{rec(r['wins'], r['losses'], r['absences'])} the basho after demotion")
+            else:
+                out.append(f"{r['shikona']}: promoted to ozeki{_ozeki_why(r)}")
         if r["rank_class"] == OZEKI and r["pred_class"] == OZEKI and r["wins"] < 8:
             out.append(f"{r['shikona']}: kadoban at {target}")
         if (r["rank_class"] in (SEKIWAKE, KOMUSUBI)
@@ -263,13 +306,7 @@ def main():
         train = train[train["basho"] >= args.train_start]
         print(f"training restricted to {train['basho'].nunique()} basho "
               f"({args.train_start}+)", file=sys.stderr)
-    cands = trans[(trans["basho"] == latest) & ~trans["dropped"]].reset_index(drop=True)
-    previous = trans.loc[trans["basho"] < latest, "basho"].max()
-    prev_sk = trans[(trans["basho"] == previous)
-                    & trans["rank_class"].isin((SEKIWAKE, KOMUSUBI))
-                    & (trans["wins"] >= 8)]
-    cands["ozeki_run2"] = cands["wins"] + cands["rikishi_id"].map(
-        prev_sk.set_index("rikishi_id")["wins"])
+    cands = context(trans[(trans["basho"] == latest) & ~trans["dropped"]].reset_index(drop=True), trans)
 
     retired = [s.strip().lower() for s in args.retired.split(",") if s.strip()]
     gone = cands["shikona"].str.lower().isin(retired)
