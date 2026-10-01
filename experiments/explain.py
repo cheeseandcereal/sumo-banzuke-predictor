@@ -499,7 +499,7 @@ def explain_text(rows, pairs, frames, tidy, trans, target, seed):
     far = miss[(miss["local_err"].abs() >= 2) | miss["stage"].isin(["structural", "boundary"])]
     if len(far):
         t = precedent.labeled(trans)
-        hist = t[t["basho"] < target]  # precedent known at the time
+        hist = t[t["next_basho"] < target]  # decided before this banzuke: no leak of the case itself
         lines.append("")
         lines.append("precedent for far/structural misses (prior cell + record, decided before this basho):")
         for r in far.itertuples():
