@@ -43,6 +43,14 @@ def _seeds(seed, n_seeds):
     return list(range(seed * n_seeds, (seed + 1) * n_seeds))
 
 
+def _cols(spec):
+    """Column list from an option value: a list, or a comma-separated string
+    (what `--set extra=rank_protected,mk_joi` parses to); empty -> []."""
+    if not spec:
+        return []
+    return spec.split(",") if isinstance(spec, str) else list(spec)
+
+
 def _seeded(params, seed):
     return dict(params) if seed is None else {**params, "random_state": seed}
 
@@ -120,12 +128,19 @@ class LinearModel(_Model):
 
 class GBMRegression(_Model):
     """A: gradient-boosted regression on movement delta (L2). half_life:
-    optional exponential recency weight in basho, normalized to mean 1."""
+    optional exponential recency weight in basho, normalized to mean 1.
+    extra: dataset columns appended to FEATURES (per-rikishi inputs);
+    extra_shared: per-basho columns appended too (the field the committee
+    must fit, see features.SUPPLY_FEATURES)."""
 
     name = "A"
     objective = "regression"
     N_SEEDS = 5
-    OPTIONS = {"half_life": None}
+    OPTIONS = {"half_life": None, "extra": (), "extra_shared": ()}
+
+    @property
+    def features(self):
+        return FEATURES + _cols(self.extra) + _cols(self.extra_shared)
 
     def fit(self, train):
         w = None
@@ -136,13 +151,13 @@ class GBMRegression(_Model):
             w = w / w.mean()
         self.ms = [
             LGBMRegressor(objective=self.objective, **_seeded(self.base_params, s))
-            .fit(train[FEATURES], train["delta"], sample_weight=w)
+            .fit(train[self.features], train["delta"], sample_weight=w)
             for s in self.seeds
         ]
 
     def base_score(self, cands, k=None):
         ms = self.ms if k is None else [self.ms[k]]
-        delta = np.mean([m.predict(cands[FEATURES]) for m in ms], axis=0)
+        delta = np.mean([m.predict(cands[self.features]) for m in ms], axis=0)
         return cands["position"].to_numpy() + delta
 
     # the regression stage's predicted next position; for Ar this is the base
@@ -162,7 +177,7 @@ class GBMRecency(GBMRegression):
     biasing training toward the modern committee's behavior."""
 
     name = "Aw"
-    OPTIONS = {"half_life": 60}
+    OPTIONS = {**GBMRegression.OPTIONS, "half_life": 60}
 
 
 class GBMRanker(_Model):
@@ -237,11 +252,13 @@ def _gap_pairs(scores, pos, gap):
     return np.where(swap, j_arr, i_arr), np.where(swap, i_arr, j_arr)
 
 
-def _pair_matrix(df, i_arr, j_arr, h2h=False, context=False, base=None):
+def _pair_matrix(df, i_arr, j_arr, h2h=False, context=False, base=None, extra=(), extra_shared=()):
     """Feature rows for index pairs of one basho's rows (i = currently higher
-    ranked): feature differences, then optionally the pair's head-to-head
-    bout this basho (+1 i won, -1 i lost), context columns, base-score gap."""
-    X = df[FEATURES].to_numpy(dtype=float)
+    ranked): feature differences (FEATURES + extra), then optionally the
+    pair's head-to-head bout this basho (+1 i won, -1 i lost), context columns
+    (CONTEXT_SHARED + extra_shared, the pair's location, both endpoints'
+    class), base-score gap."""
+    X = df[FEATURES + list(extra)].to_numpy(dtype=float)
     cols = [X[i_arr] - X[j_arr]]
     if h2h:
         wins = _h2h_wins()
@@ -252,7 +269,7 @@ def _pair_matrix(df, i_arr, j_arr, h2h=False, context=False, base=None):
     if context:
         means = df[CONTEXT_MEAN].to_numpy(dtype=float)
         ends = df[CONTEXT_ENDS].to_numpy(dtype=float)
-        cols += [df[CONTEXT_SHARED].to_numpy(dtype=float)[i_arr],
+        cols += [df[CONTEXT_SHARED + list(extra_shared)].to_numpy(dtype=float)[i_arr],
                  (means[i_arr] + means[j_arr]) / 2, ends[i_arr], ends[j_arr]]
     if base is not None:
         cols.append((base[i_arr] - base[j_arr])[:, None])
@@ -267,10 +284,15 @@ class _PairStage:
     the base-score gap as a feature)."""
 
     def __init__(self, seeds, params, window, h2h=False, context=False, oof=None,
-                 oof_gap=2.0):
+                 oof_gap=2.0, extra=(), extra_shared=()):
         self.seeds, self.params, self.window = seeds, params, window
         self.h2h, self.context, self.oof_gap = h2h, context, oof_gap
+        self.extra, self.extra_shared = _cols(extra), _cols(extra_shared)
         self.oof = None if oof is None else oof.set_index(["basho", "rikishi_id"])["oof"]
+
+    def _matrix(self, df, i_arr, j_arr, base):
+        return _pair_matrix(df, i_arr, j_arr, self.h2h, self.context, base,
+                            self.extra, self.extra_shared)
 
     def _base(self, df):
         if self.oof is None:
@@ -288,7 +310,7 @@ class _PairStage:
             if base is not None and not np.isnan(base).all():
                 pairs.append(_gap_pairs(base, pos, self.oof_gap))
             for i_arr, j_arr in pairs:
-                Xs.append(_pair_matrix(df, i_arr, j_arr, self.h2h, self.context, base))
+                Xs.append(self._matrix(df, i_arr, j_arr, base))
                 ys.append((nxt[i_arr] < nxt[j_arr]).astype(int))
         X, y = np.vstack(Xs), np.concatenate(ys)
         self.ms = [LGBMClassifier(**_seeded(self.params, s)).fit(X, y) for s in self.seeds]
@@ -296,8 +318,7 @@ class _PairStage:
 
     def proba(self, df, i_arr, j_arr, base=None, k=None):
         """P(i stays above j) for index pairs of df; base = df's base scores."""
-        X = _pair_matrix(df, i_arr, j_arr, self.h2h, self.context,
-                         base if self.oof is not None else None)
+        X = self._matrix(df, i_arr, j_arr, base if self.oof is not None else None)
         ms = self.ms if k is None else [self.ms[k]]
         return np.mean([m.predict_proba(X)[:, 1] for m in ms], axis=0)
 
@@ -320,11 +341,13 @@ def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, workers=1,
 
     lab = trans[trans["position_next"].notna()]
     kwargs = {k: v for k, v in kwargs.items() if k not in ("oof", "seed")}
-    base_kw = {k: kwargs[k] for k in ("n_seeds", "base", "half_life") if k in kwargs}
+    base_kw = {k: kwargs[k] for k in ("n_seeds", "base", "half_life", "extra", "extra_shared")
+               if k in kwargs}
     base_spec = [cls.objective, base_kw, BASE_PARAMS, min_history, train_start]
     key = hashlib.sha256(json.dumps(base_spec, sort_keys=True).encode())
     key.update((inspect.getsource(GBMRegression) + inspect.getsource(_oof_one)).encode())
-    key.update(pd.util.hash_pandas_object(lab[["basho", "rikishi_id", "position_next"] + FEATURES],
+    cols = FEATURES + _cols(kwargs.get("extra")) + _cols(kwargs.get("extra_shared"))
+    key.update(pd.util.hash_pandas_object(lab[["basho", "rikishi_id", "position_next"] + cols],
                                           index=False).to_numpy().tobytes())
     cache_dir = Path(cache_dir or PROCESSED.parent.parent / "results" / "scratch" / "oof")
     path = cache_dir / f"{key.hexdigest()[:16]}.parquet"
@@ -449,7 +472,7 @@ class GBMRerank(GBMMedian):
         super().fit(train)
         self.pair = _PairStage(self.seeds, self.pair_params, self.pair_window, self.h2h,
                                self.context, self.oof if self.near_ties else None,
-                               self.oof_gap).fit(train)
+                               self.oof_gap, self.extra, self.extra_shared).fit(train)
 
     def score(self, cands, k=None):
         base = self.base_score(cands, k)

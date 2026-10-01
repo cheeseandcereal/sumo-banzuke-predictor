@@ -326,6 +326,49 @@ def test_twin_unit_keeps_identical_record_twins_together(small_train, cands_for)
         _twin_units(cands, "yo")
 
 
+def test_protected_and_supply_columns(trans):
+    """E23/E25 opt-in inputs. rank_protected marks exactly the full-kyujo rows
+    whose rank was frozen (kosho granted, or a listed modern exemption); the
+    supply columns describe the source basho's makuuchi field."""
+    from banzuke.features import EXTRA_FEATURES, PROTECTED, SUPPLY_FEATURES
+    assert set(EXTRA_FEATURES + SUPPLY_FEATURES).isdisjoint(FEATURES)
+    full = trans[(trans["wins"] == 0) & (trans["absences"] >= 8) & (trans["rank_class"] >= SEKIWAKE)
+                 & trans["delta"].notna()]
+    kept, dropped = full[full["rank_protected"] == 1], full[full["rank_protected"] == 0]
+    assert kept["delta"].max() <= 3 and dropped["delta"].min() >= 10
+    modern = trans[(trans["basho"] >= 200401) & (trans["rank_protected"] == 1)]
+    assert set(zip(modern["basho"], modern["rikishi_id"])) == PROTECTED and len(PROTECTED) == 26
+    assert (trans.loc[trans["rank_class"] <= OZEKI, "rank_protected"] == 0).all()
+    assert trans.loc[(trans["basho"] == 202201) & (trans["shikona"] == "Takayasu"), "rank_protected"].item() == 1
+    assert trans.loc[(trans["basho"] == 202207) & (trans["shikona"] == "Takanosho"), "rank_protected"].item() == 0
+    b = trans[trans["basho"] == 202207].iloc[0]
+    assert [b[c] for c in SUPPLY_FEATURES] == [9, 4, 3, 3, 14]  # Nagoya 2022: 14 men with an absence
+    assert trans.groupby("basho")[SUPPLY_FEATURES].nunique().eq(1).all().all()
+
+
+def test_extra_feature_options(small_train, cands_for):
+    """`extra` / `extra_shared` append dataset columns to the GBM inputs (base
+    model, pair differences, pair context) and the OOF cache key."""
+    cands = cands_for(200401)
+    kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
+    plain = GBMRerank(**kw)
+    more = GBMRerank(**kw, extra="rank_protected", extra_shared=["mk_joi", "n_absent"])
+    assert more.features == FEATURES + ["rank_protected", "mk_joi", "n_absent"] and plain.features == FEATURES
+    plain.fit(small_train)
+    more.fit(small_train)
+    assert more.ms[0].n_features_ == len(FEATURES) + 3
+    assert more.pair.ms[0].n_features_ == plain.pair.ms[0].n_features_ + 1 + 2
+    assert sorted(more.score(cands).tolist()) == list(range(len(cands)))
+    assert not np.array_equal(plain.base_score(cands), more.base_score(cands))
+    import tempfile
+    with tempfile.TemporaryDirectory() as d:  # the option is part of the OOF cache key
+        kw_oof = {"n_seeds": 1, "base": {"n_estimators": 5}}
+        n = len(small_train["basho"].unique()) - 1
+        oof_base_scores(small_train, GBMRerank, kw_oof, min_history=n, cache_dir=d)
+        oof_base_scores(small_train, GBMRerank, {**kw_oof, "extra": "rank_protected"}, min_history=n, cache_dir=d)
+        assert len(list(Path(d).glob("*.parquet"))) == 2
+
+
 def test_pair_helpers():
     i, j = _window_pairs(5, 2)
     assert list(zip(i.tolist(), j.tolist())) == [

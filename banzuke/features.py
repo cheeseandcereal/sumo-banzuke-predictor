@@ -26,6 +26,33 @@ FEATURES = [
 # awareness tested as a null result, see docs/EXPERIMENTS.md E8
 SCHEDULE_FEATURES = ["opp_pos_mean", "n_joi_opp", "wins_vs_joi", "kinboshi"]
 
+# opt-in model inputs (`--set extra=...` / `--set extra_shared=...`, E23/E25):
+# rank_protected: the committee did not count a full absence against the man
+# (kosho era 1972-2003: kosho granted; 2004+: the PROTECTED table). The
+# supply columns describe the source basho's makuuchi field (zone pressure).
+EXTRA_FEATURES = ["rank_protected"]
+SUPPLY_FEATURES = ["mk_joi", "kk_upper", "strong_below", "kk_sanyaku", "n_absent"]
+
+# (basho, rikishi_id) of full-kyujo men (0 wins, 8+ absences) since the kosho
+# system ended whose rank was frozen: the last kosho cases (200401), the
+# Tamanoi stable's COVID withdrawal (202009), the JSA's Hatsu 2021 COVID
+# exemptions (202101, 14 men), Miyagino (202109), Tagonoura and Nishikido
+# (202201), Ichinojo's positive test (202205), Takayasu (202207). Sources: the
+# JSA statements as quoted on Wikipedia's "2021 in sumo" / "2022 in sumo";
+# every row has delta <= 3 while every other such row since 2004 dropped 11+.
+PROTECTED = {
+    (200401, 3850), (200401, 4066), (200401, 3748),
+    (202009, 18), (202009, 121),
+    (202101, 12), (202101, 51), (202101, 637), (202101, 39), (202101, 674), (202101, 368),
+    (202101, 42), (202101, 184), (202101, 62), (202101, 672), (202101, 13), (202101, 670),
+    (202101, 377), (202101, 104),
+    (202109, 368), (202109, 62), (202109, 53),
+    (202201, 44), (202201, 32),
+    (202205, 46),
+    (202207, 44),
+}
+KOSHO_END = 200311  # last basho whose absences the kosho system could protect
+
 JOI = 16  # top-of-banzuke group that shares the toughest schedule
 
 
@@ -161,4 +188,33 @@ def build_transitions(tidy: pd.DataFrame, bouts: pd.DataFrame) -> pd.DataFrame:
     df["dropped"] = df["next_basho"].notna() & df["position_next"].isna()
     df["delta"] = df["position_next"] - df["position"]
 
+    # a full absence the committee did not count, at a rank that does not
+    # protect by itself: kosho granted (the era's public decision, read off the
+    # frozen rank) or a listed modern exemption
+    full = (df["wins"] == 0) & (df["absences"] >= 8) & (df["rank_class"] >= SEKIWAKE)
+    kosho_kept = (df["basho"] <= KOSHO_END) & full & (df["delta"] <= 3)
+    listed = pd.Series(list(zip(df["basho"], df["rikishi_id"])), index=df.index).isin(PROTECTED)
+    df["rank_protected"] = (kosho_kept | listed).astype(int)
+    df = df.merge(supply_features(tidy), on="basho", how="left")
+
     return df.drop(columns=["bidx", "beat_yokozuna"])
+
+
+def supply_features(tidy: pd.DataFrame) -> pd.DataFrame:
+    """Per basho, the makuuchi field the committee must fit (E19 zone pressure):
+    make-koshi count in M1-M6 (the vacuum above), kachi-koshi count in M1-M8
+    (the crowd), men at M9 or lower with 10+ wins (competition for the
+    vacated cells), kachi-koshi S/K incumbents (zone fullness), men with any
+    absence (a withdrawal-policy proxy)."""
+    m = tidy[tidy["division"] == 0]
+    maeg = m["rank_class"] == MAEGASHIRA
+    kk = m["wins"] >= 8
+    flags = pd.DataFrame({
+        "basho": m["basho"],
+        "mk_joi": maeg & (m["rank_number"] <= 6) & ~kk,
+        "kk_upper": maeg & (m["rank_number"] <= 8) & kk,
+        "strong_below": maeg & (m["rank_number"] >= 9) & (m["wins"] >= 10),
+        "kk_sanyaku": m["rank_class"].isin([SEKIWAKE, KOMUSUBI]) & kk,
+        "n_absent": m["absences"] > 0,
+    })
+    return flags.groupby("basho").sum().astype(int).reset_index()
