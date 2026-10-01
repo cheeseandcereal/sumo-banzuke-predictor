@@ -16,7 +16,7 @@ if str(ROOT) not in sys.path:
 
 import predict  # noqa: E402
 from banzuke import confidence  # noqa: E402
-from banzuke.build import KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA  # noqa: E402
+from banzuke.build import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA  # noqa: E402
 from banzuke.features import FEATURES, build_transitions  # noqa: E402
 from banzuke.harness import METRICS, parse_seeds, parse_sets, run_backtest, summarize  # noqa: E402
 from banzuke.metrics import evaluate  # noqa: E402
@@ -89,6 +89,30 @@ def test_features_are_chronological(tidy, bouts, trans):
     a = trans[trans["shikona"] == "Asanoyama"].set_index("basho")
     assert a.index[a.index < 202301].max() == 202201
     assert np.isnan(a.loc[202301, "w1"]) and np.isnan(a.loc[202301, "pos1"])
+    # lagged class/number are resolver inputs (not FEATURES), kept with the same contiguity
+    for col in ("class1", "class2", "num1", "num2"):
+        assert col not in FEATURES and _same(old[col], new[col]), col
+    assert np.isnan(a.loc[202301, "class1"]) and a.loc[202305, ["class1", "num1"]].tolist() == [JURYO, 1]
+
+
+def test_raw_corrections_and_blank_result_check():
+    """202507 juryo: the day-15 bout Nishikigi (J1E) vs Fujiseiun (J8W) has a blank
+    result in the API record, so its wins/losses were short by one (the torikumi
+    has Nishikigi by kotenage). The correction is applied at build time, and a
+    scheduled bout without a result anywhere else fails the build loudly."""
+    from banzuke.build import CORRECTIONS, _correct
+    tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
+    rows = tidy[(tidy["basho"] == 202507) & tidy["rikishi_id"].isin([16, 82])].set_index("rikishi_id")
+    assert rows.loc[16, ["wins", "losses", "absences"]].tolist() == [8, 7, 0]
+    assert rows.loc[82, ["wins", "losses", "absences"]].tolist() == [9, 6, 0]
+    assert (tidy[tidy["basho"] >= 200401].eval("wins + losses + absences") == 15).mean() > 0.99
+    record = [{"result": "win", "opponentID": 1}, {"result": "", "opponentID": 2}]
+    with pytest.raises(ValueError, match="without a result"):
+        _correct(209901, {"rikishiID": 999, "shikonaEn": "X"}, record)
+    r = {"rikishiID": 16, "shikonaEn": "Nishikigi", "wins": 7, "losses": 7}
+    record = [{"result": "loss", "opponentID": 1}] * 14 + [{"result": "", "opponentID": 82}]
+    _correct(202507, r, [dict(b) for b in record])
+    assert r["wins"] == 8 and set(CORRECTIONS) == {(202507, 16), (202507, 82)}
 
 
 def test_block_slots_layout_conventions():

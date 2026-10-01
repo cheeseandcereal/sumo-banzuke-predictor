@@ -4,6 +4,7 @@ are independent and run in worker processes (one LightGBM thread each)."""
 import hashlib
 import inspect
 import json
+import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -19,6 +20,8 @@ from banzuke.resolver import resolve
 
 METRICS = ["exact", "exact_n", "gtb_points", "within1", "mae", "tau",
            "promo_f1", "demo_f1", "sanyaku_acc", "sanyaku_exact"]
+# leave two cores to the rest of the machine (one worker saturates one core)
+DEFAULT_WORKERS = max(1, (os.cpu_count() or 1) - 2)
 
 _TRANS = _TIDY = None
 

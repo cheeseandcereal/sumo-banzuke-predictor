@@ -9,7 +9,6 @@ Usage: uv run python analyze.py [--model Ar] [--start 200401] [--end 202609]
                                 [--seeds 0-2] [--set base.n_estimators=200]
 """
 import argparse
-import os
 from pathlib import Path
 
 import numpy as np
@@ -18,7 +17,7 @@ from scipy.stats import spearmanr
 
 from banzuke import confidence, conventions
 from banzuke.build import OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA
-from banzuke.harness import fingerprint, parse_seeds, parse_sets, run_backtest
+from banzuke.harness import DEFAULT_WORKERS, fingerprint, parse_seeds, parse_sets, run_backtest
 
 PROCESSED = Path(__file__).parent / "data" / "processed"
 SCRATCH = Path(__file__).parent / "results" / "scratch"
@@ -127,7 +126,7 @@ def main():
                          "sections, all of them the seed-spread section")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="model option override, as in backtest.py")
-    ap.add_argument("--workers", type=int, default=min(16, os.cpu_count() or 1))
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     ap.add_argument("--fresh", action="store_true", help="ignore cached predictions")
     args = ap.parse_args()
 

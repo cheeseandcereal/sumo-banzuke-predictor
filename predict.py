@@ -22,7 +22,6 @@ the sheet names the decisions behind them with an override to test the
 alternative.
 """
 import argparse
-import os
 import sys
 from pathlib import Path
 
@@ -31,7 +30,7 @@ import pandas as pd
 
 from banzuke import confidence, models
 from banzuke.build import JURYO, KOMUSUBI, OZEKI, SEKIWAKE
-from banzuke.harness import parse_sets
+from banzuke.harness import DEFAULT_WORKERS, parse_sets
 from banzuke.overrides import OverrideError, parse, splice, verify
 from banzuke.resolver import resolve
 
@@ -226,6 +225,8 @@ def main():
                     help="model option override (e.g. twin_unit=sk, gap=0.5), as in backtest.py")
     ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
                     help="ignore training transitions before this basho")
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                    help="processes for the one-off out-of-fold table (cached afterwards)")
     ap.add_argument("--above", action="append", default=[], metavar='"A > B"')
     ap.add_argument("--below", action="append", default=[], metavar='"A < B"')
     ap.add_argument("--class", dest="cls", action="append", default=[], metavar="X=O")
@@ -265,7 +266,7 @@ def main():
     print("training...", file=sys.stderr)
     cls = models.MODELS[args.model]
     kwargs = {**parse_sets(args.set), **({"n_seeds": args.seeds} if args.seeds else {})}
-    kwargs = cls.prepare(kwargs, trans, min(16, os.cpu_count() or 1), args.train_start)
+    kwargs = cls.prepare(kwargs, trans, args.workers, args.train_start)
     model = cls(**kwargs)
     model.fit(train)
     point = model.score(cands)

@@ -78,6 +78,9 @@ def build_transitions(tidy: pd.DataFrame, bouts: pd.DataFrame) -> pd.DataFrame:
     df["junyusho1"] = lag("junyusho", 1, contig1)
     df["class1"] = lag("rank_class", 1, contig1)
     df["class2"] = lag("rank_class", 2, contig2)
+    # lagged rank numbers: resolver inputs (Y/O promotion rules), not features
+    df["num1"] = lag("rank_number", 1, contig1)
+    df["num2"] = lag("rank_number", 2, contig2)
     df["roll3"] = df["wins"] + df["w1"] + df["w2"]
     df["traj3"] = lag("position", 2, contig2) - df["position"]
 
@@ -158,4 +161,4 @@ def build_transitions(tidy: pd.DataFrame, bouts: pd.DataFrame) -> pd.DataFrame:
     df["dropped"] = df["next_basho"].notna() & df["position_next"].isna()
     df["delta"] = df["position_next"] - df["position"]
 
-    return df.drop(columns=["bidx", "class1", "class2", "beat_yokozuna"])
+    return df.drop(columns=["bidx", "beat_yokozuna"])

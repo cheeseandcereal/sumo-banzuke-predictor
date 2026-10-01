@@ -5,7 +5,7 @@ asserts class membership through the resolver's override mechanism; the frame
 is re-resolved and re-evaluated, so every comparison is exactly paired with V0
 (the cached order re-resolved by the current resolver) and needs no retraining.
 
-    uv run python -m experiments.rules [--start 200401] [--rules R1,R4] [--workers 16]
+    uv run python -m experiments.rules [--start 200401] [--rules R1,R4] [--workers 14]
 
 Rules (precedent counts in results/scratch/explain/review/adhoc.md):
   R1  zero wins with 8+ absences (S/K/M): full kyujo lands position+24,
@@ -40,7 +40,7 @@ import pandas as pd
 from scipy.stats import wilcoxon
 
 from banzuke.build import YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO, PROCESSED
-from banzuke.harness import block_bootstrap_ci
+from banzuke.harness import DEFAULT_WORKERS, block_bootstrap_ci
 from banzuke.metrics import evaluate
 from banzuke.overrides import OverrideError
 from banzuke.resolver import forced_claims, resolve
@@ -345,33 +345,17 @@ def paired(per, names, lo, hi):
     return pd.DataFrame(out).set_index("variant"), len(b), b["exact_n"].mean(), b["mae"].mean()
 
 
-def add_history(rows, tidy):
-    """class/rank at t-1 and t-2 (contiguous basho only) for R7/R8."""
-    bashos = sorted(tidy["basho"].unique())
-    prev = {b: a for a, b in zip(bashos, bashos[1:])}
-    look = tidy.set_index(["basho", "rikishi_id"])[["rank_class", "rank_number"]]
-    for lag, (c, n) in ((1, ("class1", "num1")), (2, ("class2", "num2"))):
-        b = rows["basho"].map(prev)
-        if lag == 2:
-            b = b.map(prev)
-        key = pd.MultiIndex.from_arrays([b, rows["rikishi_id"]])
-        rows[c] = look["rank_class"].reindex(key).to_numpy()
-        rows[n] = look["rank_number"].reindex(key).to_numpy()
-    return rows
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--start", type=int, default=200401)
     ap.add_argument("--rules", default=",".join(RULES))
-    ap.add_argument("--workers", type=int, default=16)
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     ap.add_argument("--seeds", type=int, default=3)
     args = ap.parse_args()
     d = cache_dir({}, list(range(args.seeds)))
     rows = pd.concat([pd.read_parquet(f) for f in sorted(d.glob("rows_*.parquet"))], ignore_index=True)
     rows = rows[rows["target"] >= args.start]
     tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
-    rows = add_history(rows, tidy)
     names = args.rules.split(",")
     variants = {r: [RULE_FUNCS[r]] for r in names}
     if len(names) > 1:

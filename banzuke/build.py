@@ -20,6 +20,32 @@ PROCESSED = ROOT / "data" / "processed"
 CLASS_ORD = {"Yokozuna": 0, "Ozeki": 1, "Sekiwake": 2, "Komusubi": 3, "Maegashira": 4, "Juryo": 5}
 YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO = range(6)
 
+# Raw records where a scheduled bout has `result: ""`, so the API's own
+# wins/losses are short by one. (basho, rikishiID) -> {bout index: result}.
+# 202507 day 15: the torikumi (/api/basho/202507/torikumi/Juryo/15) has
+# Nishikigi over Fujiseiun by kotenage; a 2026-10 re-fetch of the banzuke
+# still returns the blank. Nishikigi J1E 7-7 -> 8-7, Fujiseiun J8W 9-5 -> 9-6.
+CORRECTIONS = {
+    (202507, 16): {14: "win"},
+    (202507, 82): {14: "loss"},
+}
+
+
+def _correct(basho: int, r: dict, record: list) -> None:
+    """Apply CORRECTIONS in place, then require every scheduled bout (an
+    opponent is set) to carry a result; the only blank-with-opponent entries
+    in the raw data are the corrected ones."""
+    for i, result in CORRECTIONS.get((basho, r["rikishiID"]), {}).items():
+        if record[i]["result"] != "":
+            raise ValueError(f"{basho} {r['shikonaEn']} bout {i} is not blank; drop the correction")
+        record[i]["result"] = result
+        key = "wins" if result == "win" else "losses"
+        r[key] = r.get(key, 0) + 1
+    blank = [i for i, b in enumerate(record) if b["result"] == "" and b.get("opponentID")]
+    if blank:
+        raise ValueError(f"{basho} {r['shikonaEn']}: scheduled bout(s) {blank} without a result; "
+                         "check the torikumi and add to CORRECTIONS")
+
 
 def load_tidy() -> tuple[pd.DataFrame, pd.DataFrame]:
     rows, bouts = [], []
@@ -31,6 +57,7 @@ def load_tidy() -> tuple[pd.DataFrame, pd.DataFrame]:
             for r in d[side_key] or []:
                 cls, num, side = r["rank"].split()
                 record = r.get("record") or []
+                _correct(basho, r, record)
                 # competitive head-to-head wins (fusen excluded)
                 bouts.extend(
                     {"basho": basho, "winner": r["rikishiID"], "loser": b["opponentID"]}

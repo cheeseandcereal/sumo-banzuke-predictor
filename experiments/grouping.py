@@ -30,6 +30,7 @@ import pandas as pd
 from scipy.stats import binomtest, wilcoxon
 
 from banzuke.build import MAEGASHIRA
+from banzuke.harness import DEFAULT_WORKERS
 from banzuke.metrics import evaluate
 from banzuke.overrides import OverrideError
 from banzuke.resolver import resolve
@@ -545,7 +546,7 @@ def main():
     ap.add_argument("--screen-end", type=int, default=201911,
                     help="describe: last target of the screening window that fixes the primary")
     ap.add_argument("--primary", default=None, help="backtest: kind:K:anchor, e.g. twins:1:mid")
-    ap.add_argument("--workers", type=int, default=16)
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     args = ap.parse_args()
     describe(args) if args.cmd == "describe" else backtest(args)
 

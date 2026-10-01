@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """E19: per-basho explain dumps, miss docket and pair calibration for Ar.
 
-    uv run python -m experiments.explain build --start 201901 --end 202609 --seeds 3 --workers 24
+    uv run python -m experiments.explain build --start 201901 --end 202609 --seeds 3 --workers 14
     uv run python -m experiments.explain sheet 202101 [--seed 0] [--all]      # side-by-side banzuke
     uv run python -m experiments.explain explain 202101 [--seed 0] [--all]    # per-rikishi stage table
     uv run python -m experiments.explain docket --start 201901               # every missed cell, classified
@@ -37,7 +37,7 @@ import pandas as pd
 
 from banzuke import confidence
 from banzuke.build import YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO, PROCESSED
-from banzuke.harness import fingerprint, parse_sets
+from banzuke.harness import DEFAULT_WORKERS, fingerprint, parse_sets
 from banzuke.metrics import evaluate
 from banzuke.models import GBMRerank, _gap_pairs, _twin_units
 from banzuke.overrides import OverrideError
@@ -46,8 +46,9 @@ from experiments import precedent
 
 ROOT = Path(__file__).resolve().parent.parent
 SCRATCH = ROOT / "results" / "scratch" / "explain"
-PAIR_GAP = 2.0          # record pair probabilities for every pair this close in base score
-VERSION = 1             # bump to invalidate caches when the dump format changes
+PAIR_GAP = 5.0          # record pair probabilities for every pair this close in base score
+                        # (clusters span up to 4.4 points: every in-cluster pair is present)
+VERSION = 2             # bump to invalidate caches when the dump format changes
 CLS = "YOSKMJ"
 UPPER = (YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI)
 STAGES = ("cascade", "structural", "boundary", "rerank", "base", "resolver")
@@ -643,7 +644,7 @@ def main():
     ap.add_argument("--seed", type=int, default=0, help="sheet/explain: which seed's frame")
     ap.add_argument("--all", action="store_true", help="sheet/explain: every cached target >= --start")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
-    ap.add_argument("--workers", type=int, default=24)
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     args = ap.parse_args()
     if args.cmd == "build":
         return build(args)

@@ -19,13 +19,13 @@ that model's defaults alongside and pairs every row against them
 (MODEL:label for another configuration present in the results).
 """
 import argparse
-import os
 import sys
 from pathlib import Path
 
 import pandas as pd
 
-from banzuke.harness import fingerprint, parse_seeds, parse_sets, run_backtest, summarize
+from banzuke.harness import (DEFAULT_WORKERS, fingerprint, parse_seeds, parse_sets, run_backtest,
+                             summarize)
 from banzuke.models import MODELS
 
 PROCESSED = Path(__file__).parent / "data" / "processed"
@@ -54,7 +54,7 @@ def main():
                     help="model option override, see above")
     ap.add_argument("--baseline", default=None, metavar="LABEL",
                     help="configuration paired comparisons refer to (default: the leader)")
-    ap.add_argument("--workers", type=int, default=min(16, os.cpu_count() or 1))
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     ap.add_argument("--out", default=None, help="results file stem, e.g. results/dev")
     ap.add_argument("--summarize", default=None, metavar="CSVS",
                     help="skip running; summarize existing per-basho csv(s), comma-separated")
