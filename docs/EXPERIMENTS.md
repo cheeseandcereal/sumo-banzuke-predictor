@@ -923,42 +923,329 @@ the COVID flag, a formula prior for promotee pairs in the reranker,
 conditioning M1 8-9 claims on zone room and adding M2 10-5 (12/16) to the
 claim table.
 
-## Reading a forecast: reviewer checklist (from E19)
+## E21: data rebuild, the blank 202507 bout, lagged class columns (2026-10)
 
-Each item is a situation the committee decides lopsidedly and the model
-does not yet enforce; check the sheet for it and test the alternative with
-the override shown. Counts are 2004+ unless stated.
+Change: `build.py` gains a `CORRECTIONS` table for raw records whose
+scheduled bout has `result: ""`. The one case in 400 banzuke is 202507
+juryo day 15: the API's torikumi has Nishikigi (J1E) over Fujiseiun (J8W)
+by kotenage, the banzuke record is blank for both and a 2026-10 re-fetch
+still returns the blank; the API's own totals were short by one (Nishikigi
+7-7-0 -> 8-7, Fujiseiun 9-5-0 -> 9-6; E19 quoted 10-5 for Fujiseiun, which
+was wrong). Any other scheduled bout without a result now fails the build.
+The brief's "only 2 rows since 2004 have wins + losses + absences != 15"
+was also wrong: 56 do (29 no-shows with an empty record, among them the 15
+men expelled at 201105, 21 mid-basho retirements whose API `absences` is
+unfilled, 2 partial records), so no blanket assertion; the check is scoped
+to blank results on scheduled bouts (an opponent is set), which only the
+two corrected rows have.
 
-- Full or heavy kyujo (0 wins, 8+ absences) at S/K/M: expect a drop of
-  about 24 cells from any rank (q25/50/75 +22/+24/+26, n=70). If the sheet
-  shows less, `--below "Name < X"` to the man predicted 24 cells down.
-  Exception: stable-wide COVID-style withdrawals were frozen in 2021-22.
-- Make-koshi sekiwake: 7 wins goes to komusubi (31/32), 6 or fewer to
-  maegashira (26/26). Make-koshi komusubi with 6 or fewer wins leaves
-  sanyaku (0/47; one exception 202507). `--class Name=K` / `--class Name=M`.
-- Demoted ozeki: bottom of the sekiwake block, below every kachi-koshi S
-  incumbent and below a komusubi promoted to S (0/22, 0/5); never S1E.
-  `--below "Name < <last S incumbent>"`.
-- Y/O order: yokozuna who stay and ozeki who stay are ordered by wins,
-  then yusho winner first, then a man who fought above a full-kyujo man,
-  then prior position (693/693 pairs since 2004). `--above`.
-- Yokozuna promotion: only when the previous yusho or jun-yusho was fought
-  as ozeki (0/3 otherwise); a 13-2 yusho after a 12-3 jun-yusho has never
-  been enough (0/3). Ozeki promotion: a 33+ run counts an M1-M3 basho when
-  the current record is 12+ (4/5). `--class Name=O` / `--class Name=Y`.
-- Komusubi newcomers rank below kachi-koshi komusubi incumbents (2/49),
-  even with a yusho.
+`features.py` keeps `class1`/`class2` and adds `num1`/`num2` (lagged rank
+number, same contiguity rule as `w1`): resolver inputs for the Y/O rule
+corrections of E22, not in `FEATURES`. Four transition rows change (the two
+corrected records and Nishikigi's lags at 202509 and 202511), so the OOF
+table recomputed (2 min) and every cache was rebuilt. `explain.py` records
+pair probabilities within 5.0 base points (was 2.0; clusters span up to
+4.4, so every in-cluster pair is now on disk, E24 needs that).
+Worker defaults are now cpu_count - 2 everywhere and `predict.py` gained
+`--workers`.
+
+Reproduction: the E19 cache rebuilt on the fixed data (135 targets x 3
+seeds, 12 min on 14 workers) gives 19.62 exact / 0.864 MAE over 2004-2026
+(E19: 20.37 / 0.852 on 2004-2018 and 18.14 / 0.892 on 2019+, which it
+matches to the second decimal), seeds 0-1 on 2020-2026 17.94 / 0.932 (E17:
+17.93 / 0.937), every frame with `train_max < target`, `repro` 1.000.
+`experiments.rules` on it reproduces the E20 table: bundle without R1
++1.13 exact per basho, 43-2 (the two fixed rows change nothing before
+202509).
+
+## E22: the E20 committee rules in the resolver (2026-10)
+
+Hypothesis (E20): six conventions with no modern exception and one at
+47/49, ported from `experiments/rules.py` into `banzuke/resolver.py`, are
+worth about one exact slot per basho on every window. Each precedent count
+below was recomputed from `transitions.parquet` at porting time (2004+
+unless stated; `python -m banzuke.conventions` tracks them).
+
+Change (`rule_masks()` in the resolver, shared with the convention audit;
+overrides still win and each convention they break is reported):
+
+- R14: yokozuna who stay and ozeki who stay are ordered by wins, then
+  yusho, then having fought (a man with bouts above a full-kyujo man),
+  then prior position: 139/139 Y pairs, 554/554 O pairs. A new yokozuna or
+  ozeki still takes the lowest slot of his class (7/7 Y, 28/28 O
+  promotions landed below every incumbent who stayed).
+- R4: a demoted (kadoban make-koshi) ozeki is the bottom sekiwake: 0/45
+  above another man landing at sekiwake since 1990, never S1E (0/24).
+  rules.py only placed him below the other *claimants*; the port puts him
+  last in the block (no frame differs).
+- R2: a sekiwake with 7 wins takes a komusubi slot when at least two other
+  sekiwake candidates exist (kachi-koshi S/K incumbents, M claimants, a
+  demoted ozeki): 29/29. With fewer candidates the model decides (6 cases:
+  4 went to komusubi, Goeido stayed S1W in 201207 and 201305). M1 claims
+  with 8-9 wins never create a third komusubi slot for him: the
+  lowest-scored go back to maegashira while the block exceeds 2 (the
+  `_trim_weak_m1` semantics of rules.py, done on the member list).
+- R3: komusubi with <= 6 wins (131/132; Takayasu 202505 kept) and komusubi
+  with 7 wins below K1E (24/24, rules.py said K1W; the two K2E cases also
+  left) leave sanyaku; sekiwake with <= 6 wins too (69/70; Daieisho
+  202207, the frozen Nagoya record). A K1E 7-8 is left to the model (5/12
+  kept, all moved to K1W).
+- R7: the yokozuna rule needs the earlier yusho / jun-yusho fought as
+  ozeki: 6/8 promoted when it was, 0/3 when it was at sekiwake (Hakuho
+  200605, Terunofuji 202105, Aonishiki 202601).
+- R8: the ozeki rule also accepts 12+ wins now with a 33-win run where
+  exactly one of the two earlier basho was at M1-M3 and the other in
+  sanyaku: 4/4 (Terunofuji 201505, Tochinoshin 201805, Aonishiki 202511,
+  Kirishima 202603); runs with two maegashira basho 0/3 (Kotooshu 200509,
+  Terunofuji 202011, Onosato 202405). Four cases: an audit row and a
+  predict.py note carry the thin precedent.
+- R12 (own commit, adopted on measured value): komusubi newcomers rank
+  below kachi-koshi komusubi incumbents, 47/49 (Takakeisho 11-4 in 201711
+  and Tamawashi 13-2 in 202209 went above an 8-7 / 9-6 incumbent).
+
+Faithfulness: `experiments.rules --cache <E19 dir>` re-resolves the old
+resolver's orders with the new one. Every bundle rule is an exact no-op in
+all 405 frames (`changed` 0 for R2, R3, R4, R5, R6, R7, R8, R12, R14), and
+the `cached` variant (the old sheets) pairs the port against them:
+
+| window | n | old exact / MAE | new exact / MAE | dExact [CI] | W-L | dMAE [CI] |
+|---|---:|---:|---:|---|---|---|
+| full 2004-2026 | 135 | 19.62 / 0.864 | 20.80 / 0.845 | +1.18 [+0.73, +1.70] | 44-2 | -0.020 [-0.029, -0.013] |
+| 2004-2018 | 89 | 20.37 / 0.852 | 21.18 / 0.833 | +0.80 [+0.51, +1.13] | 24-1 | -0.019 [-0.032, -0.010] |
+| 2019+ | 46 | 18.16 / 0.888 | 20.06 / 0.867 | +1.90 [+0.82, +3.17] | 20-1 | -0.021 [-0.032, -0.011] |
+| confirm 2020+ | 40 | 17.94 / 0.929 | 19.94 / 0.910 | +2.00 [+0.81, +3.35] | 17-1 | -0.019 [-0.029, -0.009] |
+
+(three seeds averaged; E20 measured +1.13 / 43-2 for the same bundle on the
+same frames, the difference being R12's +0.05 and the 202509+ data fix).
+With the true next order as input the resolver now reproduces 102 of the
+135 banzuke since 2004 cell for cell (was 95): 200607, 201507, 201805,
+201807, 202107, 202305, 202601, 202605 gained, 202507 lost (Takayasu kept
+at K1W after 6-9, the one R3 exception). Y/O/S/K counts wrong in 2019+
+frames (seed 0): 17 -> 12 (202107, 202201, 202305, 202601, 202605 fixed);
+the twelve left are declined weak M1 claims (201911, 202105, 202505,
+202603), Takakeisho's declined 33-win run (201903), Asanoyama's 32-win
+promotion over the cancelled basho (202007), yusho-after-jun-yusho
+promotions the rule gets both ways (202101, 202303 declined; 202109
+Terunofuji promoted on a 14-1 jun-yusho after a yusho, 3/8 all-time for
+that pattern), and the COVID frames (202209, 202211, 202301).
+
+Protocol v2 (two bag replicates, full retrain on the rebuilt data, paired
+against the E17 default's cached rows):
+
+| window | n | E17 default exact / MAE | this exact / MAE | dExact [CI] | W-L | dMAE [CI] | p (MAE) |
+|---|---:|---:|---:|---|---|---|---:|
+| screen 2004-2019 | 95 | 20.28 / 0.840 | 21.13 / 0.820 | +0.84 [+0.52, +1.21] | 27-3 | -0.020 [-0.033, -0.011] | <.001 |
+| screen halves | | | | +0.75 / +0.94 | 13-1 / 14-2 | -0.015 / -0.025 | .004 / .001 |
+| confirm 2020-2026 (soft) | 40 | 17.93 / 0.938 | 19.94 / 0.913 | +2.01 [+0.82, +3.36] | 18-3 | -0.025 [-0.036, -0.015] | .005 |
+| full | 135 | 19.59 / 0.869 | 20.77 / 0.847 | +1.19 [+0.74, +1.72] | 45-6 | -0.022 [-0.031, -0.014] | <.001 |
+
+Guardrails: promotion/demotion F1 .935/.905 -> .935/.905 on the screen,
+.914/.883 -> .917/.881 on the confirm window; sanyaku-set exactness .647 ->
+.753 and .550 -> .612. **Adopted** (all seven rules; R12 in its own
+commit). Worst frames lose 2-3 cells (the COVID freezes), five gain 11 or
+more. Tests: the eight regained banzuke are reproduced from the true order,
+one fixture per rule on a reversed order, the override path still wins and
+warns. The convention audit's seven watch rows are resolver rows now (the
+7-win sekiwake row counts the guarded cases, 0/29) plus rows for the two
+Y/O corrections and the K1W exit; the kyujo row stays a watch.
+
+Not adopted, measured on the same frames: R9/R13 (weak M1 claims never
+create a third slot) +0.26 / +0.18 full, 4-1 / 5-3 with a -8 frame; R10
+(make-koshi <= 6 wins drops >= 2 cells) 0-2; R11 (East incumbent keeps the
+cell unless West has 4+ more wins) +0.03 full, +0.17 on 2019+ (3-0), a
+2016+ lean. Leads seen while porting: a yusho after a 12-3 jun-yusho was
+promoted 1/3 since 2004 (Kisenosato 14-1 yes, Takakeisho 13-2 and 12-3
+no) and a jun-yusho after a yusho, both as ozeki, 1/2 (Terunofuji 14-1 in
+202107 yes, Hakuho 13-2 in 200607 no): no rule there yet.
+
+## E23: `rank_protected`, the kyujo training-data fix (2026-10, protocol v2)
+
+Hypothesis (E19, E20): the committee drops a full kyujo (0 wins, 8+
+absences) at S/K/M by +24 cells from any rank in any modern era (non-exempt
+2004+ n = 104, q25/50/75 +22/+24/+25), and Ar under-drops these men by about
+6 cells because the labels are contaminated: kosho-era rows (1972-2003,
+median +1 when kosho was granted) and the 2020-2022 COVID exemptions teach
+"full absence, small drop". The inputs are there; a flag for the exempt
+rows should let the base learn both regimes. E20's placement rule R1 is the
+oracle (+0.47 exact on 2019+, 8-8 there because it loses in the COVID
+frames).
+
+Change: `rank_protected` in `transitions.parquet` (not in `FEATURES`): 1 on
+a full-kyujo row at S/K/M/J whose rank was frozen: kosho granted in
+1972-2003 (read off the frozen rank, `delta <= 3`; the decision was public
+before the banzuke; 137 rows, the other 85 full absences of that era
+dropped 10+) or one of 26 listed 2004+ exemptions (last kosho cases 200401,
+Tamanoi 202009, the Hatsu 2021 withdrawals, Miyagino 202109, Tagonoura and
+Nishikido 202201, Ichinojo 202205, Takayasu 202207; every listed row
+dropped <= 3, every unlisted full kyujo since 2004 dropped 17+). The 202207
+partial records (Tamawashi 5-8-2 at +2 and the like) stay unflagged:
+documented unknowables. Models take it through the new `extra` option
+(`--set extra=rank_protected`: appended to the base inputs and the pair
+differences, part of the OOF cache key); `predict.py --protected Name`
+sets it live, and a note prints the committee median against the model's
+drop for any unprotected full kyujo on the sheet.
+
+Two bag replicates, paired against the E22 default on the same data:
+
+| window | n | exact/42 | MAE | dExact [CI] | W-L | dMAE [CI] | p | promo/demo F1 | sanyaku sets |
+|---|---:|---:|---:|---|---|---|---:|---:|---:|
+| screen 2004-2019 | 95 | 21.13 -> 21.05 | 0.820 -> 0.799 | -0.08 [-0.34, +0.17] | 35-41 | -0.021 [-0.042, -0.002] | .17 | .935/.905 -> .937/.920 | .753 -> .747 |
+| half 2004-2011 | 47 | 19.73 -> 19.79 | 0.962 -> 0.914 | +0.05 | 19-20 | -0.048 [-0.076, -0.024] | .003 | | |
+| half 2012-2019 | 48 | 22.49 -> 22.28 | 0.680 -> 0.686 | -0.21 [-0.59, +0.15] | 16-21 | +0.006 [-0.011, +0.021] | .16 | | |
+| confirm 2020-2026 (soft) | 40 | 19.94 -> 21.05 | 0.913 -> 0.746 | +1.11 [+0.15, +2.14] | 19-18 | -0.167 [-0.278, -0.076] | .001 | .917/.881 -> .923/.936 | .612 -> .625 |
+| 2019+ | 46 | 20.06 -> 21.00 | 0.869 -> 0.726 | +0.94 [+0.05, +1.88] | 22-20 | -0.144 [-0.248, -0.056] | .003 | | |
+| 2024-2026 | 17 | 22.79 -> 24.21 | 0.682 -> 0.592 | +1.41 [+0.38, +2.97] | 11-5 | -0.090 [-0.176, -0.033] | .02 | | |
+
+The gain sits exactly where the diagnosis put the damage: 2004-2011
+(kosho-era contamination of the training labels) and 2020+ (the COVID
+rows); 2012-2019, where Ar already dropped these men about right, is flat
+(dMAE +0.006, CI through zero), so the screen halves do not share a sign.
+Read as the pre-stated mechanism rather than a tuning effect with a split
+verdict. The confirm window clears the bar by a wide margin (dMAE -0.167,
+CI upper -0.076; exact +1.11; demotion F1 .881 -> .936, within-1 .806 ->
+.839) and beats R1's oracle on 2019+ (+0.94 vs +0.47 exact, -0.144 vs
+-0.006 MAE), because it also fixes the frames where the rule lost. **Adopted:
+`rank_protected` joins FEATURES** (appended last, so the measured
+configuration is reproduced column for column). Diagnostic on the explain
+caches (135 targets x 3 seeds; 99 unprotected full kyujo at S/K/M, actual
+drop 23.7): predicted drop 17.9 -> 22.2, signed error -5.8 -> -1.5, mean
+absolute error 6.3 -> 2.3, rows with seed spread >= 2 25% -> 20%; by era
+2004-11 -9.9 -> -2.9, 2012-19 -0.8 -> -0.6, 2020-23 -6.7 -> -1.3, 2024-26
+-6.0 -> -0.5. The 10 protected makuuchi rows (actual drop 0.8) went from a
+predicted 13.1 to 1.5.
+
+Folded into the same final rebuild: the `kadoban` feature no longer resets
+after an exempted second make-koshi (Mitakeumi 202209; 18 kosho-era rows
+before 2004 also flip, all consistent with their outcome), so a third one
+demotes him in the resolver (+1 exact, -0.09 MAE in the 202211 frame on
+the cached orders; Y/O/S/K counts wrong in 2019+ frames 12 -> 11). Against
+the measured `extra=rank_protected`
+configuration the final default is neutral (full +0.13 exact, MAE +0.000;
+confirm +0.04 / +0.004). Final default against the E17 default, two bag
+replicates:
+
+| window | n | E17 exact / MAE | final exact / MAE | dExact [CI] | W-L | dMAE [CI] | p (MAE) | promo/demo F1 | sanyaku sets |
+|---|---:|---:|---:|---|---|---|---:|---:|---:|
+| screen 2004-2019 | 95 | 20.28 / 0.840 | 21.22 / 0.797 | +0.93 [+0.57, +1.32] | 51-32 | -0.042 [-0.062, -0.025] | <.001 | .935/.905 -> .938/.916 | .647 -> .763 |
+| half 2004-2011 | 47 | 18.99 / 0.977 | 19.85 / 0.919 | +0.86 [+0.48, +1.31] | 27-14 | -0.058 [-0.083, -0.035] | <.001 | | |
+| half 2012-2019 | 48 | 21.55 / 0.705 | 22.55 / 0.678 | +1.00 [+0.42, +1.65] | 24-18 | -0.027 [-0.051, -0.007] | .16 | | |
+| confirm 2020-2026 (soft) | 40 | 17.93 / 0.938 | 21.09 / 0.750 | +3.16 [+1.60, +4.62] | 25-11 | -0.188 [-0.305, -0.089] | <.001 | .914/.883 -> .920/.935 | .550 -> .662 |
+| 2024-2026 | 17 | 20.82 / 0.706 | 23.85 / 0.600 | +3.03 [+0.59, +4.97] | 13-3 | -0.106 [-0.193, -0.037] | .008 | | |
+| full | 135 | 19.59 / 0.869 | 21.18 / 0.783 | +1.59 [+0.98, +2.29] | 76-43 | -0.086 [-0.133, -0.048] | <.001 | | |
+
+The 202611 banzuke, the first basho untouched by any decision, was not
+available when this round closed.
+
+## E24: reranker aggregation (2026-10, offline)
+
+Hypothesis (E19 5.3): Borda within a cluster overrode a correct direct pair
+through a cycle in four frames (202411, 202501, 202601, 202109), a twin unit
+swallowed a rule-promoted twin (201911), the reranker lifted a demoted ozeki
+(202607). Tool: `experiments/rerank_offline.py` rebuilds the reranker from
+a cached frame's base scores, twin units and pair probabilities (all
+in-cluster pairs are on disk since E21), checks it against the cached
+order (405/405 frames reproduce), then re-aggregates, re-resolves and
+re-evaluates: exactly paired, three seeds, no model needed. On the E22
+resolver:
+
+| variant | full dExact [CI] | W-L | full dMAE | 2004-2018 | 2019+ | confirm 2020+ |
+|---|---|---|---|---|---|---|
+| exclude rule-decided men (Y/O incumbents, rule promotions and returns, kadoban make-koshi) from the clusters | +0.01 [-0.00, +0.03] | 3-1 | -0.000 | +0.02 (3-0) | -0.01 (0-1) | 0.00 (4 frames touched in 405) |
+| Kemeny within clusters, Borda tiebreak | +0.23 [-0.01, +0.47] | 65-49 | +0.005 [-0.003, +0.014] | +0.31 (47-28, p .03), MAE +.003 | +0.06 (18-21), MAE +.009 | 0.00 (15-19), MAE +.005 [-.009, +.018] |
+| Copeland, Borda tiebreak | +0.22 [-0.01, +0.46] | 64-44 | +0.004 | +0.34 (47-26), MAE +.001 | 0.00 (17-18), MAE +.009 | -0.04 (14-17), MAE +.009 |
+
+Exclusion is a no-op in practice: the E22 rules already decide those men's
+class and order, so the only effect left is on cluster-mates whose cluster
+they chained (4 frames). Kemeny and Copeland trade E/W flips for larger
+misses: exact slots up on 2004-2018, MAE up everywhere, flat on 2019+ and
+the confirm window. **Not adopted** (the bar was neutral-or-better on both
+windows). Lead kept: Kemeny's +0.31 on the old window says the cycles are
+real; a better-calibrated pair stage might turn it into a MAE gain too.
+
+## E25: zone-pressure (supply) features (2026-10, protocol v2)
+
+Hypothesis (E19 5.4): the base model scores men independently and cannot
+see the field; kachi-koshi risers from M9+ with 9-11 wins land 4 cells
+higher when 8+ of M1-M6 are make-koshi (actual rise -8.7 with <= 5 vs
+-13.3 with 10+ on the E19 frames; Ar's signed error -0.63 -> +0.86 across
+those buckets, Spearman .14). Per-basho counts of the source banzuke
+(`features.supply_features`): `mk_joi` (make-koshi in M1-M6), `kk_upper`
+(kachi-koshi in M1-M8), `strong_below` (M9+ with 10+ wins), `kk_sanyaku`
+(kachi-koshi S/K), `n_absent` (men with an absence; 14 at 202207 against a
+median of 3). Taken through `--set extra_shared=...`: appended to the base
+inputs and to the pair stage's context columns.
+
+Two bag replicates, paired against the E22 default (same data):
+
+| config | window | exact/42 | MAE | dExact [CI] | W-L | dMAE [CI] | p |
+|---|---|---:|---:|---|---|---|---:|
+| all five | screen 2004-2019 | 21.13 -> 20.94 | 0.820 -> 0.823 | -0.18 [-0.72, +0.38] | 44-43 | +0.003 [-0.021, +0.026] | .51 |
+| all five | halves | | | +0.13 / -0.49 | | -0.016 / +0.022 | |
+| all five | confirm 2020-2026 (soft) | 19.94 -> 20.00 | 0.913 -> 0.887 | +0.06 [-0.55, +0.68] | 18-19 | -0.026 [-0.053, +0.004] | .26 |
+| all five | full | 20.77 -> 20.66 | 0.847 -> 0.842 | -0.11 | 62-62 | -0.006 [-0.025, +0.013] | |
+| `mk_joi,kk_upper` (vs the final default) | screen 2004-2019 | 21.22 -> 21.22 | 0.797 -> 0.797 | 0.00 [-0.51, +0.52] | 43-44 | -0.000 [-0.022, +0.020] | .81 |
+| `mk_joi,kk_upper` | halves | | | +0.19 / -0.19 | | -0.003 / +0.003 | |
+| `mk_joi,kk_upper` | confirm 2020-2026 (soft) | 21.09 -> 21.35 | 0.750 -> 0.726 | +0.26 [-0.39, +0.85] | 16-18 | -0.024 [-0.067, +0.015] | .19 |
+| `mk_joi,kk_upper` | full | 21.18 -> 21.26 | 0.783 -> 0.776 | +0.08 | 59-62 | -0.007 [-0.028, +0.012] | .37 |
+
+**Not adopted.** Flat on the screen with the halves disagreeing, a
+suggestive but insignificant MAE gain on the confirm window that is not
+concentrated in the COVID frames (without 202207/202209 it is -0.029).
+The columns stay in the dataset (`SUPPLY_FEATURES`) for a later angle: a
+pair-stage-only form, or the interaction with the riser's own record.
+Diagnostic (seed-0 bag, KK risers from M9+ with 9-11 wins, signed error
+by `mk_joi` bucket <= 5 / 6-7 / 8-9 / 10+): default -0.65 / -0.38 / +0.16 /
++0.67 (Spearman with `mk_joi` .13), with `mk_joi,kk_upper` -0.33 / -0.15 /
++0.10 / -0.03 (Spearman .00). The model learns the field; the correction
+is worth about half a cell on 4-5 men per basho and does not reach the
+slot or MAE metrics.
+
+## Reading a forecast: reviewer checklist (from E19, updated E22-E25)
+
+Each item is a situation the committee decides lopsidedly; the ones marked
+"enforced" the resolver now applies (E22; `notes:` under the sheet names
+them with their precedent, and an override that breaks one is reported as
+a broken convention). The rest are still the reviewer's job. Counts are
+2004+ unless stated.
+
+- Full or heavy kyujo (0 wins, 8+ absences) at S/K/M: the committee drops
+  him about 24 cells from any rank (q25/50/75 +22/+24/+25, n=104 incl.
+  juryo); since E23 the model learns this (`rank_protected` marks the
+  exempted rows) and a note compares its drop with the median. If the JSA
+  has exempted the man (stable-wide COVID-style withdrawal), pass
+  `--protected Name`.
+- Enforced: make-koshi sekiwake with 7 wins goes to komusubi when two other
+  sekiwake candidates exist (29/29), 6 or fewer to maegashira (69/70);
+  make-koshi komusubi with 6 or fewer wins (131/132) or 7 wins below K1E
+  (24/24) leaves sanyaku. A K1E 7-8 is the model's call (5/12 kept, always
+  at K1W). `--class Name=K` / `--class Name=M` to disagree.
+- Enforced: a demoted ozeki is the bottom sekiwake (0/45 above another
+  sekiwake since 1990, 0/24 at S1E).
+- Enforced: yokozuna who stay and ozeki who stay are ordered by wins, then
+  yusho, then having fought, then prior position (693/693 pairs).
+- Enforced: the yokozuna rule needs the earlier yusho / jun-yusho fought as
+  ozeki (0/3 otherwise); the ozeki rule accepts a 33-win run with one M1-M3
+  basho when the current record is 12+ (4/4, two maegashira basho 0/3).
+  Still the reviewer's: a yusho with 13 or fewer wins after a 12-3
+  jun-yusho was declined 0/2 (Takakeisho 202011, 202301) while 14-1 after
+  12-3 was promoted (Kisenosato 201701); a jun-yusho after a yusho, both as
+  ozeki, was promoted 1/2 (Terunofuji 14-1 in 202107 yes, Hakuho 13-2 in
+  200607 no). `--class Name=Y`.
+- Enforced: komusubi newcomers rank below kachi-koshi komusubi incumbents
+  (47/49; the two exceptions had 11-4 and 13-2).
 - Created third komusubi slot for an M1 claim with 8-9 wins when both K
   incumbents are kachi-koshi: honoured 58% historically, 0/3 for an M1W
   behind an M1E with the same record; the `!` marker and its footprint
-  line already show this.
+  line already show this. A falling 7-win sekiwake takes precedence over
+  such a claim (enforced).
 - Promotees: since 2020 a promotee with 10+ wins lands M13 or lower
   (93/94); the order among promotees follows juryo position - 4 x wins
   (94%); a J1 8-7 above a J5-J7 11-4 is 2/9.
 - Zone pressure: when 8+ of M1-M6 are make-koshi, risers from M9+ with 9-11
   wins land about 4 cells higher than otherwise; when the top is crowded
   with kachi-koshi, risers are compressed and make-koshi men get their
-  standard drops.
+  standard drops. Supply features did not help the model (E25); still a
+  reading aid.
 - S/K East incumbent vs a West incumbent with more wins, both staying:
   since 2016 the West passed 1/7; S1W 8-7 stayed put under a K1E 10+ 3/3
   since 2020. Not a rule yet; treat a predicted swap as `?`.
@@ -966,37 +1253,41 @@ the override shown. Counts are 2004+ unless stated.
   the men above him were placed wrong, not that he stays.
 - Reranker pairs at .4-.6 inside a cluster are honest coin flips; a Borda
   order that contradicts the direct pair (cycle) is worth testing with
-  `--above`.
+  `--above` (Kemeny aggregation gained exact slots but lost MAE, E24).
 
-## Known limitations / future leads (updated 2026-10)
+## Known limitations / future leads (updated 2026-10, after E25)
 
 - Juryo promotee placement: the under-promotion bias has faded (+1.15
   cells in 2004-11, +0.21 in 2024-26); since 2020 promotees with 10+ wins
   land M13 or lower 93/94, and the order among them follows juryo
   position - 4 x wins, which the reranker occasionally inverts (E19).
-- Full or heavy kyujo at S/K/M is under-dropped by about 6 cells on
-  average (committee +24 from any rank; kosho-era and COVID-exempt rows
-  contaminate training). The model-side fix is to flag the exempt rows;
-  E20's R1 placement rule is the oracle (+0.47 slots/basho on 2019+).
-- Zone pressure is unmodeled: kachi-koshi risers from M9+ land about 4
-  cells higher when 8+ of M1-M6 are make-koshi (E19).
+- Full or heavy kyujo at S/K/M: fixed on the model side (E23,
+  `rank_protected`); the 202207 partial records frozen "on the record
+  known at withdrawal" are not flagged and remain unknowables. A new JSA
+  exemption needs a `PROTECTED` entry (or `--protected` live).
+- Zone pressure: the regularity is real (risers from M9+ land about 4
+  cells higher when 8+ of M1-M6 are make-koshi) but per-basho supply
+  columns did not move the metrics (E25). A pair-stage-only or
+  interaction form is untested.
 - Ozeki/yokozuna promotion thresholds are hardcoded conventions in the
-  resolver; borderline cases (32-win runs with a yusho, Terunofuji's
-  201507 promotion after two sanyaku basho) surface in predict.py notes
-  rather than being decided statistically.
-- COVID-era kadoban exemptions (Mitakeumi 2022) are not modeled.
-- Structural errors cost 5.1 cells/basho on 2019+ (E19): Y/O rule
-  misfires 2.9 (R7/R8 fix five of eleven frames; the rest are
-  unknowable), S/K counts 1.7. The 100%-precedent sanyaku rules of E20
-  (make-koshi S/K exits, demoted ozeki at the bottom of S, Y/O order by
-  wins, K newcomers below KK incumbents) are measured at about +1 exact
-  slot per basho and are the recommended next resolver change. The
-  remaining S/K-count errors are declined weak M1 claims (58% honoured,
-  0/3 for an M1W behind a same-record M1E) and slots created for men the
-  claim table does not know (M2 10-5 12/16; S+K >= 6 when Y+O <= 3).
+  resolver (E22 added the fought-as-ozeki and one-maegashira-basho
+  conditions); the thin cases left to the reviewer are a yusho after a
+  12-3 jun-yusho (1/3 since 2004), a jun-yusho after a yusho (1/2),
+  Asanoyama's 32-win promotion over the cancelled 202005 and Takakeisho's
+  declined 33 (201903). predict.py notes name them.
+- COVID-era kadoban exemptions (Mitakeumi 2022) are not modeled beyond the
+  kadoban flag surviving the exempted basho (E22 note).
+- Structural errors on 2019+ (E22): Y/O/S/K counts wrong in 12 of 46
+  frames (was 17); the twelve left are declined weak M1 claims (58%
+  honoured, 0/3 for an M1W behind a same-record M1E), slots created for men
+  the claim table does not know (M2 10-5 12/16; S+K >= 6 when Y+O <= 3),
+  the Y/O cases above and the COVID frames.
+- Reranker aggregation: Kemeny within clusters gained +0.31 exact per
+  basho on 2004-2018 but cost MAE everywhere (E24); worth a retest if the
+  pair stage's calibration improves.
 - A LambdaRank model trained through the juryo boundary (B, truncation
-  60) is now within 1 slot of Ar; blending its score into Ar's base
-  order is untested.
+  60) is within 1 slot of Ar; blending its score into Ar's base order is
+  untested.
 - Untried ideas for the near-tie gap: committee-regime features
   (banzuke committee membership changes); for live use, feeding
   announced Y/O promotions and shin-juryo counts into the resolver as

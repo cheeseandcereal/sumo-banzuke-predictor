@@ -297,8 +297,8 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
         # whether a member got in by a forced claim or as a fill ...
         members.sort()
         if c == SEKIWAKE:
-            # ... except that a demoted ozeki is the bottom sekiwake (0/43 above
-            # another sekiwake since 1990)
+            # ... except that a demoted ozeki is the bottom sekiwake (never above
+            # another sekiwake since 1990, 45 pairs)
             members = ([i for i in members if not kadoban_out[i]]
                        + [i for i in members if kadoban_out[i]])
         if c == KOMUSUBI:

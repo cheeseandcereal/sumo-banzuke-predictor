@@ -11,9 +11,10 @@ movement model whose near-tie clusters are reordered by a pairwise
 classifier that learned the committee's conflict-resolution habits
 (identical-record sanyaku E/W pairs move as one unit),
 feeding a resolver that applies the near-inviolable structure (Y/O
-conventions, sanyaku minimums, empirically-derived E/W layout, no
-promotion after make-koshi for S/K/M). See `docs/EXPERIMENTS.md` for
-the full experiment log and selection rationale.
+promotion rules and order, make-koshi sanyaku exits, sanyaku minimums,
+empirically-derived E/W layout, no promotion after make-koshi for S/K/M).
+See `docs/EXPERIMENTS.md` for the full experiment log and selection
+rationale.
 
 The model trains on historical transitions between consecutive basho,
 using rank, win-loss results, prizes, recent form, career context, and
@@ -21,15 +22,18 @@ era features to predict each wrestler's movement. Evaluation uses a
 rolling-origin backtest that retrains on strictly earlier tournaments,
 so each prediction only uses information available at the time.
 
-Backtested performance (202001-202609, 40 basho): **17.9 of 42 slots
-exactly right** per basho on average (+-1.0 standard error), **80% of
-wrestlers placed within one position**, mean absolute error 0.94
-half-ranks, juryo promotion/demotion F1 0.91/0.88, GTB score 43
+Backtested performance (202001-202609, 40 basho, two bag replicates):
+**21.1 of 42 slots exactly right** per basho on average, **83% of
+wrestlers placed within one position**, mean absolute error 0.75
+half-ranks, juryo promotion/demotion F1 0.92/0.94, GTB score 49
 points/basho (2 per exact slot, 1 per right-rank-wrong-side). Over the
-2004-2019 window used for tuning it scores 20.3 exact slots; the 2020s
-are harder for every model tried. These figures were used to pick the
-current configuration, so the first untouched test is the 202611
-banzuke.
+2004-2019 window used for tuning it scores 21.2 exact slots (MAE 0.80).
+The 2026-10 round (docs/EXPERIMENTS.md E21-E25) added the committee's
+sanyaku and Y/O conventions to the resolver and a flag for absences the
+JSA exempted, worth +3.2 exact slots and -0.19 MAE on the 2020s window
+over the previous default (+0.9 / -0.04 on 2004-2019). These figures
+were used to pick the current configuration, so the first untouched test
+is the 202611 banzuke.
 
 For scale, in the long-running human "Guess the Banzuke" game
 ([dichne.com](https://www.dichne.com/Guess.htm), scored the same way:
@@ -56,6 +60,7 @@ Predict the upcoming banzuke from the latest fetched results:
 ```sh
 uv run python predict.py
 uv run python predict.py --retired Shikona1,Shikona2   # announced retirees
+uv run python predict.py --protected Shikona           # a full absence the JSA exempted (rank frozen)
 ```
 
 Disagree with a placement? Overrides constrain the assignment while the
@@ -106,9 +111,12 @@ uv run python -m experiments.explain sheet 202309   # one historical forecast ne
 uv run python -m experiments.precedent landing "K1 5-10"   # where did the committee put that record
 ```
 
-The resolver's hard-coded conventions (yokozuna never demoted, sanyaku
-minimums, forced claims, make-koshi ceiling, E/W layout, twin order) are
-empirical regularities read off history once. `banzuke.conventions`
+The resolver's hard-coded conventions (yokozuna never demoted, Y/O order
+by wins, make-koshi sekiwake and komusubi exits, the demoted ozeki at the
+bottom of the sekiwake, sanyaku minimums, forced claims, make-koshi
+ceiling, E/W layout, twin order) are empirical regularities read off
+history once; the `notes:` under a forecast name the ones that decided a
+cell, with their precedent. `banzuke.conventions`
 recounts each over the full record and the last 60/30 basho and names
 its last violation, so a committee that changes its habits shows up
 in the table after the next data update rather than silently costing
@@ -140,6 +148,7 @@ regime, so full history remains the default.
 - `data/banzuke/`, `data/basho/`: committed raw API responses
 - `data/processed/`: committed, reproducible Parquet datasets
 - `banzuke/`: dataset build, features, models, resolver, backtest harness
+- `experiments/`: case-analysis and offline measurement tools (`explain`, `rules`, `rerank_offline`, `precedent`, `grouping`)
 - `predict.py`, `backtest.py`, `analyze.py`: CLIs
 - `tests/`: regression tests
 - `results/`: generated backtest reports and caches

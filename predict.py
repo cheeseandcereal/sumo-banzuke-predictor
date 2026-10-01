@@ -101,7 +101,7 @@ def rule_notes(pred):
             notes.append(f"{name}: yusho after a yusho / jun-yusho fought at sekiwake: "
                          "not promoted to yokozuna 0/3 since 2004")
         if rm["kadoban_out"][i] and r.pred_class == SEKIWAKE:
-            notes.append(f"{name}: demoted ozeki, bottom sekiwake (0/43 above another sekiwake since 1990)")
+            notes.append(f"{name}: demoted ozeki, bottom sekiwake (0/45 above another sekiwake since 1990)")
         if rm["k_from_s"][i]:
             notes.append(f"{name}: 7-win sekiwake takes a komusubi slot (29/29 since 2004)")
         elif rm["exit"][i] and r.pred_class >= MAEGASHIRA:
