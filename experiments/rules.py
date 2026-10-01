@@ -6,6 +6,12 @@ is re-resolved and re-evaluated, so every comparison is exactly paired with V0
 (the cached order re-resolved by the current resolver) and needs no retraining.
 
     uv run python -m experiments.rules [--start 200401] [--rules R1,R4] [--workers 14]
+    uv run python -m experiments.rules --cache results/scratch/explain/<old fingerprint>
+
+A resolver edit changes the fingerprint, so `--cache` names the frames to
+reuse. The `cached` variant scores the sheet as the cache's resolver made it,
+so V0 - cached is the value of the resolver change itself, and a rule the
+resolver now applies natively must be a no-op (`changed` 0 in every frame).
 
 Rules (precedent counts in results/scratch/explain/review/adhoc.md):
   R1  zero wins with 8+ absences (S/K/M): full kyujo lands position+24,
@@ -306,9 +312,12 @@ def run_target(task):
 
         f = Frame(g)
         m0, pred0 = score(f, f.rank0.copy(), {})
-        repro = bool(np.array_equal(pred0.set_index("rikishi_id")["pred_pos"].reindex(rid).to_numpy(),
-                                    g["pred_pos"].to_numpy()))
+        pp0 = pred0.set_index("rikishi_id")["pred_pos"].reindex(rid).to_numpy()
+        repro = bool(np.array_equal(pp0, g["pred_pos"].to_numpy()))
         rows.append({"target": target, "seed": seed, "variant": "V0", "events": 0, "repro": repro, "fail": False, **m0})
+        cached = g[["rikishi_id", "pred_class", "pred_number", "pred_side", "pred_pos"]]
+        rows.append({"target": target, "seed": seed, "variant": "cached", "events": 0, "repro": repro, "fail": False,
+                     "changed": int((g["pred_pos"].to_numpy() != pp0).sum()), **evaluate(cached, g, actual)})
         for name, funcs in variants.items():
             f = Frame(g)  # fresh copy: rules may edit frame columns
             pseudo, ov, n = f.rank0.copy(), {}, 0
@@ -320,7 +329,7 @@ def run_target(task):
             if fail:
                 m = m0
             changed = 0 if fail or n == 0 else int((pred.set_index("rikishi_id")["pred_pos"].reindex(rid).to_numpy()
-                                                    != pred0.set_index("rikishi_id")["pred_pos"].reindex(rid).to_numpy()).sum())
+                                                    != pp0).sum())
             rows.append({"target": target, "seed": seed, "variant": name, "events": n, "repro": True,
                          "fail": fail, "changed": changed, **m})
     return rows
@@ -351,9 +360,14 @@ def main():
     ap.add_argument("--rules", default=",".join(RULES))
     ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     ap.add_argument("--seeds", type=int, default=3)
+    ap.add_argument("--cache", default=None, metavar="DIR",
+                    help="explain cache to reuse (default: the current fingerprint's)")
     args = ap.parse_args()
-    d = cache_dir({}, list(range(args.seeds)))
-    rows = pd.concat([pd.read_parquet(f) for f in sorted(d.glob("rows_*.parquet"))], ignore_index=True)
+    d = Path(args.cache) if args.cache else cache_dir({}, list(range(args.seeds)))
+    files = sorted(d.glob("rows_*.parquet"))
+    if not files:
+        sys.exit(f"no cached frames under {d}; run `python -m experiments.explain build` or pass --cache")
+    rows = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
     rows = rows[rows["target"] >= args.start]
     tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
     names = args.rules.split(",")
@@ -374,9 +388,15 @@ def main():
     v0 = res[res["variant"] == "V0"]
     print(f"V0 reproduces the cached sheet in {v0['repro'].mean():.3f} of frames; "
           f"variant resolves failed: {int(res['fail'].sum())}")
+    noop = (res[res["variant"].isin(variants)].groupby("variant")["changed"].agg(lambda c: int((c > 0).sum())))
+    print("frames changed per variant: " + ", ".join(f"{v} {n}" for v, n in noop.items()))
     per = res.groupby(["variant", "target"]).mean(numeric_only=True).reset_index()
     pd.set_option("display.width", 220)
     order = [v for v in list(variants) if v in set(per["variant"])]
+    if not v0["repro"].all():
+        # the cache was built by an older resolver: V0 (current) is the baseline,
+        # `cached` the old resolver's sheet, V0 - cached the value of the change
+        order = ["cached"] + order
     for w, lo, hi in WINDOWS:
         tab, n, ex0, mae0 = paired(per, order, lo, hi)
         print(f"\n=== {w}: {n} basho, V0 exact {ex0:.3f} MAE {mae0:.4f}; paired deltas vs V0 (seeds averaged) ===")

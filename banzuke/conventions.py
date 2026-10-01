@@ -1,7 +1,7 @@
 """Re-measure the committee conventions the resolver hard-codes.
 
 Every resolver rule is an empirical regularity read off history once
-(docs/EXPERIMENTS.md E1, E2, E5, E10, E16). No rule can adapt before its
+(docs/EXPERIMENTS.md E1, E2, E5, E10, E16, E22). No rule can adapt before its
 first exception, so this audit recounts each one over the whole record and
 the recent past and names its last violation: drift becomes loud instead of
 silent. A few regularities the resolver does not enforce are tracked too
@@ -13,7 +13,7 @@ import numpy as np
 import pandas as pd
 
 from banzuke.build import YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, PROCESSED
-from banzuke.resolver import block_slots, forced_claims
+from banzuke.resolver import block_slots, forced_claims, rule_masks
 
 LAYOUT = {YOKOZUNA: "layout: yokozuna block", OZEKI: "layout: ozeki block (odd -> lighter column)",
           SEKIWAKE: "layout: sekiwake block (odd -> lighter column)",
@@ -36,22 +36,24 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
     kk = t["kk"].to_numpy() == 1
     yusho = t["yusho"].to_numpy() == 1
     claims = forced_claims(t)
-    y_promo = (cls == OZEKI) & yusho & ((t["yusho1"].to_numpy() == 1)
-                                         | ((t["junyusho1"].to_numpy() == 1) & (t["w1"].to_numpy() >= 12)))
-    run3 = np.nan_to_num(t["ozeki_run3"].to_numpy())
-    o_promo = np.isin(cls, (SEKIWAKE, KOMUSUBI)) & (wins >= 10) & (run3 >= np.where(yusho, 32, 33))
-    o_return = (t["demoted_ozeki"].to_numpy() == 1) & (wins >= 10)
+    rm = rule_masks(t)
+    y_promo, o_promo, o_return = rm["y_promo"], rm["o_promo"], rm["o_return"]
+    # the old yokozuna rule without the "fought as ozeki" condition (E22 R7)
+    y_fires = (cls == OZEKI) & yusho & ((t["yusho1"].to_numpy() == 1)
+                                        | ((t["junyusho1"].to_numpy() == 1) & (t["w1"].to_numpy() >= 12)))
 
     def rule(name, applies, held):
         add(name, "resolver", b[applies], held[applies])
 
     rule("yokozuna never demoted", cls == YOKOZUNA, nxt == YOKOZUNA)
-    rule("ozeki yusho after yusho / 12+ jun-yusho -> yokozuna", y_promo, nxt == YOKOZUNA)
+    rule("ozeki yusho after yusho / 12+ jun-yusho fought as ozeki -> yokozuna", y_promo, nxt == YOKOZUNA)
+    rule("yusho / jun-yusho fought at sekiwake does not count for that rule", y_fires & ~y_promo, nxt > YOKOZUNA)
     rule("yokozuna promotions met that rule", (cls == OZEKI) & (nxt == YOKOZUNA), y_promo)
     rule("kadoban ozeki with make-koshi drops out", claims["kadoban_out"], nxt > OZEKI)
     rule("other ozeki keep the rank", (cls == OZEKI) & ~claims["kadoban_out"], nxt <= OZEKI)
-    rule("S/K 10+ wins, 33-win run (32 with yusho) -> ozeki", o_promo, nxt == OZEKI)
-    rule("ozeki promotions met that rule", np.isin(cls, (SEKIWAKE, KOMUSUBI)) & (nxt == OZEKI), o_promo)
+    rule("S/K 10+ wins, 33-win run (32 with yusho) over three sanyaku basho -> ozeki", rm["o_run"], nxt == OZEKI)
+    rule("S/K 12+ wins, 33-win run with one M1-M3 basho -> ozeki", rm["o_run_m"] & ~rm["o_run"], nxt == OZEKI)
+    rule("ozeki promotions met those rules", np.isin(cls, (SEKIWAKE, KOMUSUBI)) & (nxt == OZEKI), o_promo)
     rule("demoted ozeki with 10+ wins returns", o_return, nxt == OZEKI)
     rule("kachi-koshi sekiwake stays sanyaku", (cls == SEKIWAKE) & kk, nxt <= SEKIWAKE)
     rule("kachi-koshi komusubi stays sanyaku", (cls == KOMUSUBI) & kk, nxt <= KOMUSUBI)
@@ -59,6 +61,12 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
     m1 = (cls == MAEGASHIRA) & (num == 1) & (wins >= 8)
     rule("M1 8+ wins -> sanyaku", m1, nxt <= KOMUSUBI)
     rule("M2 11+ / M3 10+ / M4 12+ / M5 13+ -> sanyaku", claims["m_claim"] & ~m1, nxt <= KOMUSUBI)
+    # make-koshi exits (E20/E22 R2, R3)
+    rule("sekiwake with 7 wins and two other sekiwake candidates -> komusubi", rm["k_from_s"], nxt == KOMUSUBI)
+    rule("sekiwake with <= 6 wins leaves sanyaku", (cls == SEKIWAKE) & (wins <= 6), nxt >= MAEGASHIRA)
+    rule("komusubi with <= 6 wins leaves sanyaku", (cls == KOMUSUBI) & (wins <= 6), nxt >= MAEGASHIRA)
+    k1e = (num == 1) & (t["side"].to_numpy() == 0)
+    rule("komusubi with 7 wins below K1E leaves sanyaku", (cls == KOMUSUBI) & (wins == 7) & ~k1e, nxt >= MAEGASHIRA)
 
     def cell(c, n, s):  # lexicographic (class, number, side) as one integer
         return c.astype(int) * 1000 + n.astype(int) * 10 + s.astype(int)
@@ -68,33 +76,36 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
     rule("make-koshi S/K/M never above the prior cell",
          np.isin(cls, (SEKIWAKE, KOMUSUBI, MAEGASHIRA)) & ~kk, after >= prior)
 
-    # regularities found in the 2019+ case analysis (docs/EXPERIMENTS.md E19/E20),
-    # not enforced by the resolver: "watch" rows so the first exception is loud
+    # regularities found in the 2019+ case analysis (docs/EXPERIMENTS.md E19/E20)
+    # that the resolver does not enforce: "watch" rows so the first exception is loud
     def watch(name, applies, held):
         add(name, "watch", b[applies], held[applies])
 
-    watch("make-koshi sekiwake with 7 wins drops to komusubi", (cls == SEKIWAKE) & (wins == 7), nxt == KOMUSUBI)
-    watch("sekiwake with <= 6 wins leaves sanyaku", (cls == SEKIWAKE) & (wins <= 6), nxt >= MAEGASHIRA)
-    watch("komusubi with <= 6 wins leaves sanyaku", (cls == KOMUSUBI) & (wins <= 6), nxt >= MAEGASHIRA)
     watch("S/K/M with 0 wins and 8+ absences drops 17+ cells (COVID exemptions violate)",
           np.isin(cls, (SEKIWAKE, KOMUSUBI, MAEGASHIRA)) & (wins == 0) & (t["absences"].to_numpy() >= 8),
           t["delta"].to_numpy() >= 17)
 
-    def same_basho_pairs(mask, keep):
-        a = t.loc[mask, ["basho", "rikishi_id", "wins", "position", "position_next"]]
-        p = a.merge(a, on="basho", suffixes=("_a", "_b"))
-        p = p[(p["rikishi_id_a"] < p["rikishi_id_b"]) & keep(p)]
-        return p
+    # order within a block (E22 R14, R4, R12): pairs of one basho
+    def same_basho_pairs(mask_a, mask_b=None, keep=None):
+        cols = ["basho", "rikishi_id", "wins", "yusho", "fought", "position", "position_next"]
+        a = t.loc[mask_a, cols]
+        bb = t.loc[mask_a if mask_b is None else mask_b, cols]
+        p = a.merge(bb, on="basho", suffixes=("_a", "_b"))
+        p = p[p["rikishi_id_a"] != p["rikishi_id_b"]]
+        return p[keep(p)] if keep is not None else p
 
-    for c, name in ((YOKOZUNA, "yokozuna who stay are ordered by wins"), (OZEKI, "ozeki who stay are ordered by wins")):
-        p = same_basho_pairs((cls == c) & (nxt == c), lambda p: p["wins_a"] != p["wins_b"])
-        add(name, "watch", p["basho"], (p["wins_a"] > p["wins_b"]) == (p["position_next_a"] < p["position_next_b"]))
-    s_stay = (cls == SEKIWAKE) & kk & (nxt == SEKIWAKE)
-    dem = claims["kadoban_out"] & (nxt == SEKIWAKE)
-    a = t.loc[dem, ["basho", "rikishi_id", "position_next"]].merge(
-        t.loc[s_stay, ["basho", "position_next"]], on="basho", suffixes=("_o", "_s"))
-    add("demoted ozeki ranks below every kachi-koshi sekiwake incumbent", "watch",
-        a["basho"], a["position_next_o"] > a["position_next_s"])
+    t["fought"] = ((t["wins"] + t["losses"]) > 0).astype(int)
+    for c, name in ((YOKOZUNA, "yokozuna who stay are ordered by wins, yusho, fought, prior position"),
+                    (OZEKI, "ozeki who stay are ordered by wins, yusho, fought, prior position")):
+        key = lambda p, s: list(zip(-p[f"wins_{s}"], -p[f"yusho_{s}"], -p[f"fought_{s}"], p[f"position_{s}"]))
+        p = same_basho_pairs((cls == c) & (nxt == c))
+        p = p[[ka < kb for ka, kb in zip(key(p, "a"), key(p, "b"))]]
+        add(name, "resolver", p["basho"], p["position_next_a"] < p["position_next_b"])
+    p = same_basho_pairs(claims["kadoban_out"] & (nxt == SEKIWAKE), ~claims["kadoban_out"] & (nxt == SEKIWAKE))
+    add("demoted ozeki is the bottom sekiwake", "resolver", p["basho"], p["position_next_a"] > p["position_next_b"])
+    p = same_basho_pairs((cls > KOMUSUBI) & (nxt == KOMUSUBI), (cls == KOMUSUBI) & kk & (nxt == KOMUSUBI))
+    add("komusubi newcomers rank below kachi-koshi komusubi incumbents", "resolver",
+        p["basho"], p["position_next_a"] > p["position_next_b"])
 
     tw = t[t["side"] == 0].merge(t[t["side"] == 1], suffixes=("_e", "_w"),
                                  on=["basho", "rank_class", "rank_number", "wins", "losses", "absences"])

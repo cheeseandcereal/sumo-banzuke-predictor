@@ -175,6 +175,86 @@ def test_resolver_keeps_identical_record_twins_in_order(cands_for):
     assert not (resolve(cands, swapped, 42).to_numpy() == pred.to_numpy()).all()
 
 
+def _cells(cands, pred):
+    return pred.merge(cands[["rikishi_id", "shikona"]], on="rikishi_id").set_index("shikona")
+
+
+@pytest.mark.parametrize("target", [200607, 201507, 201805, 201807, 202107, 202305, 202601, 202605])
+def test_resolver_rules_reproduce_committee_frames(cands_for, tidy, target):
+    """E22: frames the committee rules decide. From the true order the sheet
+    is reproduced cell for cell; before the rules were ported these eight were
+    not (Y/O membership or a make-koshi sekiwake's exit was wrong)."""
+    cands, pred = _true_order(cands_for, target)
+    actual = tidy[tidy["basho"] == target]
+    assert evaluate(pred, cands, actual)["exact"] == 1.0
+
+
+def test_resolver_yo_order_and_demoted_ozeki(cands_for):
+    # R14, 201901: all three yokozuna have 0 wins; Kisenosato (Y2E 0-5-10) fought,
+    # Hakuho (Y1E) and Kakuryu (Y1W) did not, so Kisenosato / Hakuho / Kakuryu
+    # whatever order the model gives; ozeki by wins (Takayasu 12-3 over Goeido 8-4-3)
+    for sign in (1.0, -1.0):
+        cands, pred = _true_order(cands_for, 201901, sign)
+        cells = _cells(cands, pred)
+        assert cells.loc[["Kisenosato", "Hakuho", "Kakuryu"], CELL].to_numpy().tolist() == [
+            [YOKOZUNA, 1, 0], [YOKOZUNA, 1, 1], [YOKOZUNA, 2, 0]]
+        assert cells.loc[["Takayasu", "Goeido", "Tochinoshin"], CELL].to_numpy().tolist() == [
+            [OZEKI, 1, 0], [OZEKI, 1, 1], [OZEKI, 2, 1]]
+    # R4, 202607: Aonishiki (O 0-0-15, kadoban) is the bottom sekiwake even when
+    # the model ranks him first among the sekiwake candidates
+    cands, pred = _true_order(cands_for, 202607, -1.0)
+    s = pred[pred["pred_class"] == SEKIWAKE].merge(cands[["rikishi_id", "shikona", "kadoban"]], on="rikishi_id")
+    assert s["shikona"].iloc[-1] == "Aonishiki" and len(s) >= 2
+    assert (s["kadoban"].iloc[:-1] == 0).all()
+
+
+def test_resolver_make_koshi_exits(cands_for):
+    """R2/R3: a 7-win sekiwake takes a komusubi slot, weak M1 claims do not grow
+    the block for him (201805: Tamawashi M1W 9-6 back to M1E); S/K with 6 or
+    fewer wins, or a komusubi with 7 wins below K1E, never stay in sanyaku."""
+    for sign in (1.0, -1.0):
+        cands, pred = _true_order(cands_for, 201805, sign)
+        cells = _cells(cands, pred)
+        assert cells.loc["Mitakeumi", "pred_class"] == KOMUSUBI
+        assert (pred["pred_class"] == KOMUSUBI).sum() == 2
+        assert cells.loc["Tamawashi", "pred_class"] >= MAEGASHIRA
+        if sign > 0:  # true order: Endo K1W, Tamawashi M1E
+            assert cells.loc[["Endo", "Tamawashi"], CELL].to_numpy().tolist() == [[KOMUSUBI, 1, 1], [MAEGASHIRA, 1, 0]]
+    n = 0
+    for target, sign in product((202105, 202111, 202403, 202603), (1.0, -1.0)):
+        cands, pred = _true_order(cands_for, target, sign)
+        m = cands.merge(pred, on="rikishi_id")
+        out = m[m["rank_class"].isin([SEKIWAKE, KOMUSUBI]) & (m["wins"] <= 6)
+                | (m["rank_class"] == KOMUSUBI) & (m["wins"] == 7) & ~((m["rank_number"] == 1) & (m["side"] == 0))]
+        n += len(out)
+        assert (out["pred_class"] >= MAEGASHIRA).all(), target
+    assert n >= 8
+    # the override path still wins, and says so (202405: Nishikigi K1W 3-12)
+    cands = cands_for(202405)
+    warnings = []
+    rid = cands.loc[cands["shikona"] == "Nishikigi", "rikishi_id"].iloc[0]
+    pred = resolve(cands, cands["position_next"].to_numpy(dtype=float), 42,
+                   overrides={"class": {rid: KOMUSUBI}}, warnings=warnings)
+    assert _cells(cands, pred).loc["Nishikigi", "pred_class"] == KOMUSUBI
+    assert any("kept at komusubi by override" in w for w in warnings)
+
+
+def test_rule_masks_yo_promotions(trans):
+    """R7: a yusho / jun-yusho fought at sekiwake does not count towards the
+    yokozuna rule; R8: a 33-win run with 12+ wins now and one M1-M3 basho
+    counts towards the ozeki rule, two maegashira basho do not."""
+    from banzuke.resolver import rule_masks
+    rm = rule_masks(trans)
+    index = pd.MultiIndex.from_arrays([trans["basho"], trans["shikona"]])
+    y = pd.Series(rm["y_promo"], index=index)
+    assert not y[(202105, "Terunofuji")] and not y[(200605, "Hakuho")] and not y[(202601, "Aonishiki")]
+    assert y[(200705, "Hakuho")] and y[(202505, "Onosato")]
+    o = pd.Series(rm["o_promo"], index=index)
+    assert all(o[k] for k in [(201505, "Terunofuji"), (201805, "Tochinoshin"), (202511, "Aonishiki"), (202603, "Kirishima")])
+    assert not any(o[k] for k in [(202011, "Terunofuji"), (202405, "Onosato"), (200509, "Kotooshu")])
+    assert not o[(201811, "Takakeisho")] and o[(201903, "Takakeisho")]  # 33 wins over K/S/S: the classic rule
+
+
 def test_seed_and_option_semantics():
     assert _seeds(0, 1) == [0] and _seeds(1, 5) == [5, 6, 7, 8, 9] and _seeds(None, 1) == [None]
     with pytest.raises(ValueError):
