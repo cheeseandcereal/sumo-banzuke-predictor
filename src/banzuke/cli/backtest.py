@@ -18,7 +18,8 @@ that model's defaults alongside and pairs every row against them
 """
 import sys
 
-from banzuke.cli._common import DEFAULT_WORKERS, CommandError, parse_seeds, parse_sets, subcommand
+from banzuke.cli._common import (CommandError, add_seeds, add_set, add_train_start, add_window,
+                                 add_workers, parse_seeds, parse_sets, subcommand, targets_in)
 
 # committee behavior drifts; screen/confirm are the tuning windows of
 # docs/EXPERIMENTS.md protocol v2
@@ -32,25 +33,18 @@ def add_parser(sub):
     ap = subcommand(sub, "backtest", __doc__, "rolling-origin backtest of the models")
     ap.add_argument("--models", default=None, metavar="NAMES",
                     help="comma-separated model names (default: all)")
-    ap.add_argument("--start", type=int, default=200401, metavar="BASHO",
-                    help="first target basho (200401: start of the 42-man, post-kosho era; "
-                         "earlier committee behavior differs)")
-    ap.add_argument("--end", type=int, default=None, metavar="BASHO",
-                    help="last target basho (default: latest)")
-    ap.add_argument("--seeds", default="0", metavar="SPEC",
-                    help="bag replicates to fit, e.g. 0-1; averaged per basho")
-    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
-                    help="model option override, see above")
+    add_window(ap, 200401, "first target basho (200401: start of the 42-man, post-kosho era; "
+                           "earlier committee behavior differs)")
+    add_seeds(ap, "0", "bag replicates to fit, averaged per basho")
+    add_set(ap)
     ap.add_argument("--baseline", default=None, metavar="LABEL",
                     help="configuration paired comparisons refer to (default: the leader)")
-    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS, help="worker processes")
+    add_workers(ap)
     ap.add_argument("--out", default=None, metavar="STEM",
                     help="write STEM_per_basho.csv and STEM_summary.csv, e.g. results/dev")
     ap.add_argument("--summarize", default=None, metavar="CSVS",
                     help="skip running; summarize existing per-basho csv(s), comma-separated")
-    ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
-                    help="ignore training transitions before this basho "
-                         "(e.g. 201001; default: all history since 1959)")
+    add_train_start(ap)
     ap.add_argument("--fresh", action="store_true", help="recompute instead of using the cache")
     ap.set_defaults(run=run, _parser=ap)
     return ap
@@ -79,10 +73,7 @@ def run(args):
         configs.setdefault("base", {})
 
     tidy, trans = load_tidy(), load_transitions()
-    end = args.end or int(tidy["basho"].max())
-    targets = [b for b in sorted(tidy["basho"].unique()) if args.start <= b <= end]
-    if not targets:
-        raise CommandError(f"no target basho in {args.start}..{end}")
+    targets, end = targets_in(tidy, args.start, args.end)
     if args.train_start:
         n_train = int(tidy["basho"].between(args.train_start, targets[0]).sum()) - 1
         if n_train < 30:

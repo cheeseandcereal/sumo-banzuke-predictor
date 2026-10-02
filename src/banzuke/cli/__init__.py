@@ -15,11 +15,14 @@ from importlib.metadata import PackageNotFoundError, version
 from banzuke.cli._common import CommandError
 from banzuke.paths import MissingDataError
 
-EPILOG = """\
-forecast      predict
-data          data update|fetch|build
-evaluation    backtest, analyze, conventions
-research      explain, precedent, rules
+DESCRIPTION = """\
+Predict the next makuuchi banzuke from basho results.
+
+A clone is ready to use: `banzuke predict` trains on the committed datasets
+under data/ (about 30 s) and prints the forecast with confidence markers;
+`banzuke data update` fetches newly completed basho first. The evaluation
+commands (backtest, analyze, conventions) and the research tools (explain,
+precedent, rules) are documented in docs/.
 """
 
 
@@ -31,11 +34,9 @@ def _version():
 
 
 def build_parser() -> argparse.ArgumentParser:
-    ap = argparse.ArgumentParser(
-        prog="banzuke",
-        description="Predict the next makuuchi banzuke from basho results, and the tooling "
-                    "behind the model.",
-        epilog=EPILOG, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap = argparse.ArgumentParser(prog="banzuke", description=DESCRIPTION,
+                                 epilog="`banzuke COMMAND --help` documents each command.",
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--version", action="version", version=f"%(prog)s {_version()}")
     sub = ap.add_subparsers(dest="command", metavar="COMMAND", required=True, title="commands")
     from banzuke.cli import analyze, backtest, conventions, data, explain, precedent, predict, rules

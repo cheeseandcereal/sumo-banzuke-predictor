@@ -1,6 +1,7 @@
 """Shared pieces of the `banzuke` subcommands: the error type the dispatcher
-reports without a traceback, the help formatter, and the grammar of the
-options several commands share (--set, --seeds, --workers)."""
+reports without a traceback, the help formatter, the grammar of the options
+several commands share (--set, --seeds) and the helpers that declare them
+with one wording everywhere."""
 import argparse
 import json
 import os
@@ -22,7 +23,8 @@ class Formatter(argparse.RawDescriptionHelpFormatter, argparse.ArgumentDefaultsH
     def _get_help_string(self, action):
         # ArgumentDefaultsHelpFormatter appends the default even when the help
         # text already explains it; skip actions whose default is None/False/empty
-        if action.default in (None, False, "", []) or action.default is argparse.SUPPRESS:
+        d = action.default
+        if d is None or d is False or d == "" or d == [] or d is argparse.SUPPRESS:
             return action.help
         return super()._get_help_string(action)
 
@@ -32,6 +34,63 @@ def subcommand(sub, name, module_doc, help, **kwargs):
     return sub.add_parser(name, help=help, description=module_doc, formatter_class=Formatter,
                           **kwargs)
 
+
+def action_parser(sub, name, help, description=None, **kwargs):
+    """A nested action of a command (`banzuke explain sheet`): the help line
+    doubles as the description unless a longer one is given."""
+    return sub.add_parser(name, help=help, description=description or help,
+                          formatter_class=Formatter, **kwargs)
+
+
+# --- options several commands share -------------------------------------------
+
+def add_set(ap, help=None):
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help=help or "model option override, repeatable: dotted keys address the "
+                                 "LightGBM stages (base.*, pair.*), bare keys are model options "
+                                 "(n_seeds, gap, cluster_max, context, near_ties, half_life, ...)")
+
+
+def add_seeds(ap, default, help):
+    ap.add_argument("--seeds", default=default, metavar="SPEC", help=help + " (e.g. 0, 0-2, 0,3)")
+
+
+def add_workers(ap, help="worker processes"):
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS, help=help)
+
+
+def add_window(ap, start, start_help="first target basho", end_help="last target basho"):
+    ap.add_argument("--start", type=int, default=start, metavar="BASHO", help=start_help)
+    ap.add_argument("--end", type=int, default=None, metavar="BASHO",
+                    help=end_help + " (default: latest)")
+
+
+def add_train_start(ap):
+    ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
+                    help="ignore training transitions before this basho "
+                         "(default: all history since 1959; docs/EXPERIMENTS.md E9)")
+
+
+def targets_in(tidy, start, end):
+    """The basho of `tidy` inside start..end (end None = latest); a usage error
+    when there are none."""
+    end = end or int(tidy["basho"].max())
+    targets = [b for b in sorted(tidy["basho"].unique()) if start <= b <= end]
+    if not targets:
+        raise CommandError(f"no target basho in {start}..{end}")
+    return targets, end
+
+
+def model_class(name):
+    """The model class registered under `name`, or a usage error."""
+    from banzuke.models import MODELS
+
+    if name not in MODELS:
+        raise CommandError(f"unknown model {name!r}; available: {', '.join(MODELS)}")
+    return MODELS[name]
+
+
+# --- option value grammar -----------------------------------------------------
 
 def parse_seeds(spec) -> tuple:
     """'0-4' or '0,2' -> (0, 1, 2, 3, 4) / (0, 2)."""

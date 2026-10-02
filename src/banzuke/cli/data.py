@@ -8,7 +8,7 @@ Run after a banzuke release or a completed basho. Raw responses land in
 data/banzuke/{basho}_{Makuuchi,Juryo}.json and data/basho/{basho}.json; the
 build writes tidy, bouts and transitions .parquet to data/processed/.
 """
-from banzuke.cli._common import subcommand
+from banzuke.cli._common import action_parser, subcommand
 
 
 def add_parser(sub):
@@ -19,7 +19,7 @@ def add_parser(sub):
              "fetch": ("fetch raw API data without rebuilding", (True, False)),
              "build": ("rebuild the Parquet datasets from the raw JSON", (False, True))}
     for name, (help_, (fetch_, build_)) in steps.items():
-        p = what.add_parser(name, help=help_, description=help_)
+        p = action_parser(what, name, help_)
         p.set_defaults(run=run, _parser=p, fetch=fetch_, build=build_)
     return ap
 

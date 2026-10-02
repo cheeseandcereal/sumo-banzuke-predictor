@@ -22,7 +22,8 @@ alternative.
 """
 import sys
 
-from banzuke.cli._common import DEFAULT_WORKERS, CommandError, parse_sets, subcommand
+from banzuke.cli._common import (CommandError, add_set, add_train_start, add_workers, model_class,
+                                 parse_sets, subcommand)
 
 SPEC_KEYS = ("above", "below", "class", "count", "pin")
 
@@ -40,13 +41,9 @@ def add_parser(sub):
     ap.add_argument("--seeds", type=int, default=None, metavar="N",
                     help="bag size (default: the model's, 5 for the GBMs); single seeds "
                          "also feed the confidence markers")
-    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
-                    help="model option override (e.g. twin_unit=sk, gap=0.5), as in "
-                         "`banzuke backtest`")
-    ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
-                    help="ignore training transitions before this basho")
-    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
-                    help="processes for the one-off out-of-fold table (cached afterwards)")
+    add_set(ap)
+    add_train_start(ap)
+    add_workers(ap, "processes for the one-off out-of-fold table (cached afterwards)")
     ap.add_argument("--above", action="append", default=[], metavar='"A > B"',
                     help="A rises to immediately above B (repeatable)")
     ap.add_argument("--below", action="append", default=[], metavar='"A < B"',
@@ -186,14 +183,13 @@ def interactive(state, run_once):
 def run(args):
     import pandas as pd
 
-    from banzuke import confidence, forecast, models
+    from banzuke import confidence, forecast
     from banzuke.overrides import OverrideError, parse
     from banzuke.paths import load_transitions
     from banzuke.ranks import fmt_cell, next_basho
     from banzuke.resolver import resolve
 
-    if args.model not in models.MODELS:
-        raise CommandError(f"unknown model {args.model!r}; available: {list(models.MODELS)}")
+    cls = model_class(args.model)
     trans = load_transitions()
     latest = forecast.latest_basho(trans)
     target = next_basho(latest)
@@ -219,7 +215,6 @@ def run(args):
 
     # train once; everything downstream is instant
     print("training...", file=sys.stderr)
-    cls = models.MODELS[args.model]
     kwargs = {**parse_sets(args.set), **({"n_seeds": args.seeds} if args.seeds else {})}
     kwargs = cls.prepare(kwargs, trans, args.workers, args.train_start)
     model = cls(**kwargs)

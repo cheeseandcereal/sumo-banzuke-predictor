@@ -14,7 +14,7 @@ so V0 - cached is the value of the resolver change itself, and a rule the
 resolver now applies natively must be a no-op (`changed` 0 in every frame).
 New rules are written in banzuke.experiments.rules (see RULE_FUNCS).
 """
-from banzuke.cli._common import DEFAULT_WORKERS, CommandError, subcommand
+from banzuke.cli._common import CommandError, add_seeds, add_workers, parse_seeds, subcommand
 
 
 def add_parser(sub):
@@ -23,9 +23,8 @@ def add_parser(sub):
                     help="earliest target to score")
     ap.add_argument("--rules", default=None, metavar="NAMES",
                     help="comma-separated RULE_FUNCS keys (default: all)")
-    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS, help="worker processes")
-    ap.add_argument("--seeds", type=int, default=3, metavar="N",
-                    help="frames per target in the explain cache")
+    add_workers(ap)
+    add_seeds(ap, "0-2", "the frames per target the explain cache was built with")
     ap.add_argument("--cache", default=None, metavar="DIR",
                     help="explain cache to reuse (default: the current fingerprint's)")
     ap.set_defaults(run=run, _parser=ap)
@@ -39,7 +38,7 @@ def run(args):
 
     names = args.rules.split(",") if args.rules else list(rules.RULE_FUNCS)
     try:
-        rows = rules.load_frames(args.start, range(args.seeds), args.cache)
+        rows = rules.load_frames(args.start, parse_seeds(args.seeds), args.cache)
         res, variants = rules.measure(rows, load_tidy(), names, args.workers)
     except (NoCache, KeyError) as e:
         raise CommandError(str(e).strip("'"))
