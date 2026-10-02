@@ -566,7 +566,7 @@ def test_claim_rates_reference(trans):
 
 
 def test_explain_reconstructs_rerank_and_isolates_structural_shift(small_train, cands_for, tidy):
-    """experiments.explain: the step-by-step reranker reconstruction reproduces
+    """banzuke.experiments.explain: the step-by-step reranker reconstruction reproduces
     GBMRerank.score (with and without twin units), and the miss decomposition
     charges an over-created komusubi slot to the structure, not to the rows below."""
     from banzuke.experiments.explain import decompose, rerank_detail

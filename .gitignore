@@ -5,3 +5,5 @@ models/
 results/scratch/
 results/*.log
 .pytest_cache/
+dist/
+*.egg-info/

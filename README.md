@@ -15,7 +15,7 @@ promotion rules and order, make-koshi sanyaku exits, sanyaku minimums,
 empirically-derived E/W layout, no promotion after make-koshi for S/K/M).
 `docs/MODEL.md` walks through that pipeline stage by stage (every
 dataset column, both model stages, the resolver's rules with their
-precedent, what `predict.py` prints); `docs/EXPERIMENTS.md` is the full
+precedent, what `banzuke predict` prints); `docs/EXPERIMENTS.md` is the full
 experiment log and selection rationale.
 
 The model trains on historical transitions between consecutive basho,
@@ -50,12 +50,23 @@ costs](https://ko-fi.com/sumoapi).
 
 ## Usage
 
+The project is a Python package with one command, `banzuke`. From a
+clone:
+
+```sh
+uv sync                      # creates .venv with the package installed
+uv run banzuke --help        # every command; `banzuke COMMAND --help` for its options
+```
+
+(`uv run banzuke ...` throughout; with the virtualenv activated, plain
+`banzuke ...` works.)
+
 Predict the upcoming banzuke from the latest fetched results:
 
 ```sh
-uv run python predict.py
-uv run python predict.py --retired Shikona1,Shikona2   # announced retirees
-uv run python predict.py --protected Shikona           # a full absence the JSA exempted (rank frozen)
+uv run banzuke predict
+uv run banzuke predict --retired Shikona1,Shikona2   # announced retirees
+uv run banzuke predict --protected Shikona           # a full absence the JSA exempted (rank frozen)
 ```
 
 Disagree with a placement? Overrides constrain the assignment while the
@@ -63,11 +74,11 @@ model fills everything else (scores are computed once; there is no
 conditional re-inference):
 
 ```sh
-uv run python predict.py --above "Takayasu > Hakunofuji"  # A rises above B
-uv run python predict.py --below "Oho < Ura"              # A drops below B
-uv run python predict.py --class Aonishiki=O --count S=3  # structural beliefs
-uv run python predict.py --pin Wakatakakage=M8E           # exact cell
-uv run python predict.py --interactive                    # train once, iterate
+uv run banzuke predict --above "Takayasu > Hakunofuji"  # A rises above B
+uv run banzuke predict --below "Oho < Ura"              # A drops below B
+uv run banzuke predict --class Aonishiki=O --count S=3  # structural beliefs
+uv run banzuke predict --pin Wakatakakage=M8E           # exact cell
+uv run banzuke predict --interactive                    # train once, iterate
 ```
 
 Output annotates pinned cells, marks every wrestler your override moved
@@ -83,38 +94,39 @@ and from seed disagreement), `~` a big move whose landing spot is noisy. A
 confident first, with the override that tests the alternative and, for
 created slots, how often the committee honoured such claims and how many
 cells shift without one. Backtested on 2024-2026: unmarked cells are
-exact 60% of the time, `?` 35%, `??` 25%; `uv run python analyze.py`
-prints the calibration.
+exact 60% of the time, `?` 35%, `??` 25%; `banzuke analyze` prints the
+calibration.
 
 Fetch available data and rebuild the processed datasets after a banzuke
 release or completed basho (completed tournaments are skipped):
 
 ```sh
-uv run python update_data.py
-uv run python update_data.py --fetch-only  # update raw JSON only
-uv run python update_data.py --build-only  # rebuild from existing JSON only
+uv run banzuke data update        # fetch what is new, then rebuild
+uv run banzuke data fetch         # update the raw JSON only
+uv run banzuke data build         # rebuild from the existing JSON only
 ```
 
 Re-run the model bake-off / evaluation:
 
 ```sh
-uv run python backtest.py --out results/all    # 2004 through latest basho
-uv run python backtest.py --end 202311         # original dev window only
-uv run python analyze.py --model Ar            # residual analysis
-uv run python -m banzuke.conventions           # resolver rules vs committee history
-uv run python -m experiments.explain sheet 202309   # one historical forecast next to the real banzuke (after `build`)
-uv run python -m experiments.precedent landing "K1 5-10"   # where did the committee put that record
+uv run banzuke backtest --out results/all     # 2004 through latest basho
+uv run banzuke backtest --end 202311          # original dev window only
+uv run banzuke analyze --model Ar             # residual analysis
+uv run banzuke conventions                    # resolver rules vs committee history
+uv run banzuke explain build --start 201901   # cache the frames the research tools read
+uv run banzuke explain sheet 202309           # one historical forecast next to the real banzuke
+uv run banzuke precedent landing "K1 5-10"    # where did the committee put that record
 ```
 
 The resolver's hard-coded conventions (yokozuna never demoted, Y/O order
 by wins, make-koshi sekiwake and komusubi exits, the demoted ozeki at the
 bottom of the sekiwake, sanyaku minimums, forced claims, make-koshi
 ceiling, E/W layout, twin order) are empirical regularities read off
-history once. `banzuke.conventions`
-recounts each over the full record and the last 60/30 basho and names
-its last violation, so a committee that changes its habits shows up
-in the table after the next data update rather than silently costing
-slots; `analyze.py` prints the same table.
+history once. `banzuke conventions` recounts each over the full record
+and the last 60/30 basho and names its last violation, so a committee
+that changes its habits shows up in the table after the next data update
+rather than silently costing slots; `banzuke analyze` prints the same
+table.
 
 Parameter experiments need no code changes: `--set base.n_estimators=600`
 overrides a LightGBM parameter of the movement (`base.*`) or pair
@@ -125,26 +137,38 @@ seed, basho) in `results/scratch/`; the cache key hashes the processed
 dataset, all result-affecting source files and the configuration, so
 edits, data rebuilds and parameter changes invalidate it automatically
 (`--fresh` to force). Model training itself is never persisted:
-`predict.py` retrains on every invocation (about 30 s; `--seeds 1` for
-the fastest run), plus a one-off two minutes after each data update for
-the reranker's out-of-fold training scores.
+`banzuke predict` retrains on every invocation (about 30 s; `--seeds 1`
+for the fastest run), plus a one-off two minutes after each data update
+for the reranker's out-of-fold training scores.
 
-`predict.py` and `backtest.py` accept `--train-start BASHO` to restrict
-training to newer transitions. Tested and neutral-to-worse (docs/EXPERIMENTS.md E9):
-the era features already let the models specialize to the modern
-regime, so full history remains the default.
+`banzuke predict` and `banzuke backtest` accept `--train-start BASHO` to
+restrict training to newer transitions. Tested and neutral-to-worse
+(docs/EXPERIMENTS.md E9): the era features already let the models
+specialize to the modern regime, so full history remains the default.
 
 `uv run pytest -q` runs the regression tests (a few seconds).
 
 ## Layout
 
-- `update_data.py`: incremental fetcher and processed-data builder
+- `src/banzuke/`: the package
+  - `cli/`: the `banzuke` command, one module per subcommand (options and
+    printing only)
+  - `paths.py`, `ranks.py`: where the files are; the rank vocabulary
+    (class ordinals, cell and record formatting, basho calendar)
+  - `fetch.py`, `build.py`, `features.py`: raw API fetcher, dataset
+    build, history features and targets
+  - `models.py`, `resolver.py`, `overrides.py`, `confidence.py`,
+    `forecast.py`: ordering models, the structural resolver, human
+    overrides, confidence markers, forecast assembly
+  - `harness.py`, `metrics.py`, `analysis.py`, `conventions.py`:
+    backtest harness and cache, scoring, residual analysis, convention
+    audit
+  - `experiments/`: tools for finding and testing committee conventions
+    without retraining (`explain`, `precedent`, `rules`)
 - `data/banzuke/`, `data/basho/`: committed raw API responses
 - `data/processed/`: committed, reproducible Parquet datasets
-- `banzuke/`: dataset build, features, models, resolver, backtest harness
-- `experiments/`: tools for finding and testing committee conventions without retraining (`explain`, `precedent`, `rules`)
-- `predict.py`, `backtest.py`, `analyze.py`: CLIs
-- `tests/`: regression tests
-- `results/`: generated backtest reports and caches
-- `docs/MODEL.md`: how the default pipeline works, stage by stage (columns, model stages, resolver rules)
+- `tests/`: regression tests (library invariants, command line)
+- `results/`: generated backtest reports and caches (`results/scratch/`
+  is git-ignored)
+- `docs/MODEL.md`: how the default model works, stage by stage
 - `docs/EXPERIMENTS.md`: experiment log and model-selection rationale

@@ -23,11 +23,11 @@ column fills before the west, and so on. The sheet is printed with marks
 on the spots the program is unsure of, and you can overrule any of it.
 
 The rest of this document describes that pipeline, the default model
-`Ar` behind `uv run python predict.py`, stage by stage as it runs.
+`Ar` behind `banzuke predict`, stage by stage as it runs.
 `docs/EXPERIMENTS.md` records why each piece is built the way it is and
 what else has been tried. Precedent counts quoted for the committee's
 conventions are from the data through 202609 (2004 onward unless
-stated); `uv run python -m banzuke.conventions` recounts them from the
+stated); `banzuke conventions` recounts them from the
 current data, and section 10 says how the rest of the document is kept
 in step with the code.
 
@@ -56,7 +56,7 @@ Vocabulary used throughout:
 
 ```mermaid
 flowchart LR
-    raw["raw API JSON<br/>data/banzuke, data/basho"] -->|"build.py"| tidy["tidy.parquet<br/>bouts.parquet"]
+    raw["raw API JSON<br/>data/banzuke, data/basho"] -->|"banzuke data build"| tidy["tidy.parquet<br/>bouts.parquet"]
     tidy -->|"features.py"| trans["transitions.parquet<br/>55 columns, 36 FEATURES"]
     trans --> base["Stage 1: base movement model (Aq)<br/>5 x LightGBM L1 on delta<br/>base = position + mean delta"]
     base --> rerank["Stage 2: near-tie reranker (Ar)<br/>S/K twin units, clusters (gap 1.0, max 6)<br/>pair classifier, Borda, rank index"]
@@ -75,7 +75,7 @@ ties reorders the cluster (4); the resolver turns the ordering into
 labelled cells by applying the conventions the committee does not break
 (5); overrides can constrain any of this (6); markers, a review list and
 notes say where the sheet is shaky (7). Section 8 walks through
-`predict.py` in call order, 9 covers how the whole thing is scored, and
+`banzuke predict` in call order, 9 covers how the whole thing is scored, and
 the appendix lists the other models in the tree.
 
 Everything after the data build is retrained on every invocation (about
@@ -86,8 +86,9 @@ out-of-fold table (4.4).
 
 ### 2.1 Build (`banzuke/build.py`, `banzuke/features.py`)
 
-`update_data.py` fetches `data/banzuke/{basho}_{Makuuchi,Juryo}.json` and
-`data/basho/{basho}.json` from sumo-api.com, then `banzuke.build` writes
+`banzuke data update` fetches `data/banzuke/{basho}_{Makuuchi,Juryo}.json`
+and `data/basho/{basho}.json` from sumo-api.com (`banzuke.fetch`), then
+`banzuke.build` writes
 three Parquet files under `data/processed/` (all committed):
 
 | file | one row per | contents |
@@ -214,7 +215,7 @@ makushita or a debut carries no history.
 
 | column | definition |
 |---|---|
-| `rank_protected` | 1 when a full absence (0 wins, 8+ absences, at sekiwake or below) was not counted against the man: kosho granted in 1972-2003 (read off the frozen rank, `delta <= 3`; the decision was public before the banzuke) or a modern exemption listed in `features.PROTECTED` (the last kosho cases of 200401, the 2020-2022 COVID withdrawals). `predict.py --protected Name` sets it live |
+| `rank_protected` | 1 when a full absence (0 wins, 8+ absences, at sekiwake or below) was not counted against the man: kosho granted in 1972-2003 (read off the frozen rank, `delta <= 3`; the decision was public before the banzuke) or a modern exemption listed in `features.PROTECTED` (the last kosho cases of 200401, the 2020-2022 COVID withdrawals). `banzuke predict --protected Name` sets it live |
 
 <!-- FEATURES:end -->
 
@@ -406,7 +407,7 @@ the confidence signals measure gaps on (7).
 
 ### 4.6 Options
 
-`--set KEY=VALUE` on `predict.py` and `backtest.py`:
+`--set KEY=VALUE` on `banzuke predict` and `banzuke backtest`:
 
 | option | default | meaning |
 |---|---|---|
@@ -578,14 +579,14 @@ flowchart TD
 
 ### 5.3 The convention audit
 
-`uv run python -m banzuke.conventions` recounts every rule above, plus a
+`banzuke conventions` recounts every rule above, plus a
 few regularities the resolver does not enforce (marked "watch", such as
 the 17+ cell drop of an unexempted full kyujo, and the S/K twin adjacency
 that `twin_unit` assumes), over all history, 2004+, the last 60 and the
 last 30 basho, as violations/cases with the last violating basho. `!`
 flags a rule that was clean since 2004 and is violated inside the last
 30; `~` a rule whose recent violation rate is above its 2004+ rate.
-`analyze.py` ends with the same table. A rule can only be wrong going
+`banzuke analyze` ends with the same table. A rule can only be wrong going
 forward, never silently: the first exception shows up in the table after
 the next data update.
 
@@ -676,9 +677,9 @@ previous sanyaku basho), and the men demoted to juryo.
 one cell off): unmarked cells 60% / 11%, `?` 35% / 22%, `??` 25% / 37%.
 Big moves: incumbent climbs 36% exact, drops 25% exact and 43% far,
 juryo promotees landing 8+ cells above the boundary 25% / 67%.
-`uv run python analyze.py` reprints the calibration on the current data.
+`banzuke analyze` reprints the calibration on the current data.
 
-## 8. `uv run python predict.py`, step by step
+## 8. `banzuke predict`, step by step
 
 1. Read `transitions.parquet`. `latest` is the most recent basho with a
    yusho recorded (a completed basho); `target` is the next basho in the
@@ -778,7 +779,7 @@ on a screen window, 2004-2019, and evaluates the finalists once on a
 confirm window, 2020 onward; seeds are averaged within a basho and the
 basho is the paired unit; MAE is the decision metric (Wilcoxon
 signed-rank, 6-basho block-bootstrap CI), exact slots the headline and a
-guardrail. `backtest.py` caches every (configuration, model, seed, basho)
+guardrail. `banzuke backtest` caches every (configuration, model, seed, basho)
 row in `results/scratch/` under a fingerprint of the processed data, the
 source of every result-affecting module, the lockfile and the
 configuration, so edits and rebuilds invalidate it automatically.
@@ -790,18 +791,18 @@ configuration, so edits and rebuilds invalidate it automatically.
   that the column tables together name every column of
   `transitions.parquet` exactly once, so a feature or column change must
   touch this file.
-- The precedent counts in 5.1 are a snapshot; `banzuke.conventions`
+- The precedent counts in 5.1 are a snapshot; `banzuke conventions`
   (5.3) is the live source and will flag the first exception.
 - When you change the pipeline, update: a new or removed column, 2.2; a
   base-stage parameter, the table in 3; a reranker option, 4.6; a
   resolver rule, 5.1 (and add an audit row in `conventions.cases`); a
-  marker or review heuristic, 7; a `predict.py` flag, 8.
+  marker or review heuristic, 7; a `banzuke predict` flag, 8.
 
 ## Appendix: the other models in `models.MODELS`
 
 All share `FEATURES`, the resolver and the backtest; the ordering
-objective is what differs between them. `--model X` on `predict.py`,
-`--models X,Y` on `backtest.py`; `docs/EXPERIMENTS.md` has their
+objective is what differs between them. `--model X` on `banzuke predict`,
+`--models X,Y` on `banzuke backtest`; `docs/EXPERIMENTS.md` has their
 head-to-head results.
 
 | name | class | what it is | role |

@@ -1225,6 +1225,34 @@ open leads R11 and R13 as worked examples), the E25 supply columns and the
 cache, side-by-side sheets, per-rikishi stage table, miss docket, pair
 calibration), `precedent.py`, `rules.py`, and the `extra` model option.
 
+## Housekeeping (2026-10, layout)
+
+The scripts became one installed package with a single command, `banzuke`
+(`uv sync`, then `uv run banzuke --help`). Entries above quote the old
+invocations as they were run; the map:
+
+| before | now |
+|---|---|
+| `uv run python predict.py ...` | `banzuke predict ...` (flags unchanged) |
+| `uv run python update_data.py [--fetch-only\|--build-only]` | `banzuke data update\|fetch\|build` |
+| `uv run python backtest.py ...` / `analyze.py ...` | `banzuke backtest ...` / `banzuke analyze ...` |
+| `uv run python -m banzuke.conventions` | `banzuke conventions` |
+| `uv run python -m experiments.explain build\|sheet\|docket\|calibration` | `banzuke explain build\|sheet\|docket\|calibration` |
+| `uv run python -m experiments.explain explain T` | `banzuke explain detail T` (`explain explain` still accepted) |
+| `uv run python -m experiments.precedent landing\|pair\|cells` | `banzuke precedent landing\|pair\|cells` |
+| `uv run python -m experiments.rules` | `banzuke rules` |
+
+`--seeds` on `explain` and `rules` takes the same SPEC as `backtest`
+(`0-2` is the former `3`). The package moved to `src/banzuke/` with the
+research tools under `banzuke.experiments`; `banzuke.ranks` holds the
+rank vocabulary (ordinals, `fmt_cell`, `fmt_record`, `next_basho`),
+`banzuke.paths` the repository layout (`$BANZUKE_ROOT` overrides it),
+`banzuke.forecast` the forecast assembly `predict` used to carry. The
+backtest and explain caches were invalidated once by the move (the
+fingerprint covers `uv.lock`, which the packaging changed); the OOF
+cache survived. `precedent` and `analyze` print cells as `M3W`, like the
+other commands, instead of `M3w`.
+
 ## Reading a forecast: reviewer checklist (from E19, updated E22-E25)
 
 Each item is a situation the committee decides lopsidedly; the ones marked
