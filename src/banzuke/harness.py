@@ -4,7 +4,6 @@ are independent and run in worker processes (one LightGBM thread each)."""
 import hashlib
 import inspect
 import json
-import os
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
@@ -20,8 +19,6 @@ from banzuke.resolver import resolve
 
 METRICS = ["exact", "exact_n", "gtb_points", "within1", "mae", "tau",
            "promo_f1", "demo_f1", "sanyaku_acc", "sanyaku_exact"]
-# leave two cores to the rest of the machine (one worker saturates one core)
-DEFAULT_WORKERS = max(1, (os.cpu_count() or 1) - 2)
 
 _TRANS = _TIDY = None
 
@@ -180,30 +177,35 @@ def fingerprint(**extra) -> str:
     return h.hexdigest()[:16]
 
 
-def parse_seeds(spec) -> tuple:
-    """'0-4' or '0,2' -> (0, 1, 2, 3, 4) / (0, 2)."""
-    out = []
-    for part in str(spec).split(","):
-        a, _, b = part.partition("-")
-        out.extend(range(int(a), int(b or a) + 1))
-    return tuple(out)
+def run_cached(model_names, targets, trans, tidy, configs, seeds=(0,), train_start=None,
+               workers=1, fresh=False, cache=None):
+    """run_backtest() for each labelled configuration in `configs` ({label:
+    model_kwargs}), reusing rows of the on-disk store keyed by fingerprint()
+    and writing the new ones back. fresh recomputes everything."""
+    from banzuke.paths import BACKTEST_CACHE
 
-
-def parse_sets(items) -> dict:
-    """['base.n_estimators=200', 'gap=0.25', 'context=false'] -> model kwargs;
-    dotted keys address the LightGBM stages, values are JSON where possible."""
-    kwargs: dict = {}
-    for item in items:
-        key, sep, raw = item.partition("=")
-        if not sep:
-            raise ValueError(f"--set expects KEY=VALUE, got {item!r}")
-        try:
-            value = json.loads(raw)
-        except json.JSONDecodeError:
-            value = raw
-        if "." in key:
-            stage, k = key.split(".", 1)
-            kwargs.setdefault(stage, {})[k] = value
-        else:
-            kwargs[key] = value
-    return kwargs
+    cache = cache or BACKTEST_CACHE
+    store = pd.read_parquet(cache) if cache.exists() else pd.DataFrame()
+    if "seed" not in store:
+        store = pd.DataFrame()  # older cache layout
+    results = []
+    for label, kwargs in configs.items():
+        fp = fingerprint(kwargs=kwargs, train_start=train_start)
+        cached = pd.DataFrame()
+        if len(store) and not fresh:
+            cached = store[(store["fp"] == fp) & store["model"].isin(model_names)
+                           & store["seed"].isin(seeds) & store["basho"].isin(targets)]
+            cached = cached.drop(columns="fp").assign(config=label)
+            if len(cached):
+                print(f"[{label}] reusing {len(cached)} cached rows", file=sys.stderr)
+        skip = set(zip(cached["model"], cached["seed"], cached["basho"])) if len(cached) else None
+        computed = run_backtest(model_names, targets, trans, tidy, skip=skip, seeds=seeds,
+                                train_start=train_start, model_kwargs=kwargs,
+                                config=label, workers=workers)
+        if len(computed):
+            store = pd.concat([store, computed.assign(fp=fp)], ignore_index=True)
+        results += [f for f in (cached, computed) if len(f)]
+    store = store.drop_duplicates(["fp", "model", "seed", "basho"], keep="last")
+    cache.parent.mkdir(parents=True, exist_ok=True)
+    store.to_parquet(cache, index=False)
+    return pd.concat(results, ignore_index=True)

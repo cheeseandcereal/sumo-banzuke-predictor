@@ -22,84 +22,52 @@ alternative.
 """
 import sys
 
-import numpy as np
-import pandas as pd
+from banzuke.cli._common import DEFAULT_WORKERS, CommandError, parse_sets, subcommand
 
-from banzuke import confidence, models
-from banzuke.build import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
-from banzuke.cli._common import CommandError, subcommand
-from banzuke.harness import DEFAULT_WORKERS, parse_sets
-from banzuke.overrides import OverrideError, parse, splice, verify
-from banzuke.paths import require_processed
-from banzuke.resolver import resolve
-
-CLS = "YOSKMJ"
-CLS_NAMES = ("yokozuna", "ozeki", "sekiwake", "komusubi", "maegashira", "juryo")
-BASHO_MONTHS = (1, 3, 5, 7, 9, 11)
 SPEC_KEYS = ("above", "below", "class", "count", "pin")
 
 
-def next_basho_id(basho: int) -> int:
-    year, month = divmod(basho, 100)
-    nxt = BASHO_MONTHS[(BASHO_MONTHS.index(month) + 1) % 6]
-    return (year + (nxt == 1)) * 100 + nxt
-
-
-def label(c, n, s):
-    return f"{CLS[int(c)]}{int(n)}{'EW'[int(s)]}"
-
-
-def rec(w, l, a=0):
-    return f"{int(w)}-{int(l)}" + (f"-{int(a)}" if a else "")
-
-
-def context(cands, trans):
-    """Columns the notes need beyond the candidates' own rows: the previous
-    basho's record (rec1, NaN for men who were not on that banzuke) and the
-    two-basho sanyaku win total (ozeki_run2)."""
-    latest = int(cands["basho"].iloc[0])
-    previous = trans.loc[trans["basho"] < latest, "basho"].max()
-    prev = trans[trans["basho"] == previous].set_index("rikishi_id")
-    out = cands.copy()
-    out["rec1"] = out["rikishi_id"].map(
-        {r: rec(w, l, a) for r, w, l, a in zip(prev.index, prev["wins"], prev["losses"], prev["absences"])})
-    sk = prev[prev["rank_class"].isin((SEKIWAKE, KOMUSUBI)) & (prev["wins"] >= 8)]
-    out["ozeki_run2"] = out["wins"] + out["rikishi_id"].map(sk["wins"])
-    return out
-
-
-def predict(cands, point, per_seed, ov, mak_size, base=None, rates=None):
-    """Splice relative overrides into the bag's order and each seed's order,
-    resolve with the structural overrides. Returns (pred, warnings, review
-    items); the `spread` column is a rikishi's position range across single
-    seeds. base: mean base score per rikishi (Series); drives the markers."""
-    rids = cands["rikishi_id"].to_numpy()
-    pos = cands["position"].to_numpy()
-    preds, pseudos, warnings = [], [], []
-    for k, sc in enumerate([point, *per_seed]):
-        order = [rids[i] for i in np.lexsort((pos, sc))]
-        rank = {r: j for j, r in enumerate(splice(order, ov["relative"]))}
-        pseudos.append(np.array([rank[r] for r in rids], dtype=float))
-        preds.append(resolve(cands, pseudos[-1], mak_size, overrides=ov,
-                             warnings=warnings if k == 0 else None))
-    pred = preds[0].merge(cands, on="rikishi_id")
-    if base is None:
-        base = pd.Series(point, index=rids)
-    final = pd.Series(pseudos[0], index=rids)
-    named = {r for _, chain, _ in ov["relative"] for seg in chain for r in seg}
-    named |= set(ov["class"]) | set(ov["pins"])
-    sig = confidence.signals(pred, base, final, preds[1:], skip=named)
-    pred = pred.join(sig)
-    items = confidence.review(pred, sig, base, final, preds[1:], skip=named)
-    if rates is not None:
-        items = confidence.structural(pred, cands, pseudos[0], mak_size, ov, rates) + items
-    for it in items:
-        if it["marker"] == "!":
-            pred.loc[pred["rikishi_id"] == it["rid"], "marker"] = "!"
-    return pred, warnings, items
+def add_parser(sub):
+    ap = subcommand(sub, "predict", __doc__, "predict the next banzuke from the latest results")
+    ap.add_argument("--model", default="Ar", metavar="NAME",
+                    help="ordering model (R, L, A, Aq, Aw, B, C, Ar, Ah; see docs/MODEL.md)")
+    ap.add_argument("--retired", default="", help="comma-separated shikona to exclude")
+    ap.add_argument("--protected", default="",
+                    help="comma-separated shikona whose full absence the JSA exempted "
+                         "(rank frozen); sets the rank_protected feature")
+    ap.add_argument("--mak-size", type=int, default=None,
+                    help="makuuchi size (default: same as the latest banzuke)")
+    ap.add_argument("--seeds", type=int, default=None, metavar="N",
+                    help="bag size (default: the model's, 5 for the GBMs); single seeds "
+                         "also feed the confidence markers")
+    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="model option override (e.g. twin_unit=sk, gap=0.5), as in "
+                         "`banzuke backtest`")
+    ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
+                    help="ignore training transitions before this basho")
+    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
+                    help="processes for the one-off out-of-fold table (cached afterwards)")
+    ap.add_argument("--above", action="append", default=[], metavar='"A > B"',
+                    help="A rises to immediately above B (repeatable)")
+    ap.add_argument("--below", action="append", default=[], metavar='"A < B"',
+                    help="A drops to immediately below B (repeatable)")
+    ap.add_argument("--class", dest="cls", action="append", default=[], metavar="X=O",
+                    help="force class membership, one of YOSKMJ (repeatable)")
+    ap.add_argument("--count", action="append", default=[], metavar="S=3",
+                    help="force the sekiwake or komusubi slot count (repeatable)")
+    ap.add_argument("--pin", action="append", default=[], metavar="X=M2E",
+                    help="exact cell (repeatable)")
+    ap.add_argument("--interactive", action="store_true",
+                    help="train once, then adjust overrides in a loop")
+    ap.set_defaults(run=run, _parser=ap)
+    return ap
 
 
 def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds):
+    from banzuke.build import JURYO
+    from banzuke.forecast import CLS, label, notes, rec
+    from banzuke.overrides import verify
+
     how = f"{n_seeds}-seed bag" if n_seeds > 1 else "seed 0"
     print(f"predicted makuuchi banzuke for {target} "
           f"(from {latest} results, model {args.model}, {how})\n")
@@ -159,57 +127,9 @@ def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds):
             print(f"  - {n}")
 
 
-def _yokozuna_why(r):
-    if r["yusho"] == 1 and (r["yusho1"] == 1 or r["junyusho1"] == 1):
-        last = "yusho" if r["yusho1"] == 1 else "jun-yusho"
-        where = "" if r["class1"] == OZEKI else f" as {CLS_NAMES[int(r['class1'])]}"
-        return f", yusho {rec(r['wins'], r['losses'], r['absences'])} after {last} {r['rec1']}{where}"
-    return " by override"
+def interactive(state, run_once):
+    from banzuke.overrides import OverrideError
 
-
-def _ozeki_why(r):
-    c1, c2 = r["class1"], r["class2"]
-    if np.isnan(r["roll3"]) or r["rank_class"] not in (SEKIWAKE, KOMUSUBI):
-        return " by override"
-    n = int(r["roll3"])
-    if c1 <= KOMUSUBI and c2 <= KOMUSUBI:
-        return f", {n} wins over last 3 basho in sanyaku"
-    if (c1 == MAEGASHIRA) != (c2 == MAEGASHIRA) and min(c1, c2) <= KOMUSUBI:
-        num = r["num1"] if c1 == MAEGASHIRA else r["num2"]
-        return f", {n} wins over last 3 basho, one of them at M{int(num)}"
-    return " by override"
-
-
-def notes(pred, target):
-    """Events on the sheet: yokozuna and ozeki promotions with the results
-    behind them (or "by override" when no convention explains one), ozeki
-    returns, kadoban, ozeki runs, juryo demotions. pred needs context()."""
-    out = []
-    for _, r in pred.sort_values("pred_pos").iterrows():
-        if r["pred_class"] == YOKOZUNA and r["rank_class"] > YOKOZUNA:
-            out.append(f"{r['shikona']}: promoted to yokozuna{_yokozuna_why(r)}")
-        if r["pred_class"] == OZEKI and r["rank_class"] > OZEKI:
-            if r["demoted_ozeki"] == 1:
-                out.append(f"{r['shikona']}: returns to ozeki, "
-                           f"{rec(r['wins'], r['losses'], r['absences'])} the basho after demotion")
-            else:
-                out.append(f"{r['shikona']}: promoted to ozeki{_ozeki_why(r)}")
-        if r["rank_class"] == OZEKI and r["pred_class"] == OZEKI and r["wins"] < 8:
-            out.append(f"{r['shikona']}: kadoban at {target}")
-        if (r["rank_class"] in (SEKIWAKE, KOMUSUBI)
-                and r["pred_class"] in (SEKIWAKE, KOMUSUBI)
-                and r["wins"] >= 8 and r["ozeki_run2"] >= 20):
-            out.append(f"{r['shikona']}: ozeki run, {int(r['ozeki_run2'])} wins "
-                       f"over last 2 basho in sanyaku")
-    demoted = pred[(pred["rank_class"] < JURYO) & (pred["pred_class"] == JURYO)]
-    if len(demoted):
-        out.append("demoted to juryo: " + ", ".join(
-            f"{r['shikona']} ({CLS[r['rank_class']]}{r['rank_number']}{'EW'[r['side']]})"
-            for _, r in demoted.sort_values("pred_pos").iterrows()))
-    return out
-
-
-def interactive(state, run):
     try:
         import readline  # noqa: F401  (line editing side effect)
     except ImportError:
@@ -233,7 +153,7 @@ def interactive(state, run):
             print(help_line)
             continue
         if cmd == "show":
-            run(state)
+            run_once(state)
             continue
         if cmd == "flags":
             flags = [f'--{k} "{v}"' for k in SPEC_KEYS for v in state[k]]
@@ -257,53 +177,30 @@ def interactive(state, run):
             print(f"unknown command '{cmd}'; {help_line}")
             continue
         try:
-            run(new)
+            run_once(new)
             state.update(new)
         except OverrideError as e:
             print(f"error: {e} (override not applied)")
 
 
-def add_parser(sub):
-    ap = subcommand(sub, "predict", __doc__, "predict the next banzuke from the latest results")
-    ap.add_argument("--model", default="Ar", choices=list(models.MODELS))
-    ap.add_argument("--retired", default="", help="comma-separated shikona to exclude")
-    ap.add_argument("--protected", default="",
-                    help="comma-separated shikona whose full absence the JSA exempted "
-                         "(rank frozen); sets the rank_protected feature")
-    ap.add_argument("--mak-size", type=int, default=None,
-                    help="makuuchi size (default: same as the latest banzuke)")
-    ap.add_argument("--seeds", type=int, default=None,
-                    help="bag size (default: the model's, 5 for the GBMs); single seeds "
-                         "also feed the confidence markers")
-    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
-                    help="model option override (e.g. twin_unit=sk, gap=0.5), as in "
-                         "`banzuke backtest`")
-    ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
-                    help="ignore training transitions before this basho")
-    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
-                    help="processes for the one-off out-of-fold table (cached afterwards)")
-    ap.add_argument("--above", action="append", default=[], metavar='"A > B"')
-    ap.add_argument("--below", action="append", default=[], metavar='"A < B"')
-    ap.add_argument("--class", dest="cls", action="append", default=[], metavar="X=O")
-    ap.add_argument("--count", action="append", default=[], metavar="S=3")
-    ap.add_argument("--pin", action="append", default=[], metavar="X=M2E")
-    ap.add_argument("--interactive", action="store_true",
-                    help="train once, then adjust overrides in a loop")
-    ap.set_defaults(run=run, _parser=ap)
-    return ap
-
-
 def run(args):
-    trans = pd.read_parquet(require_processed() / "transitions.parquet")
-    latest = int(trans.loc[trans["yusho"].eq(1), "basho"].max())
-    target = next_basho_id(latest)
-    # a fetched-but-unplayed next banzuke must not supply the transition being predicted
-    train = trans[trans["position_next"].notna() & (trans["next_basho"] <= latest)]
+    import pandas as pd
+
+    from banzuke import confidence, forecast, models
+    from banzuke.overrides import OverrideError, parse
+    from banzuke.paths import load_transitions
+    from banzuke.resolver import resolve
+
+    if args.model not in models.MODELS:
+        raise CommandError(f"unknown model {args.model!r}; available: {list(models.MODELS)}")
+    trans = load_transitions()
+    latest = forecast.latest_basho(trans)
+    target = forecast.next_basho_id(latest)
+    train = forecast.training_rows(trans, latest, args.train_start)
     if args.train_start:
-        train = train[train["basho"] >= args.train_start]
         print(f"training restricted to {train['basho'].nunique()} basho "
               f"({args.train_start}+)", file=sys.stderr)
-    cands = context(trans[(trans["basho"] == latest) & ~trans["dropped"]].reset_index(drop=True), trans)
+    cands = forecast.candidates(trans, latest)
 
     retired = [s.strip().lower() for s in args.retired.split(",") if s.strip()]
     gone = cands["shikona"].str.lower().isin(retired)
@@ -335,14 +232,14 @@ def run(args):
 
     mak_size = args.mak_size or int(cands["mak_size"].iloc[0])
     base_pred = resolve(cands, point, mak_size)
-    baseline = {r: label(c, n, s) for r, c, n, s in zip(
+    baseline = {r: forecast.label(c, n, s) for r, c, n, s in zip(
         base_pred["rikishi_id"], base_pred["pred_class"], base_pred["pred_number"],
         base_pred["pred_side"])}
 
     def run_once(state):
         ov = parse(cands, above=state["above"], below=state["below"],
                    classes=state["class"], counts=state["count"], pins=state["pin"])
-        pred, warnings, items = predict(cands, point, per_seed, ov, mak_size, base, rates)
+        pred, warnings, items = forecast.predict(cands, point, per_seed, ov, mak_size, base, rates)
         render(pred, ov, warnings, items, baseline, target, latest, args, len(model.seeds))
 
     state = {"above": args.above, "below": args.below, "class": args.cls,

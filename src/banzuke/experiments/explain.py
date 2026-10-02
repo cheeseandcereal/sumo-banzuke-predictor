@@ -35,11 +35,11 @@ import pandas as pd
 from banzuke import confidence
 from banzuke.build import YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO
 from banzuke.experiments import precedent
-from banzuke.harness import fingerprint, parse_sets
+from banzuke.harness import fingerprint
 from banzuke.metrics import evaluate
 from banzuke.models import GBMRerank, _gap_pairs, _twin_units
 from banzuke.overrides import OverrideError
-from banzuke.paths import EXPLAIN_CACHE as SCRATCH, PROCESSED
+from banzuke.paths import EXPLAIN_CACHE as SCRATCH
 from banzuke.resolver import forced_claims, resolve
 
 PAIR_GAP = 5.0          # record pair probabilities for every pair this close in base score
@@ -284,19 +284,18 @@ def _build_target(args):
     return pd.concat(rows, ignore_index=True), pd.concat(pairs, ignore_index=True), pd.DataFrame(frames)
 
 
-def build(args):
-    kwargs = parse_sets(args.set)
-    seeds = list(range(args.seeds))
-    tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
-    trans = pd.read_parquet(PROCESSED / "transitions.parquet")
-    end = args.end or int(tidy["basho"].max())
-    targets = [b for b in sorted(tidy["basho"].unique()) if args.start <= b <= end]
+def build(trans, tidy, start, end, seeds, kwargs=None, workers=1):
+    """Dump rows/pairs/frames for every target in start..end (one frame per
+    seed) under cache_dir(kwargs, seeds). Returns the frames table."""
+    kwargs = kwargs or {}
+    seeds = list(seeds)
+    targets = [b for b in sorted(tidy["basho"].unique()) if start <= b <= end]
     out = cache_dir(kwargs, seeds)
     out.mkdir(parents=True, exist_ok=True)
-    kw = GBMRerank.prepare(kwargs, trans, args.workers)
+    kw = GBMRerank.prepare(kwargs, trans, workers)
     tasks = [(t, seeds, kw) for t in targets[::-1]]
     rows, pairs, frames, t0 = [], [], [], time.time()
-    with ProcessPoolExecutor(min(args.workers, len(tasks)), mp_context=get_context("spawn"),
+    with ProcessPoolExecutor(min(workers, len(tasks)), mp_context=get_context("spawn"),
                              initializer=_init, initargs=(trans, tidy)) as ex:
         for n, (r, p, f) in enumerate(ex.map(_build_target, tasks), 1):
             rows.append(r)
@@ -304,31 +303,35 @@ def build(args):
             frames.append(f)
             print(f"\r{n}/{len(tasks)} targets, {time.time() - t0:.0f}s", end="", file=sys.stderr, flush=True)
     print(file=sys.stderr)
-    tag = f"{args.start}_{end}"
+    tag = f"{start}_{end}"
     for name, parts in (("rows", rows), ("pairs", pairs), ("frames", frames)):
         pd.concat(parts, ignore_index=True).to_parquet(out / f"{name}_{tag}.parquet", index=False)
     fr = pd.concat(frames, ignore_index=True)
     print(f"wrote {out} ({tag}); repro {fr['repro'].mean():.3f}; "
           f"exact {fr['exact_n'].mean():.2f} MAE {fr['mae'].mean():.3f} over {fr['target'].nunique()} targets")
+    return fr
 
 
 # --- readers -------------------------------------------------------------------
 
-def load(kind, args=None):
-    """Concatenate every build under the cache dir of args' --set/--seeds."""
-    kwargs = parse_sets(args.set) if args else {}
-    seeds = list(range(args.seeds if args else 3))
-    d = cache_dir(kwargs, seeds)
+class NoCache(FileNotFoundError):
+    """No explain build exists for this configuration."""
+
+
+def load(kind, kwargs=None, seeds=(0, 1, 2)):
+    """Concatenate every build of `kind` (rows, pairs, frames) under the cache
+    dir of this configuration; NoCache names the directory otherwise."""
+    d = cache_dir(kwargs or {}, list(seeds))
     files = sorted(d.glob(f"{kind}_*.parquet"))
     if not files:
-        sys.exit(f"no {kind} cache under {d}; run `banzuke explain build` first")
+        raise NoCache(f"no {kind} cache under {d}; run `banzuke explain build` first")
     return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
 
 
 def frame(rows, target, seed):
     g = rows[(rows["target"] == target) & (rows["seed"] == seed)]
     if not len(g):
-        sys.exit(f"target {target} seed {seed} not in cache")
+        raise NoCache(f"target {target} seed {seed} not in cache")
     return g.reset_index(drop=True)
 
 
@@ -556,15 +559,17 @@ def docket_rows(rows, pairs, start, seed=0):
     return out.sort_values(["target", "err"], key=lambda s: s.abs() if s.name == "err" else s, ascending=[True, False])
 
 
-def docket(args):
-    rows, pairs, frames = load("rows", args), load("pairs", args), load("frames", args)
-    d = docket_rows(rows, pairs, args.start)
+def docket(start, kwargs=None, seeds=(0, 1, 2)):
+    """Print the miss docket for targets >= start and write docket_auto.csv /
+    notable_auto.csv under the explain cache."""
+    rows, pairs, frames = (load(k, kwargs, seeds) for k in ("rows", "pairs", "frames"))
+    d = docket_rows(rows, pairs, start)
     out = SCRATCH / "case_docket"
-    out.mkdir(exist_ok=True)
+    out.mkdir(parents=True, exist_ok=True)
     d.to_csv(out / "docket_auto.csv", index=False)
-    fr = frames[frames["target"] >= args.start]
+    fr = frames[frames["target"] >= start]
     n_t = fr["target"].nunique()
-    print(f"=== docket {args.start}+: {n_t} targets, seed 0 rows, {len(d)} missed cells ===")
+    print(f"=== docket {start}+: {n_t} targets, seed 0 rows, {len(d)} missed cells ===")
     per = fr.groupby("seed")[["exact_n", "mae", "gtb_points"]].mean()
     print("per seed:\n" + per.round(3).to_string())
     print(f"\nstructure wrong in {int((fr[fr.seed == 0].eval('n_pred_S != n_act_S or n_pred_K != n_act_K or n_pred_Y != n_act_Y or n_pred_O != n_act_O')).sum())} of {n_t} frames (seed 0)")
@@ -589,8 +594,9 @@ def docket(args):
 
 # --- calibration -----------------------------------------------------------------
 
-def calibration(args):
-    rows, pairs = load("rows", args), load("pairs", args)
+def calibration(kwargs=None, seeds=(0, 1, 2)):
+    """Reliability of the pair probabilities, by window and pair type."""
+    rows, pairs = load("rows", kwargs, seeds), load("pairs", kwargs, seeds)
     info = rows.set_index(["target", "seed", "rikishi_id"])
     k_i = pd.MultiIndex.from_arrays([pairs["target"], pairs["seed"], pairs["rid_i"]])
     k_j = pd.MultiIndex.from_arrays([pairs["target"], pairs["seed"], pairs["rid_j"]])

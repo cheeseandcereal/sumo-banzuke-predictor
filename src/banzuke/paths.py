@@ -8,8 +8,6 @@ or `$BANZUKE_ROOT` when set (a copy of the data elsewhere).
 import os
 from pathlib import Path
 
-import pandas as pd
-
 ROOT = Path(os.environ.get("BANZUKE_ROOT") or Path(__file__).resolve().parents[2])
 
 DATA = ROOT / "data"
@@ -38,13 +36,19 @@ def require_processed() -> Path:
     return PROCESSED
 
 
-def load_tidy() -> pd.DataFrame:
+def load_tidy():
+    import pandas as pd
+
     return pd.read_parquet(require_processed() / "tidy.parquet")
 
 
-def load_transitions() -> pd.DataFrame:
+def load_transitions():
+    import pandas as pd
+
     return pd.read_parquet(require_processed() / "transitions.parquet")
 
 
-def load_bouts() -> pd.DataFrame:
+def load_bouts():
+    import pandas as pd
+
     return pd.read_parquet(require_processed() / "bouts.parquet")

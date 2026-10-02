@@ -9,11 +9,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from banzuke import confidence
+from banzuke import confidence, forecast
 from banzuke.build import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
-from banzuke.cli import predict
+from banzuke.cli._common import parse_seeds, parse_sets
 from banzuke.features import FEATURES, build_transitions
-from banzuke.harness import METRICS, parse_seeds, parse_sets, run_backtest, summarize
+from banzuke.harness import METRICS, run_backtest, summarize
 from banzuke.metrics import evaluate
 from banzuke.models import (MODELS, GBMMedian, GBMRanker, GBMRerank, RulesBaseline,
                             _gap_pairs, _seeds, _twin_units, _window_pairs, oof_base_scores)
@@ -450,10 +450,10 @@ def test_predict_spread(trans):
     ov = parse(cands)
     assert ov == {"relative": [], "class": {}, "count": {}, "pins": {}}
     point = cands["position"].to_numpy(dtype=float)
-    pred, warnings, _ = predict.predict(cands, point, [point, point + 0.1], ov, 42)
+    pred, warnings, _ = forecast.predict(cands, point, [point, point + 0.1], ov, 42)
     assert warnings == [] and sorted(pred["pred_pos"]) == list(range(len(cands)))
     assert (pred["spread"] == 0).all()  # a constant shift keeps the order
-    pred, _, _ = predict.predict(cands, point, [point, point[::-1]], ov, 42)
+    pred, _, _ = forecast.predict(cands, point, [point, point[::-1]], ov, 42)
     assert (pred["spread"] > 0).any()
 
 
@@ -461,10 +461,10 @@ def test_predict_notes_explain_every_yo_promotion(cands_for, trans):
     """Notes report Y/O promotions and returns with the results behind them,
     whatever decided them (a convention or an override); nothing names a rule."""
     def notes_for(target, **ov):
-        cands = predict.context(cands_for(target), trans)
-        pred, _, _ = predict.predict(cands, cands["position_next"].to_numpy(dtype=float), [],
+        cands = forecast.context(cands_for(target), trans)
+        pred, _, _ = forecast.predict(cands, cands["position_next"].to_numpy(dtype=float), [],
                                      parse(cands, **ov), 42)
-        return predict.notes(pred, target)
+        return forecast.notes(pred, target)
 
     assert "Kotonowaka: promoted to ozeki, 33 wins over last 3 basho in sanyaku" in notes_for(202403)
     assert "Aonishiki: promoted to ozeki, 34 wins over last 3 basho, one of them at M1" in notes_for(202601)
@@ -482,7 +482,7 @@ def test_predict_notes_explain_every_yo_promotion(cands_for, trans):
         assert x.startswith("demoted to juryo") or x.split(": ", 1)[1].startswith(
             ("promoted to", "returns to", "kadoban", "ozeki run"))
     # context(): the previous record is NaN for a man who was not on that banzuke
-    c = predict.context(cands_for(202301), trans)
+    c = forecast.context(cands_for(202301), trans)
     assert c.loc[c["shikona"] == "Asanoyama", "rec1"].isna().all() and c["rec1"].notna().sum() > 60
 
 
