@@ -19,10 +19,10 @@ DESCRIPTION = """\
 Predict the next makuuchi banzuke from basho results.
 
 A clone is ready to use: `banzuke predict` trains on the committed datasets
-under data/ (about 30 s) and prints the forecast with confidence markers;
-`banzuke data update` fetches newly completed basho first. The evaluation
-commands (backtest, analyze, conventions) and the research tools (explain,
-precedent, rules) are documented in docs/.
+under data/ (about 30 s, nothing to precompute) and prints the forecast with
+confidence markers; `banzuke data update` fetches newly completed basho
+first. The evaluation commands (backtest, analyze, conventions) and the
+research tools (explain, precedent, rules) are documented in docs/.
 """
 
 

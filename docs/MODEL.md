@@ -58,7 +58,9 @@ Vocabulary used throughout:
 flowchart LR
     raw["raw API JSON<br/>data/banzuke, data/basho"] -->|"banzuke data build"| tidy["tidy.parquet<br/>bouts.parquet"]
     tidy -->|"features.py"| trans["transitions.parquet<br/>55 columns, 36 FEATURES"]
+    trans -->|"banzuke data build"| oof["oof.parquet<br/>rolling out-of-fold base scores"]
     trans --> base["Stage 1: base movement model (Aq)<br/>5 x LightGBM L1 on delta<br/>base = position + mean delta"]
+    oof --> rerank
     base --> rerank["Stage 2: near-tie reranker (Ar)<br/>S/K twin units, clusters (gap 1.0, max 6)<br/>pair classifier, Borda, rank index"]
     rerank --> splice["--above / --below<br/>splice the order"]
     splice --> resolver["Stage 3: resolver<br/>Y/O rules, S/K claims and exits,<br/>make-koshi ceiling, E/W layout"]
@@ -79,8 +81,9 @@ notes say where the sheet is shaky (7). Section 8 walks through
 the appendix lists the other models in the tree.
 
 Everything after the data build is retrained on every invocation (about
-30 s for the default bag); nothing is persisted except the reranker's
-out-of-fold table (4.4).
+30 s for the default bag); nothing is persisted. The one training input
+that comes from a model fit, the reranker's out-of-fold table (4.4), is
+part of the data build and committed with it.
 
 ## 2. The dataset
 
@@ -89,13 +92,14 @@ out-of-fold table (4.4).
 `banzuke data update` fetches `data/banzuke/{basho}_{Makuuchi,Juryo}.json`
 and `data/basho/{basho}.json` from sumo-api.com (`banzuke.fetch`), then
 `banzuke.build` writes
-three Parquet files under `data/processed/` (all committed):
+four Parquet files under `data/processed/` (all committed):
 
 | file | one row per | contents |
 |---|---|---|
 | `tidy.parquet` | rikishi x basho on the makuuchi or juryo banzuke | rank, record, prizes, division sizes, `position` |
 | `bouts.parquet` | competitive bout | `(basho, winner, loser)`, read off each man's record array; fusen excluded |
 | `transitions.parquet` | the same rows as tidy | tidy + history features + next-banzuke labels; what the models and the resolver read (`bouts.parquet` is read only by the `h2h` option) |
+| `oof.parquet` | labelled row from the 61st basho on | `(basho, rikishi_id, oof)`: the default base stage's rolling out-of-fold score (4.4), the reranker's training input; the key it was built under is in the file's pandas attrs |
 
 Through 202609 the data holds 400 banzuke (195911-202609), 26,878 rows,
 25,316 of them with a next-banzuke label, and 191,796 bouts.
@@ -387,12 +391,21 @@ every labelled basho b after the first 60 (`OOF_MIN_HISTORY`; every
 basho from 196911 on) the base stage is fitted on the transitions
 labelled by b (`next_basho <= b`) and scores the rows of b: exactly the
 base prediction the backtest would have made for target next(b), so no
-row is scored by a model that saw its label. The table is cached under
-`results/scratch/oof/<key>.parquet`, keyed on the base configuration,
-`BASE_PARAMS`, the base-stage source and a hash of the labelled data, so
-it rebuilds after a data update or a base-stage change (about two minutes
-on a many-core machine; `--workers`) and never otherwise.
-`GBMRerank.prepare()` supplies it before `fit()`.
+row is scored by a model that saw its label. The table is identified by
+`oof_key`: the base configuration (objective, `n_seeds`, `base.*`,
+`half_life`, `extra`, `--train-start`), `BASE_PARAMS`, the base-stage
+source and a content hash of the labelled data. The default model's
+table is built by `banzuke data build` (about two minutes with many
+workers; `--skip-oof` to leave it alone) and committed as
+`data/processed/oof.parquet` with its key in the frame's attrs, so a
+clone needs no one-off computation. A command that finds the key stale
+(a data update or a base-stage change without a rebuild) says so and
+rebuilds the file in place; `tests/test_banzuke.py` fails on a stale
+file so the rebuild lands in the same commit as the change. Any other
+base configuration (`--seeds`, `--set base.*`, `--train-start`) computes
+its own table under `cache/oof/<key>.parquet`; pair-stage options and
+`Ah` share the default one. `GBMRerank.prepare()` supplies it before
+`fit()`.
 
 ### 4.5 Aggregation and output
 
@@ -691,8 +704,8 @@ juryo promotees landing 8+ cells above the boundary 25% / 67%.
    columns for the notes (last basho's record, two-basho sanyaku win
    total). `--retired` removes announced retirees; `--protected` sets
    `rank_protected = 1` (an unknown shikona is an error).
-4. `GBMRerank.prepare()`: the rolling OOF table (4.4), cached after the
-   first run on a dataset.
+4. `GBMRerank.prepare()`: the rolling OOF table (4.4), read from the
+   committed `oof.parquet` for the default base stage.
 5. Fit on the training set: five L1 regressors, then five pair
    classifiers (about 30 s). `--seeds 1` fits one of each; `--set`
    changes options; `--train-start` shortens the training set.

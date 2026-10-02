@@ -44,7 +44,9 @@ to a coin flip on paper. See the experiment log for what has been tried.
 All data comes from the excellent [sumo-api.com](https://www.sumo-api.com)
 (banzuke, results, yusho, and special prizes for every basho since
 1959). Raw API responses and processed Parquet datasets are committed
-under `data/`, so a clone is ready to use without fetching or rebuilding.
+under `data/`, including the reranker's out-of-fold training scores, so
+a clone is ready to use without fetching, rebuilding or any one-off
+computation.
 If you find the API useful, consider [supporting its server
 costs](https://ko-fi.com/sumoapi).
 
@@ -98,7 +100,10 @@ exact 60% of the time, `?` 35%, `??` 25%; `banzuke analyze` prints the
 calibration.
 
 Fetch available data and rebuild the processed datasets after a banzuke
-release or completed basho (completed tournaments are skipped):
+release or completed basho (completed tournaments are skipped). The
+build ends with the reranker's out-of-fold table, `oof.parquet` (about
+two minutes with many workers; a no-op when the committed one still
+matches; `--skip-oof` leaves it alone); commit it with the other files:
 
 ```sh
 uv run banzuke data update        # fetch what is new, then rebuild
@@ -138,8 +143,12 @@ dataset, all result-affecting source files and the configuration, so
 edits, data rebuilds and parameter changes invalidate it automatically
 (`--fresh` to force). Model training itself is never persisted:
 `banzuke predict` retrains on every invocation (about 30 s; `--seeds 1`
-for the fastest run), plus a one-off two minutes after each data update
-for the reranker's out-of-fold training scores.
+for the fastest run). The one training input derived from a model fit,
+the reranker's out-of-fold base scores, is committed as
+`data/processed/oof.parquet` with the key of the data and base stage it
+came from; a command that finds it stale rebuilds it in place (about two
+minutes), and a configuration with a different base stage (`--seeds`,
+`--set base.*`, `--train-start`) computes its own under `cache/oof/`.
 
 `banzuke predict` and `banzuke backtest` accept `--train-start BASHO` to
 restrict training to newer transitions. Tested and neutral-to-worse
@@ -166,7 +175,8 @@ specialize to the modern regime, so full history remains the default.
   - `experiments/`: tools for finding and testing committee conventions
     without retraining (`explain`, `precedent`, `rules`)
 - `data/banzuke/`, `data/basho/`: committed raw API responses
-- `data/processed/`: committed, reproducible Parquet datasets
+- `data/processed/`: committed, reproducible Parquet datasets and the
+  default model's out-of-fold table
 - `tests/`: regression tests (library invariants, command line)
 - `cache/`: git-ignored; every regenerable file (keyed backtest, OOF and
   explain caches, per-run dumps, `--out` reports) lands here

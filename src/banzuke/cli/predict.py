@@ -43,7 +43,9 @@ def add_parser(sub):
                          "also feed the confidence markers")
     add_set(ap)
     add_train_start(ap)
-    add_workers(ap, "processes for the one-off out-of-fold table (cached afterwards)")
+    add_workers(ap, "processes for the out-of-fold table when a non-default base stage "
+                    "(--seeds, --set base.*, --train-start) needs its own, or the committed "
+                    "one is stale")
     ap.add_argument("--above", action="append", default=[], metavar='"A > B"',
                     help="A rises to immediately above B (repeatable)")
     ap.add_argument("--below", action="append", default=[], metavar='"A < B"',

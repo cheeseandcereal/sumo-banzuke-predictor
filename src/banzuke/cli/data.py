@@ -6,9 +6,12 @@
 
 Run after a banzuke release or a completed basho. Raw responses land in
 data/banzuke/{basho}_{Makuuchi,Juryo}.json and data/basho/{basho}.json; the
-build writes tidy, bouts and transitions .parquet to data/processed/.
+build writes tidy, bouts and transitions .parquet to data/processed/, then
+the default model's out-of-fold table oof.parquet (about two minutes with
+many workers; skipped when the committed one still matches, or with
+--skip-oof). Commit all four with the raw JSON.
 """
-from banzuke.cli._common import action_parser, subcommand
+from banzuke.cli._common import action_parser, add_workers, subcommand
 
 
 def add_parser(sub):
@@ -21,6 +24,10 @@ def add_parser(sub):
     for name, (help_, (fetch_, build_)) in steps.items():
         p = action_parser(what, name, help_)
         p.set_defaults(run=run, _parser=p, fetch=fetch_, build=build_)
+        if build_:
+            p.add_argument("--skip-oof", action="store_true",
+                           help="leave the out-of-fold table (oof.parquet) as it is")
+            add_workers(p, "processes for the out-of-fold table")
     return ap
 
 
@@ -32,4 +39,4 @@ def run(args):
     if args.build:
         from banzuke.build import main as build
 
-        build()
+        build(oof=not args.skip_oof, workers=args.workers)

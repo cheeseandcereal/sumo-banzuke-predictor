@@ -14,7 +14,8 @@ ROOT = Path(os.environ.get("BANZUKE_ROOT") or Path(__file__).resolve().parents[2
 DATA = ROOT / "data"
 RAW_BANZUKE = DATA / "banzuke"      # {basho}_{Makuuchi,Juryo}.json
 RAW_BASHO = DATA / "basho"          # {basho}.json: yusho, special prizes
-PROCESSED = DATA / "processed"      # tidy, bouts, transitions .parquet
+PROCESSED = DATA / "processed"      # tidy, bouts, transitions, oof .parquet
+OOF_TABLE = PROCESSED / "oof.parquet"  # the default model's out-of-fold base scores
 LOCKFILE = ROOT / "uv.lock"
 
 CACHE = ROOT / "cache"              # git-ignored: keyed caches and per-run dumps

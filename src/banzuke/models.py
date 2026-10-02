@@ -320,21 +320,12 @@ class _PairStage:
         return np.mean([m.predict_proba(X)[:, 1] for m in ms], axis=0)
 
 
-def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, workers=1,
-                    cache_dir=None, train_start=None):
-    """Rolling out-of-fold base scores: rows of source basho b are scored by
-    cls(**kwargs)'s base stage fitted on transitions labeled by b
-    (next_basho <= b), i.e. the backtest's own base prediction for target
-    next(b), so no row is scored by a model that saw its label. Cached on
-    disk under a key of the configuration, the base-stage code and the data."""
+def oof_key(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, train_start=None):
+    """Identity of an out-of-fold table: the base configuration, BASE_PARAMS,
+    the base-stage and _oof_one source, and the labelled data's content."""
     import hashlib
     import inspect
     import json
-    from concurrent.futures import ProcessPoolExecutor
-    from multiprocessing import get_context
-    from pathlib import Path
-
-    from banzuke.paths import OOF_CACHE
 
     lab = trans[trans["position_next"].notna()]
     kwargs = {k: v for k, v in kwargs.items() if k not in ("oof", "seed")}
@@ -345,10 +336,35 @@ def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, workers=1,
     cols = FEATURES + _cols(kwargs.get("extra"))
     key.update(pd.util.hash_pandas_object(lab[["basho", "rikishi_id", "position_next"] + cols],
                                           index=False).to_numpy().tobytes())
-    cache_dir = Path(cache_dir) if cache_dir else OOF_CACHE
-    path = cache_dir / f"{key.hexdigest()[:16]}.parquet"
+    return key.hexdigest()[:16]
+
+
+def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, workers=1,
+                    cache_dir=None, train_start=None):
+    """Rolling out-of-fold base scores: rows of source basho b are scored by
+    cls(**kwargs)'s base stage fitted on transitions labeled by b
+    (next_basho <= b), i.e. the backtest's own base prediction for target
+    next(b), so no row is scored by a model that saw its label. The default
+    model's table is committed as data/processed/oof.parquet (built by
+    `banzuke data build`, its oof_key in the frame's attrs) and rebuilt in
+    place when that key no longer matches; any other configuration is cached
+    under cache/oof/<key>.parquet (or cache_dir)."""
+    from concurrent.futures import ProcessPoolExecutor
+    from multiprocessing import get_context
+    from pathlib import Path
+
+    from banzuke.paths import OOF_CACHE, OOF_TABLE
+
+    lab = trans[trans["position_next"].notna()]
+    kwargs = {k: v for k, v in kwargs.items() if k not in ("oof", "seed")}
+    key = oof_key(trans, cls, kwargs, min_history, train_start)
+    committed = cache_dir is None and key == oof_key(trans, GBMRerank, {})
+    path = OOF_TABLE if committed else Path(cache_dir or OOF_CACHE) / f"{key}.parquet"
     if path.exists():
-        return pd.read_parquet(path)
+        out = pd.read_parquet(path)
+        if not committed or out.attrs.get("oof_key") == key:
+            return out
+        print(f"{path} is stale (data or base stage changed): rebuilding it", file=sys.stderr)
 
     todo = sorted(lab["basho"].unique())[min_history:]
     print(f"computing out-of-fold base scores for {len(todo)} basho ({workers} workers; "
@@ -362,7 +378,8 @@ def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, workers=1,
         _oof_init(lab)
         parts = [_oof_one(a) for a in args]
     out = pd.concat(parts, ignore_index=True)
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    out.attrs["oof_key"] = key
+    path.parent.mkdir(parents=True, exist_ok=True)
     out.to_parquet(path, index=False)
     return out
 

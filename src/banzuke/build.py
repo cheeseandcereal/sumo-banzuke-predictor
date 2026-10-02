@@ -4,6 +4,8 @@ Outputs to data/processed/:
 - tidy.parquet: one row per rikishi per basho (rank, results, prizes)
 - bouts.parquet: competitive head-to-head wins (fusen excluded)
 - transitions.parquet: tidy + history features + next-basho targets
+- oof.parquet: the default model's rolling out-of-fold base scores, the
+  one training input derived from a model fit (models.oof_base_scores)
 
 Normally run via `banzuke data update` (fetch, then build) or
 `banzuke data build` (rebuild from the committed raw JSON).
@@ -109,8 +111,10 @@ def load_tidy() -> tuple[pd.DataFrame, pd.DataFrame]:
     return df, pd.DataFrame(bouts).drop_duplicates()
 
 
-def main():
-    """Rebuild every processed dataset from the raw JSON under data/."""
+def main(oof=True, workers=1):
+    """Rebuild every processed dataset from the raw JSON under data/, then
+    (unless oof is False) the default model's out-of-fold table, a no-op when
+    the committed one already matches the data and the base stage."""
     from banzuke.features import build_transitions
 
     PROCESSED.mkdir(parents=True, exist_ok=True)
@@ -123,3 +127,8 @@ def main():
     trans.to_parquet(PROCESSED / "transitions.parquet", index=False)
     n_target = trans["position_next"].notna().sum()
     print(f"transitions: {len(trans)} rows, {n_target} with targets")
+    if oof:
+        from banzuke.models import GBMRerank, oof_base_scores
+
+        table = oof_base_scores(trans, GBMRerank, {}, workers=workers)
+        print(f"oof: {len(table)} rows, {table['basho'].nunique()} basho")

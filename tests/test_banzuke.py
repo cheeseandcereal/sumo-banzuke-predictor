@@ -403,6 +403,54 @@ def test_oof_scores_are_leak_free_and_cached(trans, tmp_path, monkeypatch):
     assert GBMRerank.prepare(off, trans) == off and len(calls) == 1
 
 
+def test_committed_oof_table_is_current(trans):
+    """data/processed/oof.parquet carries the key of the data and base stage
+    it was built from; a data update or base-stage change must rebuild it
+    (`banzuke data build`) before the commit."""
+    from banzuke.models import MODELS, OOF_MIN_HISTORY, oof_key
+    from banzuke.paths import OOF_TABLE
+
+    table = pd.read_parquet(OOF_TABLE)
+    key = oof_key(trans, GBMRerank, {})
+    assert table.attrs.get("oof_key") == key, "stale oof.parquet: run `banzuke data build`"
+    assert list(table.columns) == ["basho", "rikishi_id", "oof"] and not table["oof"].isna().any()
+    labeled = sorted(trans.loc[trans["position_next"].notna(), "basho"].unique())
+    assert sorted(table["basho"].unique()) == labeled[OOF_MIN_HISTORY:]
+    # Ah and the pair-stage options share the default table; anything that
+    # changes the base stage, or --train-start, has its own key
+    assert oof_key(trans, MODELS["Ah"], {}) == key
+    assert oof_key(trans, GBMRerank, {"pair": {"n_estimators": 50}, "gap": 0.5, "oof_gap": 3.0}) == key
+    assert oof_key(trans, GBMRerank, {"n_seeds": 1}) != key
+    assert oof_key(trans, GBMRerank, {}, train_start=200401) != key
+    pd.testing.assert_frame_equal(GBMRerank.prepare({}, trans)["oof"], table)
+
+
+def test_stale_oof_table_is_rebuilt_in_place(trans, tmp_path, monkeypatch, capsys):
+    from banzuke import paths
+    from banzuke.models import OOF_MIN_HISTORY, oof_key
+
+    monkeypatch.setattr(paths, "OOF_TABLE", tmp_path / "oof.parquet")
+    monkeypatch.setattr(paths, "OOF_CACHE", tmp_path / "oof")
+    labeled = sorted(trans.loc[trans["position_next"].notna(), "basho"].unique())
+    small = trans[trans["basho"] <= labeled[OOF_MIN_HISTORY + 2]]  # three basho to score
+    stale = pd.DataFrame({"basho": [1], "rikishi_id": [1], "oof": [0.0]})
+    stale.attrs["oof_key"] = "0" * 16
+    stale.to_parquet(paths.OOF_TABLE, index=False)
+
+    out = oof_base_scores(small, GBMRerank, {}, workers=1)
+    err = capsys.readouterr().err
+    assert "stale" in err and "computing out-of-fold" in err
+    assert sorted(out["basho"].unique()) == labeled[OOF_MIN_HISTORY:OOF_MIN_HISTORY + 3]
+    key = oof_key(small, GBMRerank, {})
+    assert pd.read_parquet(paths.OOF_TABLE).attrs["oof_key"] == key
+    assert oof_base_scores(small, GBMRerank, {}, workers=1).attrs["oof_key"] == key
+    assert capsys.readouterr().err == ""  # current: read back, nothing recomputed
+    # a non-default base configuration never touches the committed table
+    other = oof_base_scores(small, GBMRerank, SMALL, workers=1)
+    assert [p.name for p in paths.OOF_CACHE.iterdir()] == [f"{other.attrs['oof_key']}.parquet"]
+    assert pd.read_parquet(paths.OOF_TABLE).attrs["oof_key"] == key
+
+
 def test_backtest_deterministic_and_parallel(trans, tidy):
     targets = [202309, 202311]
     r = run_backtest(["Aq"], targets, trans, tidy, progress=False, model_kwargs=SMALL)
