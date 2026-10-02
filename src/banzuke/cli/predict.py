@@ -64,9 +64,9 @@ def add_parser(sub):
 
 
 def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds):
-    from banzuke.build import JURYO
-    from banzuke.forecast import CLS, label, notes, rec
+    from banzuke.forecast import notes
     from banzuke.overrides import verify
+    from banzuke.ranks import CLS_CHARS, JURYO, fmt_cell, fmt_record
 
     how = f"{n_seeds}-seed bag" if n_seeds > 1 else "seed 0"
     print(f"predicted makuuchi banzuke for {target} "
@@ -76,11 +76,11 @@ def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds):
     def cell(r):
         if r is None:
             return ""
-        prev = f"{CLS[r['rank_class']]}{r['rank_number']}{'EW'[r['side']]}"
-        out = f"{r['marker']:<3} {r['shikona']:<14} ({prev:>4} {rec(r['wins'], r['losses'], r['absences'])})"
+        prev = fmt_cell(r['rank_class'], r['rank_number'], r['side'])
+        out = f"{r['marker']:<3} {r['shikona']:<14} ({prev:>4} {fmt_record(r['wins'], r['losses'], r['absences'])})"
         if r["rikishi_id"] in ov["pins"]:
             out += " [pin]"
-        now = label(r["pred_class"], r["pred_number"], r["pred_side"])
+        now = fmt_cell(r["pred_class"], r["pred_number"], r["pred_side"])
         was = baseline.get(r["rikishi_id"])
         if was and was != now:
             out += f" <-{was}"
@@ -93,7 +93,7 @@ def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds):
     width = max([38] + [len(c) + 2 for c in east.values()])
     print(f"{'':11}{'EAST':<{width}}WEST")
     for key in sorted(slots):
-        lab = f"{CLS[int(key[0])]}{int(key[1])}"
+        lab = f"{CLS_CHARS[int(key[0])]}{int(key[1])}"
         print(f"  {lab:>3}  {east[key]:<{width}}{cell(slots[key].get(1))}".rstrip())
 
     if ov["relative"]:
@@ -189,13 +189,14 @@ def run(args):
     from banzuke import confidence, forecast, models
     from banzuke.overrides import OverrideError, parse
     from banzuke.paths import load_transitions
+    from banzuke.ranks import fmt_cell, next_basho
     from banzuke.resolver import resolve
 
     if args.model not in models.MODELS:
         raise CommandError(f"unknown model {args.model!r}; available: {list(models.MODELS)}")
     trans = load_transitions()
     latest = forecast.latest_basho(trans)
-    target = forecast.next_basho_id(latest)
+    target = next_basho(latest)
     train = forecast.training_rows(trans, latest, args.train_start)
     if args.train_start:
         print(f"training restricted to {train['basho'].nunique()} basho "
@@ -232,7 +233,7 @@ def run(args):
 
     mak_size = args.mak_size or int(cands["mak_size"].iloc[0])
     base_pred = resolve(cands, point, mak_size)
-    baseline = {r: forecast.label(c, n, s) for r, c, n, s in zip(
+    baseline = {r: fmt_cell(c, n, s) for r, c, n, s in zip(
         base_pred["rikishi_id"], base_pred["pred_class"], base_pred["pred_number"],
         base_pred["pred_side"])}
 

@@ -10,7 +10,7 @@ import pandas as pd
 import pytest
 
 from banzuke import confidence, forecast
-from banzuke.build import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
+from banzuke.ranks import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
 from banzuke.cli._common import parse_seeds, parse_sets
 from banzuke.features import FEATURES, build_transitions
 from banzuke.harness import METRICS, run_backtest, summarize
@@ -18,7 +18,7 @@ from banzuke.metrics import evaluate
 from banzuke.models import (MODELS, GBMMedian, GBMRanker, GBMRerank, RulesBaseline,
                             _gap_pairs, _seeds, _twin_units, _window_pairs, oof_base_scores)
 from banzuke.overrides import parse
-from banzuke.paths import PROCESSED, ROOT
+from banzuke.paths import ROOT, load_bouts, load_tidy, load_transitions
 from banzuke.resolver import block_slots, forced_claims, resolve
 
 SMALL = {"n_seeds": 1, "base": {"n_estimators": 20}}  # the GBMs default to a 5-seed bag
@@ -27,17 +27,17 @@ CELL = ["pred_class", "pred_number", "pred_side"]
 
 @pytest.fixture(scope="session")
 def tidy():
-    return pd.read_parquet(PROCESSED / "tidy.parquet")
+    return load_tidy()
 
 
 @pytest.fixture(scope="session")
 def trans():
-    return pd.read_parquet(PROCESSED / "transitions.parquet")
+    return load_transitions()
 
 
 @pytest.fixture(scope="session")
 def bouts():
-    return pd.read_parquet(PROCESSED / "bouts.parquet")
+    return load_bouts()
 
 
 @pytest.fixture(scope="session")
@@ -90,13 +90,12 @@ def test_features_are_chronological(tidy, bouts, trans):
     assert np.isnan(a.loc[202301, "class1"]) and a.loc[202305, ["class1", "num1"]].tolist() == [JURYO, 1]
 
 
-def test_raw_corrections_and_blank_result_check():
+def test_raw_corrections_and_blank_result_check(tidy):
     """202507 juryo: the day-15 bout Nishikigi (J1E) vs Fujiseiun (J8W) has a blank
     result in the API record, so its wins/losses were short by one (the torikumi
     has Nishikigi by kotenage). The correction is applied at build time, and a
     scheduled bout without a result anywhere else fails the build loudly."""
     from banzuke.build import CORRECTIONS, _correct
-    tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
     rows = tidy[(tidy["basho"] == 202507) & tidy["rikishi_id"].isin([16, 82])].set_index("rikishi_id")
     assert rows.loc[16, ["wins", "losses", "absences"]].tolist() == [8, 7, 0]
     assert rows.loc[82, ["wins", "losses", "absences"]].tolist() == [9, 6, 0]

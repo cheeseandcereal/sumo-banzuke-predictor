@@ -8,7 +8,7 @@ immediately preceding basho.
 import numpy as np
 import pandas as pd
 
-from banzuke.build import OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA
+from banzuke.ranks import KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE
 
 # model input columns (all numeric; NaN allowed, tree models handle natively)
 FEATURES = [

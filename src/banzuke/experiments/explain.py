@@ -33,35 +33,27 @@ import numpy as np
 import pandas as pd
 
 from banzuke import confidence
-from banzuke.build import YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO
 from banzuke.experiments import precedent
 from banzuke.harness import fingerprint
 from banzuke.metrics import evaluate
 from banzuke.models import GBMRerank, _gap_pairs, _twin_units
 from banzuke.overrides import OverrideError
 from banzuke.paths import EXPLAIN_CACHE as SCRATCH
+from banzuke.ranks import (CLS_CHARS as CLS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA,
+                           fmt_cell as cell, fmt_record as rec)
 from banzuke.resolver import forced_claims, resolve
 
 PAIR_GAP = 5.0          # record pair probabilities for every pair this close in base score
                         # (clusters span up to 4.4 points: every in-cluster pair is present)
 VERSION = 2             # bump to invalidate caches when the dump format changes
-CLS = "YOSKMJ"
 UPPER = (YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI)
 STAGES = ("cascade", "structural", "boundary", "rerank", "base", "resolver")
 
 _TRANS = _TIDY = None
 
 
-def cell(c, n, s):
-    return f"{CLS[int(c)]}{int(n)}{'EW'[int(s)]}"
-
-
 def _int(x):
     return "" if x is None or np.isnan(x) else f"{int(x):+d}"
-
-
-def rec(w, l, a):
-    return f"{int(w)}-{int(l)}" + (f"-{int(a)}" if a else "")
 
 
 def cache_dir(kwargs, seeds):

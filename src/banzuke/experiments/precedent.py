@@ -15,7 +15,7 @@ import re
 
 import numpy as np
 
-CLS = "YOSKMJ"
+from banzuke.ranks import CLS_CHARS, fmt_cell
 SPEC = re.compile(r"^([YOSKMJ])(?:(\d+)(?:-(\d+))?)?([EW])?$")
 
 
@@ -35,7 +35,7 @@ def parse_spec(spec):
     m = SPEC.match(rank.upper())
     if not m:
         raise ValueError(f"bad rank spec {rank!r}; expected like K1, M9-10, J3W")
-    f = {"rank_class": CLS.index(m[1])}
+    f = {"rank_class": CLS_CHARS.index(m[1])}
     if m[2]:
         f["num_lo"], f["num_hi"] = int(m[2]), int(m[3] or m[2])
     if m[4]:
@@ -75,10 +75,6 @@ def select(t, spec, where=None):
     return m
 
 
-def cell(c, n, s):
-    return f"{CLS[int(c)]}{int(n)}{'ew'[int(s)]}"
-
-
 def landing(t, spec, where=None):
     """Where rows matching spec landed, per window: n, class counts, delta
     quantiles (half-ranks, + = down), most common landing cells."""
@@ -89,14 +85,14 @@ def landing(t, spec, where=None):
         if not len(r):
             out[w] = {"n": 0}
             continue
-        cls = r["class_next"].astype(int).map(lambda c: CLS[c]).value_counts()
+        cls = r["class_next"].astype(int).map(lambda c: CLS_CHARS[c]).value_counts()
         cells = (r["class_next"].astype(int).astype(str) + "/" + r["number_next"].astype(int).astype(str)
                  + "/" + r["side_next"].astype(int).astype(str)).value_counts().head(5)
         out[w] = {
             "n": len(r),
             "classes": ", ".join(f"{k} {v}" for k, v in cls.items()),
             "delta": tuple(np.nanpercentile(r["delta"], [25, 50, 75]).round(1)),
-            "cells": ", ".join(f"{cell(*map(int, k.split('/')))} {v}" for k, v in cells.items()),
+            "cells": ", ".join(f"{fmt_cell(*map(int, k.split('/')))} {v}" for k, v in cells.items()),
         }
     return out
 

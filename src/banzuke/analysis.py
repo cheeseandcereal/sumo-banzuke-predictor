@@ -9,15 +9,9 @@ import pandas as pd
 from scipy.stats import spearmanr
 
 from banzuke import confidence
-from banzuke.build import OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA
 from banzuke.harness import fingerprint, run_backtest
 from banzuke.paths import SCRATCH
-
-CLS = "YOSKMJ"
-
-
-def cell(c, n, s):
-    return f"{CLS[int(c)]}{int(n)}{'ew'[int(s)]}"
+from banzuke.ranks import KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, fmt_cell, fmt_record
 
 
 def rate_table(m, groups, title):
@@ -177,10 +171,10 @@ def residuals(preds, model, start, end, seeds):
     if len(created):
         print("  received a created slot while forecast in maegashira:")
         for r in created.sort_values("target").itertuples():
-            rec = f"{int(r.wins)}-{int(r.losses)}" + (f"-{int(r.absences)}" if r.absences else "")
-            print(f"    {r.target}  {r.shikona:14s} {cell(r.rank_class, r.rank_number, r.side):>4s}"
-                  f" {rec:7s} -> {cell(r.class_next, r.number_next, r.side_next)}"
-                  f" (forecast {cell(r.pred_class, r.pred_number, r.pred_side)})")
+            rec = fmt_record(r.wins, r.losses, r.absences)
+            print(f"    {r.target}  {r.shikona:14s} {fmt_cell(r.rank_class, r.rank_number, r.side):>4s}"
+                  f" {rec:7s} -> {fmt_cell(r.class_next, r.number_next, r.side_next)}"
+                  f" (forecast {fmt_cell(r.pred_class, r.pred_number, r.pred_side)})")
 
     # committee anchoring: inverted adjacent pairs vs prior order
     inv_prior, adj_prior = [], []

@@ -2,7 +2,7 @@
 import pandas as pd
 from scipy.stats import kendalltau
 
-from banzuke.build import SEKIWAKE, KOMUSUBI, MAEGASHIRA
+from banzuke.ranks import KOMUSUBI, MAEGASHIRA, SEKIWAKE
 
 
 def _set_f1(pred: set, actual: set) -> float:

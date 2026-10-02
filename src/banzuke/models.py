@@ -22,7 +22,7 @@ from sklearn.linear_model import Ridge
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler
 
-from banzuke.build import SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO
+from banzuke.ranks import JURYO, KOMUSUBI, MAEGASHIRA, SEKIWAKE
 from banzuke.features import FEATURES
 
 BASE_PARAMS = dict(

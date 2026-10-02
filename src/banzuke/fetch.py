@@ -13,12 +13,12 @@ import urllib.request
 from datetime import date
 
 from banzuke.paths import RAW_BANZUKE, RAW_BASHO
+from banzuke.ranks import BASHO_MONTHS
 
 BANZUKE_URL = "https://www.sumo-api.com/api/basho/{basho}/banzuke/{division}"
 BASHO_URL = "https://www.sumo-api.com/api/basho/{basho}"
 DIVISIONS = ("Makuuchi", "Juryo")
 FIRST_BASHO = "195911"  # earliest basho with yusho + special prize data
-BASHO_MONTHS = (1, 3, 5, 7, 9, 11)
 DELAY_S = 0.15
 RETRIES = 3
 

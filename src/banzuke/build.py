@@ -13,10 +13,7 @@ import json
 import pandas as pd
 
 from banzuke.paths import PROCESSED, RAW_BANZUKE, RAW_BASHO
-
-# Ordinal rank classes: lower = higher rank. Y/O/S/K = sanyaku-and-above.
-CLASS_ORD = {"Yokozuna": 0, "Ozeki": 1, "Sekiwake": 2, "Komusubi": 3, "Maegashira": 4, "Juryo": 5}
-YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO = range(6)
+from banzuke.ranks import CLASS_ORD
 
 # Raw records where a scheduled bout has `result: ""`, so the API's own
 # wins/losses are short by one. (basho, rikishiID) -> {bout index: result}.

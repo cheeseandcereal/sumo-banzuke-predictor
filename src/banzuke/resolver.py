@@ -26,10 +26,9 @@ conventions above; each convention broken is reported via `warnings`.
 import numpy as np
 import pandas as pd
 
-from banzuke.build import YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO
-from banzuke.overrides import OverrideError, fmt_slot
-
-CLS_NAMES = ("yokozuna", "ozeki", "sekiwake", "komusubi", "maegashira", "juryo")
+from banzuke.overrides import OverrideError
+from banzuke.ranks import (CLS_NAMES, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA,
+                           fmt_cell)
 
 
 def block_slots(c, n, ne, nw):
@@ -349,9 +348,9 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
             if i in pins:
                 pc, pn, ps = pins[i]
                 if (pn, ps) not in slots:
-                    have = ", ".join(fmt_slot(c, *s) for s in slots) or "none"
+                    have = ", ".join(fmt_cell(c, *s) for s in slots) or "none"
                     raise OverrideError(
-                        f"pin {shik[i]}={fmt_slot(pc, pn, ps)}: the {CLS_NAMES[c]} "
+                        f"pin {shik[i]}={fmt_cell(pc, pn, ps)}: the {CLS_NAMES[c]} "
                         f"block has slots [{have}]; grow it with --count/--class "
                         f"or adjust --mak-size")
                 assign[(pn, ps)] = i
@@ -360,7 +359,7 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
         for slot in free_slots:
             i = next((i for i in free_members if eligible(i, c, slot)), None)
             if i is None:
-                raise OverrideError(f"cannot fill {fmt_slot(c, *slot)} "
+                raise OverrideError(f"cannot fill {fmt_cell(c, *slot)} "
                                     "without a make-koshi promotion")
             assign[slot] = i
             free_members.remove(i)
@@ -368,7 +367,7 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
             i = assign[s]
             if limited[i] and (c, *s) < prior[i]:
                 warn.append(f"convention broken: make-koshi {shik[i]} promoted "
-                            f"from {fmt_slot(*prior[i])} to {fmt_slot(c, *s)} by override")
+                            f"from {fmt_cell(*prior[i])} to {fmt_cell(c, *s)} by override")
             out_idx.append(assign[s])
             out_cls.append(c)
             out_num.append(s[0])

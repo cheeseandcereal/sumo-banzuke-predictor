@@ -10,8 +10,8 @@ Pure functions, no I/O.
 import numpy as np
 import pandas as pd
 
-from banzuke.build import OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO
-from banzuke.overrides import CLS_CHARS, OverrideError, fmt_slot
+from banzuke.overrides import OverrideError
+from banzuke.ranks import CLS_CHARS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, fmt_cell
 from banzuke.resolver import forced_claims, resolve
 
 # Ar model, 2024-2026 backtest, 3 seeds, exact / far (>1 position off):
@@ -87,7 +87,7 @@ def review(pred, sig, base, final, seed_preds=(), skip=()):
     b = boundaries(p, base, final, skip, seed_preds)
     sg = sig.set_axis(pred["rikishi_id"].to_numpy())
     name = dict(zip(p["rikishi_id"], p["shikona"]))
-    slot = [fmt_slot(c, n, s) for c, n, s in
+    slot = [fmt_cell(c, n, s) for c, n, s in
             zip(p["pred_class"], p["pred_number"], p["pred_side"])]
     items = []
     t = b.index[b["tight"] | (b["flips"] > 0)]
@@ -184,7 +184,7 @@ def _cells(p):
 
 
 def _was(r):
-    return fmt_slot(r["rank_class"], r["rank_number"], r["side"])
+    return fmt_cell(r["rank_class"], r["rank_number"], r["side"])
 
 
 def structural(pred, cands, scores, mak_size, ov, rates):
@@ -221,7 +221,7 @@ def structural(pred, cands, scores, mak_size, ov, rates):
                 rec += f"-{int(r['absences'])}"
             prec = precedent(rates, c, r["rank_class"], r["rank_number"], r["wins"])
             items.append({
-                "marker": "!", "rid": rid, "range": fmt_slot(*cells[rid]),
+                "marker": "!", "rid": rid, "range": fmt_cell(*cells[rid]),
                 "text": (f"{CLS_CHARS[c]}{len(members)} created for {r['shikona']} "
                          f"({_was(r)} {rec}): {prec}; {foot}"),
                 "hints": [("class", f"{r['shikona']}=M")],

@@ -12,7 +12,7 @@ silent. A few regularities the resolver does not enforce are tracked too
 import numpy as np
 import pandas as pd
 
-from banzuke.build import YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA
+from banzuke.ranks import KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
 from banzuke.resolver import block_slots, forced_claims, rule_masks
 
 LAYOUT = {YOKOZUNA: "layout: yokozuna block", OZEKI: "layout: ozeki block (odd -> lighter column)",

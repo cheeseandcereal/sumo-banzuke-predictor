@@ -8,27 +8,10 @@ import numpy as np
 import pandas as pd
 
 from banzuke import confidence
-from banzuke.build import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
 from banzuke.overrides import splice
+from banzuke.ranks import (CLS_NAMES, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA,
+                           fmt_cell, fmt_record)
 from banzuke.resolver import resolve
-
-CLS = "YOSKMJ"
-CLS_NAMES = ("yokozuna", "ozeki", "sekiwake", "komusubi", "maegashira", "juryo")
-BASHO_MONTHS = (1, 3, 5, 7, 9, 11)
-
-
-def next_basho_id(basho: int) -> int:
-    year, month = divmod(basho, 100)
-    nxt = BASHO_MONTHS[(BASHO_MONTHS.index(month) + 1) % 6]
-    return (year + (nxt == 1)) * 100 + nxt
-
-
-def label(c, n, s):
-    return f"{CLS[int(c)]}{int(n)}{'EW'[int(s)]}"
-
-
-def rec(w, l, a=0):
-    return f"{int(w)}-{int(l)}" + (f"-{int(a)}" if a else "")
 
 
 def latest_basho(trans: pd.DataFrame) -> int:
@@ -61,7 +44,7 @@ def context(cands, trans):
     prev = trans[trans["basho"] == previous].set_index("rikishi_id")
     out = cands.copy()
     out["rec1"] = out["rikishi_id"].map(
-        {r: rec(w, l, a) for r, w, l, a in zip(prev.index, prev["wins"], prev["losses"], prev["absences"])})
+        {r: fmt_record(w, l, a) for r, w, l, a in zip(prev.index, prev["wins"], prev["losses"], prev["absences"])})
     sk = prev[prev["rank_class"].isin((SEKIWAKE, KOMUSUBI)) & (prev["wins"] >= 8)]
     out["ozeki_run2"] = out["wins"] + out["rikishi_id"].map(sk["wins"])
     return out
@@ -102,7 +85,7 @@ def _yokozuna_why(r):
     if r["yusho"] == 1 and (r["yusho1"] == 1 or r["junyusho1"] == 1):
         last = "yusho" if r["yusho1"] == 1 else "jun-yusho"
         where = "" if r["class1"] == OZEKI else f" as {CLS_NAMES[int(r['class1'])]}"
-        return f", yusho {rec(r['wins'], r['losses'], r['absences'])} after {last} {r['rec1']}{where}"
+        return f", yusho {fmt_record(r['wins'], r['losses'], r['absences'])} after {last} {r['rec1']}{where}"
     return " by override"
 
 
@@ -130,7 +113,7 @@ def notes(pred, target):
         if r["pred_class"] == OZEKI and r["rank_class"] > OZEKI:
             if r["demoted_ozeki"] == 1:
                 out.append(f"{r['shikona']}: returns to ozeki, "
-                           f"{rec(r['wins'], r['losses'], r['absences'])} the basho after demotion")
+                           f"{fmt_record(r['wins'], r['losses'], r['absences'])} the basho after demotion")
             else:
                 out.append(f"{r['shikona']}: promoted to ozeki{_ozeki_why(r)}")
         if r["rank_class"] == OZEKI and r["pred_class"] == OZEKI and r["wins"] < 8:
@@ -143,6 +126,6 @@ def notes(pred, target):
     demoted = pred[(pred["rank_class"] < JURYO) & (pred["pred_class"] == JURYO)]
     if len(demoted):
         out.append("demoted to juryo: " + ", ".join(
-            f"{r['shikona']} ({CLS[r['rank_class']]}{r['rank_number']}{'EW'[r['side']]})"
+            f"{r['shikona']} ({fmt_cell(r['rank_class'], r['rank_number'], r['side'])})"
             for _, r in demoted.sort_values("pred_pos").iterrows()))
     return out

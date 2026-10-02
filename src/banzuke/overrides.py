@@ -17,15 +17,11 @@ Spec grammar (shikona case-insensitive):
 import difflib
 import re
 
-CLS_CHARS = "YOSKMJ"
+from banzuke.ranks import CLS_CHARS
 
 
 class OverrideError(ValueError):
     pass
-
-
-def fmt_slot(c, num, side):
-    return f"{CLS_CHARS[c]}{num}{'EW'[side]}"
 
 
 def parse_slot(spec):

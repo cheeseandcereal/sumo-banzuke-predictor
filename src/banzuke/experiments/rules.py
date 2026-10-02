@@ -30,7 +30,7 @@ import numpy as np
 import pandas as pd
 from scipy.stats import wilcoxon
 
-from banzuke.build import SEKIWAKE, KOMUSUBI, MAEGASHIRA
+from banzuke.ranks import KOMUSUBI, MAEGASHIRA, SEKIWAKE
 from banzuke.experiments.explain import NoCache, cache_dir
 from banzuke.harness import block_bootstrap_ci
 from banzuke.metrics import evaluate
