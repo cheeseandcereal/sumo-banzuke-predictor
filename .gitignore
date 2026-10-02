@@ -1,9 +1,7 @@
 .venv/
 __pycache__/
 *.pyc
-models/
-results/scratch/
-results/*.log
+cache/
 .pytest_cache/
 dist/
 *.egg-info/

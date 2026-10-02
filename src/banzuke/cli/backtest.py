@@ -1,7 +1,7 @@
 """Run the model bake-off over a window of historical basho.
 
-Per-(configuration, model, seed, basho) results are cached in results/scratch/
-and reused on re-runs. The cache key covers the dataset, the source of every
+Per-(configuration, model, seed, basho) results are cached in cache/ and
+reused on re-runs. The cache key covers the dataset, the source of every
 module that affects results, the lockfile and the configuration, so editing
 code, rebuilding data or changing a parameter invalidates it automatically;
 --fresh forces recomputation.
@@ -17,6 +17,7 @@ that model's defaults alongside and pairs every row against them
 (MODEL:label for another configuration present in the results).
 """
 import sys
+from pathlib import Path
 
 from banzuke.cli._common import (CommandError, add_seeds, add_set, add_train_start, add_window,
                                  add_workers, parse_seeds, parse_sets, subcommand, targets_in)
@@ -41,7 +42,7 @@ def add_parser(sub):
                     help="configuration paired comparisons refer to (default: the leader)")
     add_workers(ap)
     ap.add_argument("--out", default=None, metavar="STEM",
-                    help="write STEM_per_basho.csv and STEM_summary.csv, e.g. results/dev")
+                    help="write STEM_per_basho.csv and STEM_summary.csv, e.g. cache/dev")
     ap.add_argument("--summarize", default=None, metavar="CSVS",
                     help="skip running; summarize existing per-basho csv(s), comma-separated")
     add_train_start(ap)
@@ -55,7 +56,7 @@ def run(args):
 
     from banzuke.harness import run_cached, summarize
     from banzuke.models import MODELS
-    from banzuke.paths import RESULTS, load_tidy, load_transitions
+    from banzuke.paths import load_tidy, load_transitions
 
     pd.set_option("display.width", 250)
     if args.summarize:
@@ -84,7 +85,7 @@ def run(args):
                          train_start=args.train_start, workers=args.workers, fresh=args.fresh)
     print_summaries(results, args.baseline)
     if args.out:
-        RESULTS.mkdir(exist_ok=True)
+        Path(args.out).parent.mkdir(parents=True, exist_ok=True)
         results.to_csv(f"{args.out}_per_basho.csv", index=False)
         pd.concat([summarize(results, args.baseline, s, u).assign(window=w)
                    for w, s, u in WINDOWS

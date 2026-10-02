@@ -13,7 +13,7 @@ clusters, every pair probability within PAIR_GAP base points, the sheet the
 resolver would have produced from the base order alone, and a per-row miss
 decomposition: block offset from structural Y/O/S/K count errors, local error,
 and the stage the miss was born in. Outputs live in
-results/scratch/explain/<fingerprint>/{rows,pairs,frames}_<start>_<end>.parquet
+cache/explain/<fingerprint>/{rows,pairs,frames}_<start>_<end>.parquet
 and are concatenated by every reader.
 
 Stage labels (misses only): cascade (right once the structure above is), structural

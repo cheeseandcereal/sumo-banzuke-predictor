@@ -12,7 +12,7 @@ model Ar (docs/EXPERIMENTS.md E19).
 standard prediction frame, the reranker's units and clusters, every pair
 probability within PAIR_GAP base points, the sheet the resolver would have
 produced from the base order alone, and a per-row miss decomposition. The
-readers concatenate every build under results/scratch/explain/<fingerprint>/;
+readers concatenate every build under cache/explain/<fingerprint>/;
 --seeds and --set are part of that fingerprint, so a reader must repeat the
 values the build used.
 

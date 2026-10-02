@@ -1,8 +1,9 @@
 """Where the repository keeps its data and generated files.
 
 The package is installed from a checkout and reads the committed raw API
-responses and processed Parquet datasets under `data/`, writing caches and
-reports under `results/`. ROOT is that checkout: the directory above `src/`,
+responses and processed Parquet datasets under `data/`. Everything it
+regenerates on demand (keyed caches, per-run dumps) goes under `cache/`, the
+one git-ignored directory. ROOT is that checkout: the directory above `src/`,
 or `$BANZUKE_ROOT` when set (a copy of the data elsewhere).
 """
 import os
@@ -16,11 +17,10 @@ RAW_BASHO = DATA / "basho"          # {basho}.json: yusho, special prizes
 PROCESSED = DATA / "processed"      # tidy, bouts, transitions .parquet
 LOCKFILE = ROOT / "uv.lock"
 
-RESULTS = ROOT / "results"
-SCRATCH = RESULTS / "scratch"       # git-ignored caches and per-run dumps
-BACKTEST_CACHE = SCRATCH / "backtest_cache.parquet"
-OOF_CACHE = SCRATCH / "oof"
-EXPLAIN_CACHE = SCRATCH / "explain"
+CACHE = ROOT / "cache"              # git-ignored: keyed caches and per-run dumps
+BACKTEST_CACHE = CACHE / "backtest_cache.parquet"
+OOF_CACHE = CACHE / "oof"
+EXPLAIN_CACHE = CACHE / "explain"
 
 
 class MissingDataError(FileNotFoundError):

@@ -109,7 +109,7 @@ uv run banzuke data build         # rebuild from the existing JSON only
 Re-run the model bake-off / evaluation:
 
 ```sh
-uv run banzuke backtest --out results/all     # 2004 through latest basho
+uv run banzuke backtest --out cache/all       # 2004 through latest basho
 uv run banzuke backtest --end 202311          # original dev window only
 uv run banzuke analyze --model Ar             # residual analysis
 uv run banzuke conventions                    # resolver rules vs committee history
@@ -133,7 +133,7 @@ overrides a LightGBM parameter of the movement (`base.*`) or pair
 (`pair.*`) stage or a model option, and `--baseline Ar` pairs every
 result against the defaults per basho (mean difference, bootstrap
 interval, Wilcoxon p). Results are cached per (configuration, model,
-seed, basho) in `results/scratch/`; the cache key hashes the processed
+seed, basho) in `cache/`; the cache key hashes the processed
 dataset, all result-affecting source files and the configuration, so
 edits, data rebuilds and parameter changes invalidate it automatically
 (`--fresh` to force). Model training itself is never persisted:
@@ -168,7 +168,7 @@ specialize to the modern regime, so full history remains the default.
 - `data/banzuke/`, `data/basho/`: committed raw API responses
 - `data/processed/`: committed, reproducible Parquet datasets
 - `tests/`: regression tests (library invariants, command line)
-- `results/`: generated backtest reports and caches (`results/scratch/`
-  is git-ignored)
+- `cache/`: git-ignored; every regenerable file (keyed backtest, OOF and
+  explain caches, per-run dumps, `--out` reports) lands here
 - `docs/MODEL.md`: how the default model works, stage by stage
 - `docs/EXPERIMENTS.md`: experiment log and model-selection rationale

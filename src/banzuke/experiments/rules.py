@@ -7,7 +7,7 @@ re-resolved by the current resolver). Used for E20 (whose rules now live in
 banzuke.resolver) and for the E22 port check.
 
     banzuke rules [--start 200401] [--rules R11,R13] [--workers 14]
-    banzuke rules --cache results/scratch/explain/<old fingerprint>
+    banzuke rules --cache cache/explain/<old fingerprint>
 
 A resolver edit changes the fingerprint, so `--cache` names the frames to
 reuse. The `cached` variant scores the sheet as the cache's resolver made it,

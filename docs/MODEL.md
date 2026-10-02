@@ -780,7 +780,7 @@ confirm window, 2020 onward; seeds are averaged within a basho and the
 basho is the paired unit; MAE is the decision metric (Wilcoxon
 signed-rank, 6-basho block-bootstrap CI), exact slots the headline and a
 guardrail. `banzuke backtest` caches every (configuration, model, seed, basho)
-row in `results/scratch/` under a fingerprint of the processed data, the
+row in `cache/` under a fingerprint of the processed data, the
 source of every result-affecting module, the lockfile and the
 configuration, so edits and rebuilds invalidate it automatically.
 

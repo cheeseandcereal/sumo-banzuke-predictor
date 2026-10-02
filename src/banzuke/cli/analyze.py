@@ -7,8 +7,8 @@ re-measured against the committee's decisions.
     banzuke analyze [--model Ar] [--start 200401] [--end 202609]
                     [--seeds 0-2] [--set base.n_estimators=200]
 
-Predictions are cached per (model, window, configuration) under
-results/scratch/; --fresh recomputes them.
+Predictions are cached per (model, window, configuration) under cache/;
+--fresh recomputes them.
 """
 from banzuke.cli._common import (add_seeds, add_set, add_window, add_workers, model_class, parse_seeds,
                                  parse_sets, subcommand)

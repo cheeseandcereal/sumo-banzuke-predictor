@@ -10,7 +10,7 @@ from scipy.stats import spearmanr
 
 from banzuke import confidence
 from banzuke.harness import fingerprint, run_backtest
-from banzuke.paths import SCRATCH
+from banzuke.paths import CACHE
 from banzuke.ranks import KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, fmt_cell, fmt_record
 
 
@@ -103,15 +103,15 @@ def calibration(preds, trans):
 
 def cached_predictions(model, start, end, seeds, kwargs, trans, tidy, workers=1, fresh=False):
     """Per-row backtest predictions of `model` over start..end for every seed,
-    cached under results/scratch/ by configuration and data fingerprint."""
+    cached under cache/ by configuration and data fingerprint."""
     fp = fingerprint(kwargs=kwargs, seeds=seeds)
-    cache = SCRATCH / f"preds_{model}_{start}_{end}_{fp}.parquet"
+    cache = CACHE / f"preds_{model}_{start}_{end}_{fp}.parquet"
     if cache.exists() and not fresh:
         return pd.read_parquet(cache)
     targets = [b for b in sorted(tidy["basho"].unique()) if start <= b <= end]
     _, preds = run_backtest([model], targets, trans, tidy, return_preds=True,
                             seeds=seeds, model_kwargs=kwargs, workers=workers)
-    SCRATCH.mkdir(parents=True, exist_ok=True)
+    CACHE.mkdir(parents=True, exist_ok=True)
     preds.to_parquet(cache, index=False)
     return preds
 
