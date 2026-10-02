@@ -1,19 +1,24 @@
-#!/usr/bin/env python3
-"""Fetch raw sumo data and rebuild the processed Parquet datasets."""
-import argparse
+"""Fetch raw sumo data from sumo-api.com and rebuild the processed datasets.
+
+    banzuke data update    # fetch what is new, then rebuild (completed basho are skipped)
+    banzuke data fetch     # update the raw JSON under data/ only
+    banzuke data build     # rebuild data/processed/ from the existing JSON only
+
+Run after a banzuke release or a completed basho. Raw responses land in
+data/banzuke/{basho}_{Makuuchi,Juryo}.json and data/basho/{basho}.json; the
+build writes tidy, bouts and transitions .parquet to data/processed/.
+"""
 import json
 import sys
 import time
 import urllib.error
 import urllib.request
 from datetime import date
-from pathlib import Path
 
 from banzuke.build import main as build
+from banzuke.cli._common import subcommand
+from banzuke.paths import RAW_BANZUKE as BANZUKE_DIR, RAW_BASHO as BASHO_DIR
 
-ROOT = Path(__file__).parent
-BANZUKE_DIR = ROOT / "data" / "banzuke"
-BASHO_DIR = ROOT / "data" / "basho"
 BANZUKE_URL = "https://www.sumo-api.com/api/basho/{basho}/banzuke/{division}"
 BASHO_URL = "https://www.sumo-api.com/api/basho/{basho}"
 DIVISIONS = ("Makuuchi", "Juryo")
@@ -98,21 +103,22 @@ def fetch_basho():
         print(f"No basho data for: {', '.join(empty)}")
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--fetch-only", action="store_true",
-                      help="fetch API data without rebuilding Parquet files")
-    mode.add_argument("--build-only", action="store_true",
-                      help="rebuild Parquet files without fetching API data")
-    args = parser.parse_args()
+def add_parser(sub):
+    ap = subcommand(sub, "data", __doc__, "fetch raw data and rebuild the processed datasets")
+    ap.set_defaults(_parser=ap)
+    what = ap.add_subparsers(dest="action", metavar="ACTION", required=True)
+    steps = {"update": ("fetch new raw data, then rebuild", (True, True)),
+             "fetch": ("fetch raw API data without rebuilding", (True, False)),
+             "build": ("rebuild the Parquet datasets from the raw JSON", (False, True))}
+    for name, (help_, (fetch_, build_)) in steps.items():
+        p = what.add_parser(name, help=help_, description=help_)
+        p.set_defaults(run=run, _parser=p, fetch=fetch_, build=build_)
+    return ap
 
-    if not args.build_only:
+
+def run(args):
+    if args.fetch:
         fetch_banzuke()
         fetch_basho()
-    if not args.fetch_only:
+    if args.build:
         build()
-
-
-if __name__ == "__main__":
-    main()

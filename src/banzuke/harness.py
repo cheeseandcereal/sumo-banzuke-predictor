@@ -168,14 +168,14 @@ def fingerprint(**extra) -> str:
     the source of every module that affects results, the lockfile, and the
     caller's resolved configuration."""
     from banzuke import features, harness, metrics, models, resolver
-    from banzuke.build import PROCESSED
+    from banzuke.paths import LOCKFILE, PROCESSED
 
     h = hashlib.sha256()
     for f in ("tidy.parquet", "transitions.parquet", "bouts.parquet"):
         h.update((PROCESSED / f).read_bytes())
     for mod in (features, harness, metrics, models, resolver):
         h.update(inspect.getsource(mod).encode())
-    h.update((PROCESSED.parent.parent / "uv.lock").read_bytes())
+    h.update(LOCKFILE.read_bytes())
     h.update(json.dumps(extra, sort_keys=True, default=str).encode())
     return h.hexdigest()[:16]
 

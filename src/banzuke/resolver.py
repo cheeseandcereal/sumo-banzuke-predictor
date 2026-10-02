@@ -17,7 +17,7 @@ the near-inviolable structure. Hard-coded here:
 - E/W of one M/J rank number with identical records keep their order
 Vacancies, maegashira placement, and the juryo boundary follow the model's
 ordering subject to these constraints. Precedent counts: docs/EXPERIMENTS.md
-E10, E15a, E16, E20, E22 and `python -m banzuke.conventions`.
+E10, E15a, E16, E20, E22 and `banzuke conventions`.
 
 Human overrides (see banzuke.overrides) may force class membership,
 sanyaku counts, or exact cells. They take precedence over the

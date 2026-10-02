@@ -2,19 +2,17 @@
 
 Outputs to data/processed/:
 - tidy.parquet: one row per rikishi per basho (rank, results, prizes)
+- bouts.parquet: competitive head-to-head wins (fusen excluded)
 - transitions.parquet: tidy + history features + next-basho targets
 
-Normally run via: uv run python update_data.py
+Normally run via `banzuke data update` (fetch, then build) or
+`banzuke data build` (rebuild from the committed raw JSON).
 """
 import json
-from pathlib import Path
 
 import pandas as pd
 
-ROOT = Path(__file__).resolve().parent.parent
-RAW_BANZUKE = ROOT / "data" / "banzuke"
-RAW_BASHO = ROOT / "data" / "basho"
-PROCESSED = ROOT / "data" / "processed"
+from banzuke.paths import PROCESSED, RAW_BANZUKE, RAW_BASHO
 
 # Ordinal rank classes: lower = higher rank. Y/O/S/K = sanyaku-and-above.
 CLASS_ORD = {"Yokozuna": 0, "Ozeki": 1, "Sekiwake": 2, "Komusubi": 3, "Maegashira": 4, "Juryo": 5}
@@ -115,6 +113,7 @@ def load_tidy() -> tuple[pd.DataFrame, pd.DataFrame]:
 
 
 def main():
+    """Rebuild every processed dataset from the raw JSON under data/."""
     from banzuke.features import build_transitions
 
     PROCESSED.mkdir(parents=True, exist_ok=True)
@@ -127,7 +126,3 @@ def main():
     trans.to_parquet(PROCESSED / "transitions.parquet", index=False)
     n_target = trans["position_next"].notna().sum()
     print(f"transitions: {len(trans)} rows, {n_target} with targets")
-
-
-if __name__ == "__main__":
-    main()

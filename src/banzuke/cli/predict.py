@@ -1,12 +1,10 @@
-#!/usr/bin/env python3
 """Predict the next makuuchi banzuke from the latest fetched basho.
 
-Usage:
-    uv run python predict.py                      # predict the next banzuke
-    uv run python predict.py --retired Tamawashi  # exclude announced retirees
-    uv run python predict.py --protected Takayasu  # absence exempted by the JSA (rank frozen)
-    uv run python predict.py --model Aq --seeds 1
-    uv run python predict.py --set twin_unit=sk      # model option, as in backtest.py
+    banzuke predict                        # predict the next banzuke
+    banzuke predict --retired Tamawashi    # exclude announced retirees
+    banzuke predict --protected Takayasu   # absence exempted by the JSA (rank frozen)
+    banzuke predict --model Aq --seeds 1
+    banzuke predict --set twin_unit=sk     # model option, as in `banzuke backtest`
 
 Overrides (constrain the assignment; the model fills everything else):
     --above "A > B"     A rises to immediately above B
@@ -22,20 +20,19 @@ ordering calls and seed disagreement), ~ big move. The review list under
 the sheet names the decisions behind them with an override to test the
 alternative.
 """
-import argparse
 import sys
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from banzuke import confidence, models
 from banzuke.build import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
+from banzuke.cli._common import CommandError, subcommand
 from banzuke.harness import DEFAULT_WORKERS, parse_sets
 from banzuke.overrides import OverrideError, parse, splice, verify
+from banzuke.paths import require_processed
 from banzuke.resolver import resolve
 
-PROCESSED = Path(__file__).parent / "data" / "processed"
 CLS = "YOSKMJ"
 CLS_NAMES = ("yokozuna", "ozeki", "sekiwake", "komusubi", "maegashira", "juryo")
 BASHO_MONTHS = (1, 3, 5, 7, 9, 11)
@@ -240,7 +237,7 @@ def interactive(state, run):
             continue
         if cmd == "flags":
             flags = [f'--{k} "{v}"' for k in SPEC_KEYS for v in state[k]]
-            print("predict.py " + " ".join(flags) if flags else "(no overrides)")
+            print("banzuke predict " + " ".join(flags) if flags else "(no overrides)")
             continue
         new = {k: list(v) for k, v in state.items()}
         if cmd == "clear":
@@ -266,9 +263,8 @@ def interactive(state, run):
             print(f"error: {e} (override not applied)")
 
 
-def main():
-    ap = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+def add_parser(sub):
+    ap = subcommand(sub, "predict", __doc__, "predict the next banzuke from the latest results")
     ap.add_argument("--model", default="Ar", choices=list(models.MODELS))
     ap.add_argument("--retired", default="", help="comma-separated shikona to exclude")
     ap.add_argument("--protected", default="",
@@ -280,7 +276,8 @@ def main():
                     help="bag size (default: the model's, 5 for the GBMs); single seeds "
                          "also feed the confidence markers")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
-                    help="model option override (e.g. twin_unit=sk, gap=0.5), as in backtest.py")
+                    help="model option override (e.g. twin_unit=sk, gap=0.5), as in "
+                         "`banzuke backtest`")
     ap.add_argument("--train-start", type=int, default=None, metavar="BASHO",
                     help="ignore training transitions before this basho")
     ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS,
@@ -292,12 +289,12 @@ def main():
     ap.add_argument("--pin", action="append", default=[], metavar="X=M2E")
     ap.add_argument("--interactive", action="store_true",
                     help="train once, then adjust overrides in a loop")
-    args = ap.parse_args()
+    ap.set_defaults(run=run, _parser=ap)
+    return ap
 
-    transitions_path = PROCESSED / "transitions.parquet"
-    if not transitions_path.is_file():
-        ap.error("processed data not found; run `uv run python update_data.py` first")
-    trans = pd.read_parquet(transitions_path)
+
+def run(args):
+    trans = pd.read_parquet(require_processed() / "transitions.parquet")
     latest = int(trans.loc[trans["yusho"].eq(1), "basho"].max())
     target = next_basho_id(latest)
     # a fetched-but-unplayed next banzuke must not supply the transition being predicted
@@ -318,7 +315,7 @@ def main():
         keep = cands["shikona"].str.lower().isin(protected)
         missing = sorted(set(protected) - set(cands.loc[keep, "shikona"].str.lower()))
         if missing:
-            ap.error(f"--protected: unknown shikona {missing}")
+            raise CommandError(f"--protected: unknown shikona {missing}")
         cands.loc[keep, "rank_protected"] = 1
         print(f"rank protected: {', '.join(cands.loc[keep, 'shikona'])}\n")
 
@@ -342,7 +339,7 @@ def main():
         base_pred["rikishi_id"], base_pred["pred_class"], base_pred["pred_number"],
         base_pred["pred_side"])}
 
-    def run(state):
+    def run_once(state):
         ov = parse(cands, above=state["above"], below=state["below"],
                    classes=state["class"], counts=state["count"], pins=state["pin"])
         pred, warnings, items = predict(cands, point, per_seed, ov, mak_size, base, rates)
@@ -351,16 +348,12 @@ def main():
     state = {"above": args.above, "below": args.below, "class": args.cls,
              "count": args.count, "pin": args.pin}
     try:
-        run(state)
+        run_once(state)
     except OverrideError as e:
         if not args.interactive:
-            ap.error(str(e))
+            raise CommandError(str(e))
         print(f"error: {e}")
         state = {k: [] for k in state}
-        run(state)
+        run_once(state)
     if args.interactive:
-        interactive(state, run)
-
-
-if __name__ == "__main__":
-    main()
+        interactive(state, run_once)

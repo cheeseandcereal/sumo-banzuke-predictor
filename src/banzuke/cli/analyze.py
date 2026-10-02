@@ -1,26 +1,22 @@
-#!/usr/bin/env python3
 """Residual analysis for one model: where do exact-slot misses come from, are
 they systematically biased, and do the confidence signals
 (banzuke.confidence) separate reliable rows from shaky ones? Ends with the
 convention audit (banzuke.conventions): every hard-coded resolver rule
 re-measured against the committee's decisions.
 
-Usage: uv run python analyze.py [--model Ar] [--start 200401] [--end 202609]
-                                [--seeds 0-2] [--set base.n_estimators=200]
+    banzuke analyze [--model Ar] [--start 200401] [--end 202609]
+                    [--seeds 0-2] [--set base.n_estimators=200]
 """
-import argparse
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from scipy.stats import spearmanr
 
 from banzuke import confidence, conventions
 from banzuke.build import OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA
+from banzuke.cli._common import subcommand
 from banzuke.harness import DEFAULT_WORKERS, fingerprint, parse_seeds, parse_sets, run_backtest
+from banzuke.paths import SCRATCH, require_processed
 
-PROCESSED = Path(__file__).parent / "data" / "processed"
-SCRATCH = Path(__file__).parent / "results" / "scratch"
 CLS = "YOSKMJ"
 
 
@@ -115,9 +111,8 @@ def calibration(preds, trans):
             print(f"  M{num} {int(row['wins'])} wins: {int(row['honoured'])} of {int(row['n'])}")
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+def add_parser(sub):
+    ap = subcommand(sub, "analyze", __doc__, "residual analysis and confidence calibration")
     ap.add_argument("--model", default="Ar")
     ap.add_argument("--start", type=int, default=200401)
     ap.add_argument("--end", type=int, default=None, help="default: latest basho")
@@ -125,15 +120,19 @@ def main():
                     help="bag replicates, e.g. 0-2 (default 0); the first drives the residual "
                          "sections, all of them the seed-spread section")
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
-                    help="model option override, as in backtest.py")
+                    help="model option override, as in `banzuke backtest`")
     ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
     ap.add_argument("--fresh", action="store_true", help="ignore cached predictions")
-    args = ap.parse_args()
+    ap.set_defaults(run=run, _parser=ap)
+    return ap
 
+
+def run(args):
     seeds = parse_seeds(args.seeds)
     kwargs = parse_sets(args.set)
-    tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
-    trans = pd.read_parquet(PROCESSED / "transitions.parquet")
+    processed = require_processed()
+    tidy = pd.read_parquet(processed / "tidy.parquet")
+    trans = pd.read_parquet(processed / "transitions.parquet")
     end = args.end or int(tidy["basho"].max())
     fp = fingerprint(kwargs=kwargs, seeds=seeds)
     cache = SCRATCH / f"preds_{args.model}_{args.start}_{end}_{fp}.parquet"
@@ -232,7 +231,3 @@ def main():
     calibration(preds, trans)
     print()
     conventions.report(trans)
-
-
-if __name__ == "__main__":
-    main()

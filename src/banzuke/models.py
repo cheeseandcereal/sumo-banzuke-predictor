@@ -219,9 +219,9 @@ CONTEXT_ENDS = ["rank_class", "division"]
 def _h2h_wins():
     global _H2H
     if _H2H is None:
-        from banzuke.build import PROCESSED
+        from banzuke.paths import load_bouts
 
-        b = pd.read_parquet(PROCESSED / "bouts.parquet")
+        b = load_bouts()
         _H2H = set(zip(b["basho"], b["winner"], b["loser"]))
     return _H2H
 
@@ -334,7 +334,7 @@ def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, workers=1,
     from multiprocessing import get_context
     from pathlib import Path
 
-    from banzuke.build import PROCESSED
+    from banzuke.paths import OOF_CACHE
 
     lab = trans[trans["position_next"].notna()]
     kwargs = {k: v for k, v in kwargs.items() if k not in ("oof", "seed")}
@@ -345,7 +345,7 @@ def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, workers=1,
     cols = FEATURES + _cols(kwargs.get("extra"))
     key.update(pd.util.hash_pandas_object(lab[["basho", "rikishi_id", "position_next"] + cols],
                                           index=False).to_numpy().tobytes())
-    cache_dir = Path(cache_dir or PROCESSED.parent.parent / "results" / "scratch" / "oof")
+    cache_dir = Path(cache_dir) if cache_dir else OOF_CACHE
     path = cache_dir / f"{key.hexdigest()[:16]}.parquet"
     if path.exists():
         return pd.read_parquet(path)

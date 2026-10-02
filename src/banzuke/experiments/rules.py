@@ -1,14 +1,13 @@
-#!/usr/bin/env python3
 """Candidate committee rules measured on cached Ar frames (built by
-experiments.explain), without retraining. A rule edits the model's order
+`banzuke explain build`), without retraining. A rule edits the model's order
 (pseudo scores), asserts class membership through the resolver's override
 mechanism, or edits the frame columns a resolver convention reads; the frame
 is re-resolved and re-evaluated, exactly paired with V0 (the cached order
 re-resolved by the current resolver). Used for E20 (whose rules now live in
 banzuke.resolver) and for the E22 port check.
 
-    uv run python -m experiments.rules [--start 200401] [--rules R11,R13] [--workers 14]
-    uv run python -m experiments.rules --cache results/scratch/explain/<old fingerprint>
+    banzuke rules [--start 200401] [--rules R11,R13] [--workers 14]
+    banzuke rules --cache results/scratch/explain/<old fingerprint>
 
 A resolver edit changes the fingerprint, so `--cache` names the frames to
 reuse. The `cached` variant scores the sheet as the cache's resolver made it,
@@ -23,23 +22,17 @@ fractional ranks (lower = higher; `f.place` moves a man to a cell), `ov`
 the leads the log left open (E20, E22); the adopted rules are in the
 resolver.
 """
-import argparse
-import sys
-from concurrent.futures import ProcessPoolExecutor
-from pathlib import Path
-
 import numpy as np
 import pandas as pd
 from scipy.stats import wilcoxon
 
-from banzuke.build import SEKIWAKE, KOMUSUBI, MAEGASHIRA, PROCESSED
-from banzuke.harness import DEFAULT_WORKERS, block_bootstrap_ci
+from banzuke.build import SEKIWAKE, KOMUSUBI, MAEGASHIRA
+from banzuke.harness import block_bootstrap_ci
 from banzuke.metrics import evaluate
 from banzuke.overrides import OverrideError
+from banzuke.paths import EXPLAIN_CACHE as SCRATCH
 from banzuke.resolver import forced_claims, resolve
-from experiments.explain import cache_dir
 
-SCRATCH = Path(__file__).resolve().parent.parent / "results" / "scratch" / "explain"
 WINDOWS = [("full 2004-2026", 0, 999999), ("2004-2018", 0, 201811), ("2019+", 201901, 999999),
            ("confirm 2020+", 202001, 999999)]
 
@@ -180,54 +173,3 @@ def paired(per, names, lo, hi):
                     "d_gtb": (x["gtb_points"] - b["gtb_points"]).mean(),
                     "d_sanyaku": (x["sanyaku_exact"] - b["sanyaku_exact"]).mean()})
     return pd.DataFrame(out).set_index("variant"), len(b), b["exact_n"].mean(), b["mae"].mean()
-
-
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--start", type=int, default=200401)
-    ap.add_argument("--rules", default=",".join(RULE_FUNCS), help="comma-separated RULE_FUNCS keys")
-    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
-    ap.add_argument("--seeds", type=int, default=3)
-    ap.add_argument("--cache", default=None, metavar="DIR",
-                    help="explain cache to reuse (default: the current fingerprint's)")
-    args = ap.parse_args()
-    d = Path(args.cache) if args.cache else cache_dir({}, list(range(args.seeds)))
-    files = sorted(d.glob("rows_*.parquet"))
-    if not files:
-        sys.exit(f"no cached frames under {d}; run `python -m experiments.explain build` or pass --cache")
-    rows = pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
-    rows = rows[rows["target"] >= args.start]
-    tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
-    names = args.rules.split(",")
-    variants = {r: [RULE_FUNCS[r]] for r in names}
-    if len(names) > 1:  # the rules applied together, in the order given
-        variants["ALL"] = [RULE_FUNCS[r] for r in names]
-    tasks = [(t, g, tidy[tidy["basho"] == t], variants) for t, g in rows.groupby("target")]
-    out = []
-    with ProcessPoolExecutor(args.workers) as ex:
-        for k, r in enumerate(ex.map(run_target, tasks, chunksize=2), 1):
-            out += r
-            print(f"\r{k}/{len(tasks)} targets", end="", file=sys.stderr, flush=True)
-    print(file=sys.stderr)
-    res = pd.DataFrame(out)
-    res.to_parquet(SCRATCH / "rules_results.parquet", index=False)
-    v0 = res[res["variant"] == "V0"]
-    print(f"V0 reproduces the cached sheet in {v0['repro'].mean():.3f} of frames; "
-          f"variant resolves failed: {int(res['fail'].sum())}")
-    noop = (res[res["variant"].isin(variants)].groupby("variant")["changed"].agg(lambda c: int((c > 0).sum())))
-    print("frames changed per variant: " + ", ".join(f"{v} {n}" for v, n in noop.items()))
-    per = res.groupby(["variant", "target"]).mean(numeric_only=True).reset_index()
-    pd.set_option("display.width", 220)
-    order = [v for v in list(variants) if v in set(per["variant"])]
-    if not v0["repro"].all():
-        # the cache was built by an older resolver: V0 (current) is the baseline,
-        # `cached` the old resolver's sheet, V0 - cached the value of the change
-        order = ["cached"] + order
-    for w, lo, hi in WINDOWS:
-        tab, n, ex0, mae0 = paired(per, order, lo, hi)
-        print(f"\n=== {w}: {n} basho, V0 exact {ex0:.3f} MAE {mae0:.4f}; paired deltas vs V0 (seeds averaged) ===")
-        print(tab.round(4).to_string())
-
-
-if __name__ == "__main__":
-    main()

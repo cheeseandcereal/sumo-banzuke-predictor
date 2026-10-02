@@ -1,11 +1,10 @@
-#!/usr/bin/env python3
 """E19: per-basho explain dumps, miss docket and pair calibration for Ar.
 
-    uv run python -m experiments.explain build --start 201901 --end 202609 --seeds 3 --workers 14
-    uv run python -m experiments.explain sheet 202101 [--seed 0] [--all]      # side-by-side banzuke
-    uv run python -m experiments.explain explain 202101 [--seed 0] [--all]    # per-rikishi stage table
-    uv run python -m experiments.explain docket --start 201901               # every missed cell, classified
-    uv run python -m experiments.explain calibration                         # pair probability reliability
+    banzuke explain build --start 201901 --end 202609 --seeds 3 --workers 14
+    banzuke explain sheet 202101 [--seed 0] [--all]      # side-by-side banzuke
+    banzuke explain explain 202101 [--seed 0] [--all]    # per-rikishi stage table
+    banzuke explain docket --start 201901               # every missed cell, classified
+    banzuke explain calibration                         # pair probability reliability
 
 `build` mirrors the backtest harness frame by frame (train on next_basho < T,
 candidates from the T-1 banzuke, rolling OOF scores for the pair stage) and
@@ -24,28 +23,25 @@ from the actual order), base (the base order was wrong and the reranker did not
 fix it), resolver (the final order was right, the resolver's rules or layout moved
 the cell).
 """
-import argparse
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
 from itertools import combinations
 from multiprocessing import get_context
-from pathlib import Path
 
 import numpy as np
 import pandas as pd
 
 from banzuke import confidence
-from banzuke.build import YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO, PROCESSED
-from banzuke.harness import DEFAULT_WORKERS, fingerprint, parse_sets
+from banzuke.build import YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO
+from banzuke.experiments import precedent
+from banzuke.harness import fingerprint, parse_sets
 from banzuke.metrics import evaluate
 from banzuke.models import GBMRerank, _gap_pairs, _twin_units
 from banzuke.overrides import OverrideError
+from banzuke.paths import EXPLAIN_CACHE as SCRATCH, PROCESSED
 from banzuke.resolver import forced_claims, resolve
-from experiments import precedent
 
-ROOT = Path(__file__).resolve().parent.parent
-SCRATCH = ROOT / "results" / "scratch" / "explain"
 PAIR_GAP = 5.0          # record pair probabilities for every pair this close in base score
                         # (clusters span up to 4.4 points: every in-cluster pair is present)
 VERSION = 2             # bump to invalidate caches when the dump format changes
@@ -325,7 +321,7 @@ def load(kind, args=None):
     d = cache_dir(kwargs, seeds)
     files = sorted(d.glob(f"{kind}_*.parquet"))
     if not files:
-        sys.exit(f"no {kind} cache under {d}; run build first")
+        sys.exit(f"no {kind} cache under {d}; run `banzuke explain build` first")
     return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
 
 
@@ -630,54 +626,3 @@ def calibration(args):
         print()
     conf = pr[(pr["p"] - .5).abs() >= .3]
     print(f"confident pairs (|p-.5| >= .3): {len(conf)}, accuracy {((conf['p'] >= .5) == conf['i_above']).mean():.3f}")
-
-
-# --- main --------------------------------------------------------------------------
-
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=("build", "sheet", "explain", "docket", "calibration"))
-    ap.add_argument("target", nargs="?", type=int)
-    ap.add_argument("--start", type=int, default=201901)
-    ap.add_argument("--end", type=int, default=None)
-    ap.add_argument("--seeds", type=int, default=3)
-    ap.add_argument("--seed", type=int, default=0, help="sheet/explain: which seed's frame")
-    ap.add_argument("--all", action="store_true", help="sheet/explain: every cached target >= --start")
-    ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE")
-    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS)
-    args = ap.parse_args()
-    if args.cmd == "build":
-        return build(args)
-    if args.cmd == "docket":
-        return docket(args)
-    if args.cmd == "calibration":
-        return calibration(args)
-    rows, frames = load("rows", args), load("frames", args)
-    tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
-    targets = sorted(t for t in rows["target"].unique() if t >= args.start) if args.all else [args.target]
-    if targets == [None]:
-        ap.error("give a target or --all")
-    if args.cmd == "sheet":
-        out = SCRATCH / "sheets"
-        out.mkdir(exist_ok=True)
-        for t in targets:
-            text = sheet_text(rows, frames, tidy, t, args.seed)
-            (out / f"{t}.txt").write_text(text + "\n")
-            if not args.all:
-                print(text)
-    else:
-        pairs = load("pairs", args)
-        trans = pd.read_parquet(PROCESSED / "transitions.parquet")
-        out = SCRATCH / "basho"
-        out.mkdir(exist_ok=True)
-        for t in targets:
-            text = explain_text(rows, pairs, frames, tidy, trans, t, args.seed)
-            (out / f"{t}.txt").write_text(text + "\n")
-            if not args.all:
-                print(text)
-    if args.all:
-        print(f"wrote {len(targets)} files under {out}")
-
-
-if __name__ == "__main__":
-    main()

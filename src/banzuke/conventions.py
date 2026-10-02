@@ -7,12 +7,12 @@ the recent past and names its last violation: drift becomes loud instead of
 silent. A few regularities the resolver does not enforce are tracked too
 ("watch"). Cells read violations/cases.
 
-    uv run python -m banzuke.conventions      # also printed by analyze.py
+    banzuke conventions      # also printed by `banzuke analyze`
 """
 import numpy as np
 import pandas as pd
 
-from banzuke.build import YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA, PROCESSED
+from banzuke.build import YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI, MAEGASHIRA
 from banzuke.resolver import block_slots, forced_claims, rule_masks
 
 LAYOUT = {YOKOZUNA: "layout: yokozuna block", OZEKI: "layout: ozeki block (odd -> lighter column)",
@@ -163,7 +163,3 @@ def report(trans: pd.DataFrame) -> None:
     print("=== convention audit: violations/cases ('!' first exception since 2004 is recent,"
           " '~' recent rate above the 2004+ rate) ===")
     print(tab.to_string(index=False))
-
-
-if __name__ == "__main__":
-    report(pd.read_parquet(PROCESSED / "transitions.parquet"))

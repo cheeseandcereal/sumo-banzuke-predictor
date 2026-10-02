@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Run the model bake-off over a window of historical basho.
 
 Per-(configuration, model, seed, basho) results are cached in results/scratch/
@@ -7,10 +6,9 @@ module that affects results, the lockfile and the configuration, so editing
 code, rebuilding data or changing a parameter invalidates it automatically;
 --fresh forces recomputation.
 
-Examples:
-    uv run python backtest.py                        # all models, 2004+
-    uv run python backtest.py --models Ar,Aq --seeds 0-1 --end 201911
-    uv run python backtest.py --models Ar --set base.n_estimators=600 --baseline Ar
+    banzuke backtest                                   # all models, 2004+
+    banzuke backtest --models Ar,Aq --seeds 0-1 --end 201911
+    banzuke backtest --models Ar --set base.n_estimators=600 --baseline Ar
 
 --set KEY=VALUE (repeatable) overrides a model option: dotted keys address
 the LightGBM stages (base.*, pair.*), bare keys are model options (n_seeds,
@@ -18,19 +16,15 @@ gap, cluster_max, context, near_ties, half_life, ...). --baseline MODEL runs
 that model's defaults alongside and pairs every row against them
 (MODEL:label for another configuration present in the results).
 """
-import argparse
 import sys
-from pathlib import Path
 
 import pandas as pd
 
+from banzuke.cli._common import CommandError, subcommand
 from banzuke.harness import (DEFAULT_WORKERS, fingerprint, parse_seeds, parse_sets, run_backtest,
                              summarize)
 from banzuke.models import MODELS
-
-PROCESSED = Path(__file__).parent / "data" / "processed"
-RESULTS = Path(__file__).parent / "results"
-CACHE = RESULTS / "scratch" / "backtest_cache.parquet"
+from banzuke.paths import BACKTEST_CACHE as CACHE, RESULTS, require_processed
 
 # committee behavior drifts; screen/confirm are the tuning windows of
 # docs/EXPERIMENTS.md protocol v2
@@ -40,9 +34,8 @@ SHOW = ["n", "exact_n", "gtb_points", "mae", "within1", "promo_f1", "demo_f1",
         "sanyaku_exact", "d_exact", "ci_exact", "p_exact", "wl", "d_mae", "ci_mae", "p_mae"]
 
 
-def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+def add_parser(sub):
+    ap = subcommand(sub, "backtest", __doc__, "rolling-origin backtest of the models")
     ap.add_argument("--models", default=",".join(MODELS), help="comma-separated model names")
     ap.add_argument("--start", type=int, default=200401,
                     help="first target basho (default 200401: start of the 42-man, "
@@ -62,8 +55,11 @@ def main():
                     help="ignore training transitions before this basho "
                          "(e.g. 201001); default: all history since 1959")
     ap.add_argument("--fresh", action="store_true", help="recompute instead of using the cache")
-    args = ap.parse_args()
+    ap.set_defaults(run=run, _parser=ap)
+    return ap
 
+
+def run(args):
     pd.set_option("display.width", 250)
     if args.summarize:
         print_summaries(pd.concat([pd.read_csv(f) for f in args.summarize.split(",")]),
@@ -73,18 +69,19 @@ def main():
     names = args.models.split(",")
     unknown = set(names) - set(MODELS)
     if unknown:
-        ap.error(f"unknown models: {unknown}; available: {list(MODELS)}")
+        raise CommandError(f"unknown models: {unknown}; available: {list(MODELS)}")
     seeds = parse_seeds(args.seeds)
     configs = {",".join(args.set) or "base": parse_sets(args.set)}
     if args.baseline in MODELS or (args.baseline or "").endswith(":base"):
         configs.setdefault("base", {})
 
-    tidy = pd.read_parquet(PROCESSED / "tidy.parquet")
-    trans = pd.read_parquet(PROCESSED / "transitions.parquet")
+    processed = require_processed()
+    tidy = pd.read_parquet(processed / "tidy.parquet")
+    trans = pd.read_parquet(processed / "transitions.parquet")
     end = args.end or int(tidy["basho"].max())
     targets = [b for b in sorted(tidy["basho"].unique()) if args.start <= b <= end]
     if not targets:
-        ap.error(f"no target basho in {args.start}..{end}")
+        raise CommandError(f"no target basho in {args.start}..{end}")
     if args.train_start:
         n_train = int(tidy["basho"].between(args.train_start, targets[0]).sum()) - 1
         if n_train < 30:
@@ -137,7 +134,3 @@ def print_summaries(results, baseline=None):
         print(f"\n=== {label} ({sub['basho'].nunique()} basho, {sub['seed'].nunique()} "
               f"seed(s); paired vs {s.attrs['baseline']}) ===")
         print(s[SHOW].round(3).to_string())
-
-
-if __name__ == "__main__":
-    main()

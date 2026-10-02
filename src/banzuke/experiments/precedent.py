@@ -1,10 +1,9 @@
-#!/usr/bin/env python3
 """Committee precedent queries over transitions.parquet, always with counts.
 
-    uv run python -m experiments.precedent landing "K1 5-10"
-    uv run python -m experiments.precedent landing "M1 8-7" --where "year>=2010"
-    uv run python -m experiments.precedent pair "K 5-10" "M9-10 10-5"
-    uv run python -m experiments.precedent cells "S 7-8"      # landing cells, counted
+    banzuke precedent landing "K1 5-10"
+    banzuke precedent landing "M1 8-7" --where "year>=2010"
+    banzuke precedent pair "K 5-10" "M9-10 10-5"
+    banzuke precedent cells "S 7-8"      # landing cells, counted
 
 Spec grammar: <class>[<number>|<lo>-<hi>][E|W] <record>
     class   Y O S K M J
@@ -12,13 +11,9 @@ Spec grammar: <class>[<number>|<lo>-<hi>][E|W] <record>
 Windows: all (1959+), 2004+ (modern, 42-man makuuchi), last60 (the 60 most
 recent transitions). `--where` is a pandas query on the transition columns.
 """
-import argparse
 import re
 
 import numpy as np
-import pandas as pd
-
-from banzuke.build import PROCESSED
 
 CLS = "YOSKMJ"
 SPEC = re.compile(r"^([YOSKMJ])(?:(\d+)(?:-(\d+))?)?([EW])?$")
@@ -139,23 +134,3 @@ def fmt_pair(spec_a, spec_b, res):
         rate = f"{r['rate']:.2f}" if r["n"] else "-"
         lines.append(f"  {w:7s} {r['a_above']} of {r['n']} ({rate})")
     return "\n".join(lines)
-
-
-def main():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("cmd", choices=("landing", "pair", "cells"))
-    ap.add_argument("spec", nargs="+")
-    ap.add_argument("--where", default=None, help="pandas query on transition columns")
-    args = ap.parse_args()
-    t = labeled(pd.read_parquet(PROCESSED / "transitions.parquet"))
-    if args.cmd in ("landing", "cells"):
-        for spec in args.spec:
-            print(fmt_landing(spec, landing(t, spec, args.where)))
-    else:
-        if len(args.spec) != 2:
-            ap.error("pair needs two specs")
-        print(fmt_pair(*args.spec, pair_rate(t, *args.spec, args.where)))
-
-
-if __name__ == "__main__":
-    main()

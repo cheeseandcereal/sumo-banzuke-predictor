@@ -2,6 +2,7 @@
 name = "sumo-banzuke"
 version = "0.1.0"
 description = "Predict the next makuuchi banzuke from basho results"
+readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "pandas>=3.0.6",
@@ -11,7 +12,20 @@ dependencies = [
     "scipy>=1.18.1",
 ]
 
+[project.scripts]
+banzuke = "banzuke.cli:main"
+
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
 ]
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "banzuke"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

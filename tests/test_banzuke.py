@@ -2,7 +2,6 @@
 resolver conventions, model seed/option semantics, bagging, reranking, OOF
 scores, backtest determinism, summarize() statistics, predict() assembly,
 forced S/K claims, confidence signals and review items."""
-import sys
 from itertools import product
 from pathlib import Path
 
@@ -10,22 +9,18 @@ import numpy as np
 import pandas as pd
 import pytest
 
-ROOT = Path(__file__).resolve().parent.parent  # the package is not installed
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
-
-import predict  # noqa: E402
-from banzuke import confidence  # noqa: E402
-from banzuke.build import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA  # noqa: E402
-from banzuke.features import FEATURES, build_transitions  # noqa: E402
-from banzuke.harness import METRICS, parse_seeds, parse_sets, run_backtest, summarize  # noqa: E402
-from banzuke.metrics import evaluate  # noqa: E402
-from banzuke.models import (MODELS, GBMMedian, GBMRanker, GBMRerank, RulesBaseline,  # noqa: E402
+from banzuke import confidence
+from banzuke.build import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
+from banzuke.cli import predict
+from banzuke.features import FEATURES, build_transitions
+from banzuke.harness import METRICS, parse_seeds, parse_sets, run_backtest, summarize
+from banzuke.metrics import evaluate
+from banzuke.models import (MODELS, GBMMedian, GBMRanker, GBMRerank, RulesBaseline,
                             _gap_pairs, _seeds, _twin_units, _window_pairs, oof_base_scores)
-from banzuke.overrides import parse  # noqa: E402
-from banzuke.resolver import block_slots, forced_claims, resolve  # noqa: E402
+from banzuke.overrides import parse
+from banzuke.paths import PROCESSED, ROOT
+from banzuke.resolver import block_slots, forced_claims, resolve
 
-PROCESSED = ROOT / "data" / "processed"
 SMALL = {"n_seeds": 1, "base": {"n_estimators": 20}}  # the GBMs default to a 5-seed bag
 CELL = ["pred_class", "pred_number", "pred_side"]
 
@@ -575,7 +570,7 @@ def test_explain_reconstructs_rerank_and_isolates_structural_shift(small_train, 
     """experiments.explain: the step-by-step reranker reconstruction reproduces
     GBMRerank.score (with and without twin units), and the miss decomposition
     charges an over-created komusubi slot to the structure, not to the rows below."""
-    from experiments.explain import decompose, rerank_detail
+    from banzuke.experiments.explain import decompose, rerank_detail
 
     kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
     for twin_unit, target in (("sk", 200401), ("all", 202609)):
