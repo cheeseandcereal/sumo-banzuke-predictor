@@ -17,11 +17,8 @@ import pandas as pd
 from banzuke.paths import PROCESSED, RAW_BANZUKE, RAW_BASHO
 from banzuke.ranks import CLASS_ORD
 
-# Raw records where a scheduled bout has `result: ""`, so the API's own
-# wins/losses are short by one. (basho, rikishiID) -> {bout index: result}.
-# 202507 day 15: the torikumi (/api/basho/202507/torikumi/Juryo/15) has
-# Nishikigi over Fujiseiun by kotenage; a 2026-10 re-fetch of the banzuke
-# still returns the blank. Nishikigi J1E 7-7 -> 8-7, Fujiseiun J8W 9-5 -> 9-6.
+# raw records with a blank scheduled bout, (basho, rikishiID) -> {bout index: result};
+# 202507 day 15 per the torikumi: Nishikigi over Fujiseiun (7-7 -> 8-7, 9-5 -> 9-6)
 CORRECTIONS = {
     (202507, 16): {14: "win"},
     (202507, 82): {14: "loss"},

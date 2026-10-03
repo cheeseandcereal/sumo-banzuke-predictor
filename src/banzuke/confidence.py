@@ -14,10 +14,7 @@ from banzuke.overrides import OverrideError
 from banzuke.ranks import CLS_CHARS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, fmt_cell, fmt_record
 from banzuke.resolver import forced_claims, resolve
 
-# Ar model, 2024-2026 backtest, 3 seeds, exact / far (>1 position off):
-# score 0 60% / 11%, score 1 35% / 22%, score 2+ 25% / 37%.
-# Incumbents moving 8+ half-ranks: climbs 36% exact, drops 25% / 43% far;
-# juryo promotees landing 8+ cells above the last makuuchi cell 25% / 67%.
+# calibration of the tiers and the big-move flag: docs/MODEL.md 7, `banzuke analyze`
 TIGHT_GAP = 0.25  # base-score gap below which a boundary is a tight call
 BIG_MOVE = 8      # half-ranks
 

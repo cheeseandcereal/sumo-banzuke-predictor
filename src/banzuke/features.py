@@ -23,16 +23,9 @@ FEATURES = [
     "rank_protected",
 ]
 
-# rank_protected (in FEATURES since E23): the committee did not count a full
-# absence against the man (kosho era 1972-2003: kosho granted; 2004+: the
-# PROTECTED table).
-# (basho, rikishi_id) of full-kyujo men (0 wins, 8+ absences) since the kosho
-# system ended whose rank was frozen: the last kosho cases (200401), the
-# Tamanoi stable's COVID withdrawal (202009), the JSA's Hatsu 2021 COVID
-# exemptions (202101, 14 men), Miyagino (202109), Tagonoura and Nishikido
-# (202201), Ichinojo's positive test (202205), Takayasu (202207). Sources: the
-# JSA statements as quoted on Wikipedia's "2021 in sumo" / "2022 in sumo";
-# every row has delta <= 3 while every other such row since 2004 dropped 11+.
+# (basho, rikishi_id) of full-kyujo men since the kosho system ended whose
+# rank was frozen by a JSA exemption (the last kosho cases, the 2020-2022
+# COVID withdrawals): the modern half of rank_protected, docs/MODEL.md 2.2
 PROTECTED = {
     (200401, 3850), (200401, 4066), (200401, 3748),
     (202009, 18), (202009, 121),

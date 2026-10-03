@@ -33,7 +33,8 @@ predicted makuuchi banzuke for 202611 (from 202609 results, model Ar, 5-seed bag
   M16  ?   Kitanowaka     ( J6E 11-4)        ?   Arashifuji     ( J5W 10-5)
   M17  ?   Daiseizan      ( J2E 8-7)
 
-(! created slot, ?? very low confidence, ? low confidence, ~ big move)
+review (least confident first; ! created slot, ?? very low confidence, ? low confidence, ~ big move):
+  ...
 
 notes:
   - Atamifuji: ozeki run, 20 wins over last 2 basho in sanyaku
@@ -199,4 +200,4 @@ restrict training to newer transitions. Tested and neutral-to-worse
 (docs/EXPERIMENTS.md E9): the era features already let the models
 specialize to the modern regime, so full history remains the default.
 
-`uv run pytest -q` runs the regression tests (a few seconds).
+`uv run pytest -q` runs the regression tests (about ten seconds).

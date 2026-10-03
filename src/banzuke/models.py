@@ -306,24 +306,16 @@ def twin_units(cands, scope):
 
 class GBMRerank(GBMMedian):
     """Ar: Aq's global order, with a pair classifier reordering clusters of
-    near-equal base scores (E/W flips and off-by-one placements are most of
-    the misses; the committee resolves them by wins, then prior order).
-
-    pair_window: training pairs within this current-position distance
-    near_ties: also train on near-ties under rolling out-of-fold base scores
-        (within oof_gap), the pairs the reranker actually adjudicates; needs
-        the OOF table `oof`, which prepare() supplies
-    context: append absolute/era context to the pair feature differences
-    gap, cluster_max: cluster break when consecutive base scores differ by
-        more than gap; largest cluster the reranker may reorder
-    twin_unit: "" / "sk" / "all": E and W of one rank number with identical
-        records (of S/K, or S/K/M/J) form one unit in the reranker: clustered
-        at their mean base score, compared with a rival by the mean of the
-        members' pair probabilities, expanded E then W. Borda otherwise
-        separates such a pair by a full point (their mutual comparison is
-        certain) and drops any rival the classifier is unsure about between
-        them. The committee never splits S/K twins, so "sk" is the default;
-        "all" was neutral-to-worse (E17)
+    near-equal base scores (docs/MODEL.md 4). Options (4.6):
+    pair_window   training pairs within this current-position distance
+    near_ties     also train on OOF near-ties within oof_gap; needs the OOF
+                  table `oof`, which prepare() supplies
+    context       append absolute/era context to the pair feature differences
+    gap, cluster_max  cluster break in base score; largest reorderable cluster
+    twin_unit     "" / "sk" / "all": identical-record E/W twins of those
+                  classes are one unit (clustered at their mean base score,
+                  compared by the mean of their pair probabilities, written
+                  back E then W), so Borda cannot drop a rival between them
     """
 
     name = "Ar"

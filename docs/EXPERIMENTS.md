@@ -6,7 +6,7 @@ results. Architecture: per-rikishi ordering model + structure resolver
 make-koshi ceiling). The ordering objective is the experiment axis;
 all contenders share the same features, resolver, and backtest.
 
-## Protocol
+## Protocol (v1, superseded by v2 below for everything from E11 on)
 
 - Rolling-origin backtest: predict each target basho using only
   strictly-prior transitions; models retrained per target.
@@ -49,7 +49,7 @@ change correlates -0.96 with the change in exact slots.
   first untouched test is the 202611 banzuke.
 - Baseline: `Ar`, explicit seed 0, 600/400 rounds, everything else as
   in E10. LightGBM's unset seed (used before this round) is a different
-  model; backtest and predict.py now share one seeded configuration.
+  model; `banzuke backtest` and `banzuke predict` share one seeded configuration.
 - Information policy: the forecast is sized like the previous banzuke
   (constant 42 since 2004; -0.02 slots vs reading the target's size,
   which the harness did before). Candidate exclusion of announced
@@ -71,14 +71,14 @@ change correlates -0.96 with the change in exact slots.
   2012-2019); guardrails dExact >= -0.2, promotion/demotion F1 and
   sanyaku-set exactness >= -0.01. Ties go to the simpler configuration.
   p-values after a search are exploratory and reported as such.
-- Reproduction: rows quote `backtest.py --set` overrides relative to
+- Reproduction: rows quote `--set` overrides relative to
   the pre-round defaults, which from the current ones are
   `--set n_seeds=1 --set base.n_estimators=600 --set pair.n_estimators=400
   --set near_ties=false --set context=false --set gap=0.5 --set cluster_max=4`
   (`--set n_seeds=5` for "bag5"). Options that lost and were removed
   afterwards (near-tie-only pair training, L2 blending, h2h/context for
   C) are not reproducible without restoring them from git history.
-  Per-basho CSVs live in the git-ignored `results/scratch/`.
+  Per-basho CSVs live in the git-ignored `cache/` (`--out cache/...`).
 
 ### Baseline under protocol v2 (Ar, seeds 0-4 averaged)
 
@@ -1367,7 +1367,7 @@ unless stated.
   conditions); the thin cases left to the reviewer are a yusho after a
   12-3 jun-yusho (1/3 since 2004), a jun-yusho after a yusho (1/2),
   Asanoyama's 32-win promotion over the cancelled 202005 and Takakeisho's
-  declined 33 (201903); predict.py lists every Y/O promotion under `notes:`
+  declined 33 (201903); `banzuke predict` lists every Y/O promotion under `notes:`
   with the results behind it, so the call is visible.
 - COVID-era kadoban exemptions (Mitakeumi 2022) are not modeled beyond the
   kadoban flag surviving the exempted basho (E22 note).

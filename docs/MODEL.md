@@ -462,7 +462,7 @@ flowchart TD
    If the model ranks the West man of a pair with one rank number and the
    same W-L-A above the East man, the two exchange places in the order;
    nobody else moves. The committee has never swapped such a pair:
-   0/437 since 2004, 0/1514 since 1959. (`keep_twin_order`)
+   0/436 since 2004, 0/1514 since 1959. (`keep_twin_order`)
 
 3. **A yokozuna is never demoted.** Every yokozuna incumbent is a
    yokozuna on the next sheet, whatever his record (0 exceptions in 864
@@ -675,7 +675,7 @@ when the cell has fewer than 5 cases) and the footprint of denying it
 (the sheet re-resolved with him asserted to maegashira: cells that shift,
 who stays in makuuchi). Hint: `--class Name=M`.
 
-**Notes** (`predict.notes`): every yokozuna promotion ("yusho 13-2 after
+**Notes** (`forecast.notes`): every yokozuna promotion ("yusho 13-2 after
 yusho 12-3", or "by override" when no rule explains it), every ozeki
 promotion ("34 wins over last 3 basho in sanyaku" / "one of them at M1" /
 "by override") and return, ozeki who will be kadoban at the target, S/K

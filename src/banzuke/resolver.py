@@ -1,27 +1,12 @@
 """Turn a model's candidate ordering into a labeled banzuke.
 
-Philosophy: rule knowledge lives in model features; this stage applies only
-the near-inviolable structure. Hard-coded here:
-- yokozuna are never demoted; Y/O membership changes follow the classic
-  promotion/kadoban conventions (rare events, unlearnable from data)
-- yokozuna who stay and ozeki who stay are ordered by wins, then yusho,
-  then having fought, then prior position (693/693 pairs since 2004)
-- a sanyaku incumbent with kachi-koshi does not drop out of his class
-- make-koshi sekiwake and komusubi leave sanyaku, except a 7-win sekiwake
-  (a komusubi slot) and a K1E with 7 wins (the model decides)
-- a demoted ozeki is the bottom sekiwake; komusubi newcomers rank below
-  kachi-koshi komusubi incumbents
-- minimum 2 sekiwake and 2 komusubi; extra slots emerge when forced, but
-  M1 claims with 8-9 wins never create one for a falling sekiwake
-- no-promotion ceiling for make-koshi S/K/M, including E/W
-- E/W of one M/J rank number with identical records keep their order
-Vacancies, maegashira placement, and the juryo boundary follow the model's
-ordering subject to these constraints. Precedent counts: docs/EXPERIMENTS.md
-E10, E15a, E16, E20, E22 and `banzuke conventions`.
-
-Human overrides (see banzuke.overrides) may force class membership,
-sanyaku counts, or exact cells. They take precedence over the
-conventions above; each convention broken is reported via `warnings`.
+Rule knowledge lives in model features; this stage applies only the
+structure the committee treats as near-inviolable: Y/O membership and
+order, forced S/K claims and make-koshi exits, the sanyaku minimums, the
+make-koshi ceiling, the E/W layout. docs/MODEL.md 5 lists every rule with
+its precedent; `banzuke conventions` recounts them on the current data.
+Human overrides (banzuke.overrides) outrank the conventions; each one
+broken is reported via `warnings`.
 """
 import numpy as np
 import pandas as pd
@@ -60,9 +45,8 @@ def block_slots(c, n, ne, nw):
 
 def forced_claims(df: pd.DataFrame) -> dict:
     """Boolean masks (aligned with df) of who holds a forced claim on an S/K
-    slot: kk incumbents, kadoban make-koshi ozeki dropping to S, komusubi
-    with 11+ wins (historically always given a sekiwake slot), and upper
-    maegashira whose scores land sanyaku >=85% of the time (1990+). Blocks
+    slot: kk incumbents, a kadoban make-koshi ozeki dropping to S, a komusubi
+    with 11+ wins, upper maegashira with the wins of MODEL.md rule 10. Blocks
     grow past the minimum of 2 when claims exceed it."""
     cls = df["rank_class"].to_numpy()
     num = df["rank_number"].to_numpy()
@@ -84,24 +68,16 @@ def forced_claims(df: pd.DataFrame) -> dict:
 
 def rule_masks(df: pd.DataFrame) -> dict:
     """Boolean masks (aligned with df; df may hold several basho) for the
-    membership conventions the resolver applies, from the frame alone.
-    Counts are 2004+ (docs/EXPERIMENTS.md E20, E22):
-    y_promo   ozeki with a yusho after a yusho or a 12+ jun-yusho that was
-              fought as ozeki (6/8 promoted; 0/3 when it was at sekiwake)
-    o_run     S/K with 10+ wins and a 33-win run (32 with yusho) over three
-              sanyaku basho (the classic rule, 16/19)
-    o_run_m   S/K with 12+ wins and a 33-win run where exactly one of the two
-              earlier basho was at M1-M3 and the other in sanyaku (4/4; runs
-              with two maegashira basho 0/3)
+    membership conventions the resolver applies, from the frame alone
+    (docs/MODEL.md 5.1 has each rule's precedent):
+    y_promo   ozeki with a yusho after a yusho or 12+ jun-yusho fought as ozeki
+    o_run     S/K with 10+ wins and a 33-win run (32 with yusho), all at S/K
+    o_run_m   S/K with 12+ wins and a 33-win run, one earlier basho at M1-M3
     o_promo   o_run | o_run_m
     o_return  demoted ozeki with 10+ wins (returns)
-    k_from_s  sekiwake with 7 wins: a forced komusubi slot, when at least two
-              other sekiwake candidates exist (29/29; with fewer candidates the
-              model decides: 4 went to komusubi, Goeido 201207/201305 stayed)
-    exit      make-koshi sekiwake/komusubi who cannot stay in sanyaku: S with
-              <= 6 wins (69/70), K with <= 6 wins (131/132) or with 7 wins
-              anywhere but K1E (24/24); plus the k_from_s men, who leave the
-              sekiwake block. A K1E with 7 wins is left to the model (5/12 kept)
+    k_from_s  7-win sekiwake with two other sekiwake candidates: a komusubi slot
+    exit      make-koshi S/K who cannot stay in sanyaku (a K1E with 7 wins is
+              left to the model), plus the k_from_s men leaving the S block
     m1_weak   M1 claimants with 8-9 wins, who never create a third komusubi
               slot for a falling sekiwake"""
     cls = df["rank_class"].to_numpy()
@@ -146,9 +122,9 @@ def rule_masks(df: pd.DataFrame) -> dict:
 
 def keep_twin_order(df: pd.DataFrame) -> pd.DataFrame:
     """df in score order. E and W of one maegashira/juryo rank number with
-    identical W-L-A records never swap on the next banzuke (0 of 436 pairs
-    since 2004, docs/EXPERIMENTS.md E16); where the model ranks W above E
-    the two exchange places in its order, everyone else stays put."""
+    identical W-L-A records never swap on the next banzuke (MODEL.md rule 2);
+    where the model ranks W above E the two exchange places in its order,
+    everyone else stays put."""
     order = np.arange(len(df))
     side = df["side"].to_numpy()
     mj = df[df["rank_class"] >= MAEGASHIRA]
@@ -305,13 +281,11 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
         # whether a member got in by a forced claim or as a fill ...
         members.sort()
         if c == SEKIWAKE:
-            # ... except that a demoted ozeki is the bottom sekiwake (never above
-            # another sekiwake since 1990, 45 pairs)
+            # ... except that a demoted ozeki is the bottom sekiwake
             members = ([i for i in members if not kadoban_out[i]]
                        + [i for i in members if kadoban_out[i]])
         if c == KOMUSUBI:
             # ... and komusubi newcomers rank below kachi-koshi komusubi incumbents
-            # (47/49 since 2004; adopted on measured value, E22)
             inc = [i for i in members if cls[i] == KOMUSUBI and kk[i]]
             members = inc + [i for i in members if i not in inc]
         taken.update(members)
