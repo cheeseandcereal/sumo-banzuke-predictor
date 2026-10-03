@@ -22,8 +22,8 @@ alternative.
 """
 import sys
 
-from banzuke.cli._common import (CommandError, add_set, add_train_start, add_threads, model_class,
-                                 parse_sets, subcommand)
+from banzuke.cli._common import (CommandError, add_set, add_train_start, add_threads, build_model,
+                                 model_class, parse_sets, subcommand)
 
 SPEC_KEYS = ("above", "below", "class", "count", "pin")
 
@@ -192,7 +192,7 @@ def run(args):
     from banzuke.ranks import fmt_cell, next_basho
     from banzuke.resolver import resolve
 
-    cls = model_class(args.model)
+    model_cls = model_class(args.model)
     trans = load_transitions()
     latest = forecast.latest_basho(trans)
     target = next_basho(latest)
@@ -200,27 +200,22 @@ def run(args):
     if args.train_start:
         print(f"training restricted to {train['basho'].nunique()} basho "
               f"({args.train_start}+)", file=sys.stderr)
-    cands = forecast.candidates(trans, latest)
-
-    retired = [s.strip().lower() for s in args.retired.split(",") if s.strip()]
-    gone = cands["shikona"].str.lower().isin(retired)
-    if retired:
-        print(f"excluding: {', '.join(cands.loc[gone, 'shikona'])}\n")
-    cands = cands[~gone].reset_index(drop=True)
-    protected = [s.strip().lower() for s in args.protected.split(",") if s.strip()]
-    if protected:
-        keep = cands["shikona"].str.lower().isin(protected)
-        missing = sorted(set(protected) - set(cands.loc[keep, "shikona"].str.lower()))
-        if missing:
-            raise CommandError(f"--protected: unknown shikona {missing}")
-        cands.loc[keep, "rank_protected"] = 1
-        print(f"rank protected: {', '.join(cands.loc[keep, 'shikona'])}\n")
+    retired, protected = args.retired.split(","), args.protected.split(",")
+    try:
+        cands = forecast.candidates(trans, latest, retired, protected)
+    except OverrideError as e:
+        raise CommandError(str(e))
+    if any(retired):
+        wanted = {n.strip().lower() for n in retired}
+        on_sheet = trans.loc[trans["basho"] == latest, "shikona"]
+        print(f"excluding: {', '.join(n for n in on_sheet if n.lower() in wanted)}\n")
+    if any(protected):
+        print(f"rank protected: {', '.join(cands.loc[cands['rank_protected'] == 1, 'shikona'])}\n")
 
     # train once; everything downstream is instant
     print("training...", file=sys.stderr)
     kwargs = {**parse_sets(args.set), **({"n_seeds": args.seeds} if args.seeds else {})}
-    kwargs = cls.prepare(kwargs, trans, args.threads, args.train_start)
-    model = cls(**kwargs, threads=args.threads)
+    model = build_model(model_cls, kwargs, trans, args.threads, args.train_start)
     model.fit(train)
     point = model.score(cands)
     per_seed = [model.score(cands, k) for k in range(len(model.seeds))] \
@@ -229,7 +224,7 @@ def run(args):
                      index=cands["rikishi_id"].to_numpy())
     rates = confidence.claim_rates(trans)
 
-    mak_size = args.mak_size or int(cands["mak_size"].iloc[0])
+    mak_size = args.mak_size or forecast.mak_size_of(cands)
     base_pred = resolve(cands, point, mak_size)
     baseline = {r: fmt_cell(c, n, s) for r, c, n, s in zip(
         base_pred["rikishi_id"], base_pred["pred_class"], base_pred["pred_number"],

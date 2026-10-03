@@ -10,8 +10,8 @@ re-measured against the committee's decisions.
 Predictions are cached per (model, window, configuration) under cache/;
 --fresh recomputes them.
 """
-from banzuke.cli._common import (add_seeds, add_set, add_window, add_threads, model_class, parse_seeds,
-                                 parse_sets, subcommand)
+from banzuke.cli._common import (CommandError, add_seeds, add_set, add_window, add_threads,
+                                 model_class, parse_seeds, parse_sets, subcommand)
 
 
 def add_parser(sub):
@@ -36,8 +36,11 @@ def run(args):
     kwargs = parse_sets(args.set)
     tidy, trans = load_tidy(), load_transitions()
     end = args.end or int(tidy["basho"].max())
-    preds = analysis.cached_predictions(args.model, args.start, end, seeds, kwargs, trans, tidy,
-                                        threads=args.threads, fresh=args.fresh)
+    try:
+        preds = analysis.cached_predictions(args.model, args.start, end, seeds, kwargs, trans, tidy,
+                                            threads=args.threads, fresh=args.fresh)
+    except (TypeError, ValueError) as e:
+        raise CommandError(f"--set: {e}")
     analysis.residuals(preds, args.model, args.start, end, seeds)
     analysis.calibration(preds, trans)
     print()

@@ -117,9 +117,12 @@ def backtest_rows(args, targets, tidy):
     from banzuke.paths import load_transitions
 
     configs = {",".join(args.set) or "base": parse_sets(args.set)}
-    results = run_cached([args.model], targets, load_transitions(), tidy, configs,
-                         seeds=parse_seeds(args.seeds), train_start=args.train_start,
-                         threads=args.threads)
+    try:
+        results = run_cached([args.model], targets, load_transitions(), tidy, configs,
+                             seeds=parse_seeds(args.seeds), train_start=args.train_start,
+                             threads=args.threads)
+    except (TypeError, ValueError) as e:
+        raise CommandError(f"--set: {e}")
     return results, str(label_of(results)[0])
 
 

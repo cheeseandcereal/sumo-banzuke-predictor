@@ -63,12 +63,16 @@ def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=
     seeds: one fit per seed (bag replicate); summarize() averages them per basho.
     model_kwargs: per-stage params and options; each model takes the keys it
     declares, and its prepare() hook may add inputs computed once (OOF scores)."""
-    kw_by_model = {}
+    kw_by_model, used = {}, {"n_seeds", "base", "pair"}
     for name in model_names:
-        cls = MODELS[name]
+        model_cls = MODELS[name]
         kw = {k: v for k, v in (model_kwargs or {}).items()
-              if k in ("n_seeds", "base", "pair") or k in cls.OPTIONS}
-        kw_by_model[name] = cls.prepare(kw, trans, threads, train_start)
+              if k in ("n_seeds", "base", "pair") or k in model_cls.OPTIONS}
+        used |= set(model_cls.OPTIONS)
+        kw_by_model[name] = model_cls.prepare(kw, trans, threads, train_start)
+    unknown = set(model_kwargs or {}) - used
+    if unknown:
+        raise ValueError(f"no model in {list(model_names)} has options {sorted(unknown)}")
     per_target = []
     for target in targets:
         jobs = [(n, s) for n in model_names for s in seeds

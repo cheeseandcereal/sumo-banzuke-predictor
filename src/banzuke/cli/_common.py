@@ -89,6 +89,23 @@ def model_class(name):
     return MODELS[name]
 
 
+def model_classes(names):
+    """Comma-separated model names -> classes, in order; None = every model."""
+    from banzuke.models import MODELS
+
+    return [model_class(n) for n in names.split(",")] if names else list(MODELS.values())
+
+
+def build_model(model_cls, kwargs, trans, threads=1, train_start=None):
+    """prepare() and construct a model from --set kwargs; an option the model
+    does not declare, or a bad value, is a usage error rather than a traceback."""
+    try:
+        kwargs = model_cls.prepare(kwargs, trans, threads, train_start)
+        return model_cls(**kwargs, threads=threads)
+    except (TypeError, ValueError) as e:
+        raise CommandError(f"--set: {e}")
+
+
 # --- option value grammar -----------------------------------------------------
 
 def parse_seeds(spec) -> tuple:

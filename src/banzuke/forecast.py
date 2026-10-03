@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from banzuke import confidence
-from banzuke.overrides import splice
+from banzuke.overrides import OverrideError, splice
 from banzuke.ranks import (CLS_NAMES, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA,
                            fmt_cell, fmt_record)
 from banzuke.resolver import resolve
@@ -29,10 +29,32 @@ def training_rows(trans: pd.DataFrame, latest: int, train_start=None) -> pd.Data
     return train
 
 
-def candidates(trans: pd.DataFrame, latest: int) -> pd.DataFrame:
-    """Everyone on the `latest` banzuke who is still around, with context()."""
-    return context(trans[(trans["basho"] == latest) & ~trans["dropped"]].reset_index(drop=True),
-                   trans)
+def candidates(trans: pd.DataFrame, latest: int, retired=(), protected=()) -> pd.DataFrame:
+    """Everyone on the `latest` banzuke who is still around, with context().
+    retired: shikona to leave out (announced retirements). protected: shikona
+    whose full absence the JSA exempted; sets their rank_protected feature.
+    Names are case-insensitive; an unknown one is an OverrideError."""
+    cands = trans[(trans["basho"] == latest) & ~trans["dropped"]].reset_index(drop=True)
+    gone = _named(cands, retired, "--retired")
+    cands = cands[~gone].reset_index(drop=True)
+    cands.loc[_named(cands, protected, "--protected"), "rank_protected"] = 1
+    return context(cands, trans)
+
+
+def mak_size_of(cands: pd.DataFrame) -> int:
+    """The makuuchi size of the banzuke the candidates stand on; the next
+    sheet is sized like it unless told otherwise."""
+    return int(cands["mak_size"].iloc[0])
+
+
+def _named(cands, names, flag):
+    """Boolean mask of the candidates named (case-insensitive)."""
+    wanted = {n.strip().lower() for n in names if n.strip()}
+    mask = cands["shikona"].str.lower().isin(wanted)
+    missing = sorted(wanted - set(cands.loc[mask, "shikona"].str.lower()))
+    if missing:
+        raise OverrideError(f"{flag}: unknown shikona {', '.join(missing)}")
+    return mask
 
 
 def context(cands, trans):

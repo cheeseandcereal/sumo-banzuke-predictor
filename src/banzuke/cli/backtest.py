@@ -20,7 +20,8 @@ import sys
 from pathlib import Path
 
 from banzuke.cli._common import (CommandError, add_seeds, add_set, add_train_start, add_window,
-                                 add_threads, parse_seeds, parse_sets, subcommand, targets_in)
+                                 add_threads, model_classes, parse_seeds, parse_sets, subcommand,
+                                 targets_in)
 
 # committee behavior drifts; screen/confirm are the tuning windows of
 # docs/EXPERIMENTS.md protocol v2
@@ -64,10 +65,7 @@ def run(args):
                         args.baseline)
         return
 
-    names = args.models.split(",") if args.models else list(MODELS)
-    unknown = set(names) - set(MODELS)
-    if unknown:
-        raise CommandError(f"unknown models: {unknown}; available: {list(MODELS)}")
+    names = [m.name for m in model_classes(args.models)]
     seeds = parse_seeds(args.seeds)
     configs = {",".join(args.set) or "base": parse_sets(args.set)}
     if args.baseline in MODELS or (args.baseline or "").endswith(":base"):
@@ -81,8 +79,11 @@ def run(args):
             print(f"warning: first target {targets[0]} has only {n_train} training "
                   f"basho with --train-start {args.train_start}", file=sys.stderr)
 
-    results = run_cached(names, targets, trans, tidy, configs, seeds=seeds,
-                         train_start=args.train_start, threads=args.threads, fresh=args.fresh)
+    try:
+        results = run_cached(names, targets, trans, tidy, configs, seeds=seeds,
+                             train_start=args.train_start, threads=args.threads, fresh=args.fresh)
+    except (TypeError, ValueError) as e:
+        raise CommandError(f"--set: {e}")
     print_summaries(results, args.baseline)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)
