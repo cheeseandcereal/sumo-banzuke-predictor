@@ -15,8 +15,9 @@ from banzuke.cli._common import parse_seeds, parse_sets
 from banzuke.features import FEATURES, build_transitions
 from banzuke.harness import METRICS, run_backtest, summarize
 from banzuke.metrics import evaluate
-from banzuke.models import (MODELS, GBMMedian, GBMRanker, GBMRerank, RulesBaseline,
-                            _gap_pairs, _seeds, _twin_units, _window_pairs, oof_base_scores)
+from banzuke.models import (MODELS, GBMMedian, GBMRanker, GBMRerank, RulesBaseline, _seeds,
+                            _window_pairs, gap_pairs, twin_units)
+from banzuke.oof import OOF_MIN_HISTORY, oof_base_scores, oof_key
 from banzuke.overrides import parse
 from banzuke.paths import ROOT, load_bouts, load_tidy, load_transitions
 from banzuke.resolver import block_slots, forced_claims, resolve
@@ -270,6 +271,8 @@ def test_seed_and_option_semantics():
     assert GBMRanker().truncation == 60
     with pytest.raises(TypeError, match="unknown options"):
         GBMRerank(foo=1)
+    with pytest.raises(ValueError, match="twin_unit"):
+        GBMRerank(twin_unit="yo")
     for cls in MODELS.values():  # a subclass keeps every option an ancestor's fit() reads
         for parent in cls.__mro__[1:]:
             assert set(getattr(parent, "OPTIONS", {})) <= set(cls.OPTIONS), (cls.name, parent)
@@ -298,10 +301,13 @@ def test_rerank_is_deterministic_permutation(small_train, cands_for):
         GBMRerank(seed=0, n_seeds=1, base={"n_estimators": 1}).fit(small_train)
 
 
-def test_default_rerank_trains_on_oof_near_ties(small_train, cands_for, trans):
+def test_default_rerank_trains_on_oof_near_ties(small_train, cands_for):
     # the production configuration: near_ties with the committed OOF table
-    oof = GBMRerank.prepare({}, trans)["oof"]
-    m = GBMRerank(seed=0, **SMALL, pair={"n_estimators": 10}, oof=oof)
+    # (read directly: a stale table is test_committed_oof_table_is_current's
+    # finding, not a reason to rebuild it from here)
+    from banzuke.paths import OOF_TABLE
+
+    m = GBMRerank(seed=0, **SMALL, pair={"n_estimators": 10}, oof=pd.read_parquet(OOF_TABLE))
     m.fit(small_train)
     assert m.pair.oof is not None and m.pair.ms[0].n_features_in_ > len(FEATURES)
     s = m.score(cands_for(200401))
@@ -319,20 +325,20 @@ def test_twin_unit_keeps_identical_record_twins_together(small_train, cands_for)
     changed = 0
     for target in (200401, 200607, 202309, 202609):
         cands = cands_for(target)
-        twins = _twin_units(cands, "all")
+        twins = twin_units(cands, "all")
         assert twins and all(cands.loc[e, "side"] == 0 and cands.loc[w, "side"] == 1
                              and cands.loc[e, "wins"] == cands.loc[w, "wins"] for e, w in twins)
-        assert len(_twin_units(cands, "sk")) <= len(twins)
+        assert len(twin_units(cands, "sk")) <= len(twins)
         s_plain, s_unit = plain.score(cands), unit.score(cands)
         assert sorted(s_unit.tolist()) == list(range(len(cands)))
         assert all(s_unit[w] == s_unit[e] + 1 for e, w in twins)
         changed += not np.array_equal(s_plain, s_unit)
         solo = cands.drop(index=[w for _, w in twins]).reset_index(drop=True)
-        assert not _twin_units(solo, "all")
+        assert not twin_units(solo, "all")
         assert np.array_equal(plain.score(solo), unit.score(solo))
     assert changed  # the option does something on at least one of these sheets
     with pytest.raises(ValueError, match="twin_unit"):
-        _twin_units(cands, "yo")
+        twin_units(cands, "yo")
 
 
 def test_protected_column(trans):
@@ -380,9 +386,9 @@ def test_pair_helpers():
         (0, 1), (0, 2), (1, 2), (1, 3), (2, 3), (2, 4), (3, 4)]
     scores = np.array([0.0, 0.3, 1.0, 1.2, 5.0, np.nan])
     pos = np.array([4, 3, 2, 1, 0, 5])  # current order is the reverse of the scores
-    i, j = _gap_pairs(scores, pos, 0.5)
+    i, j = gap_pairs(scores, pos, 0.5)
     assert set(zip(i.tolist(), j.tolist())) == {(1, 0), (3, 2)}
-    i, j = _gap_pairs(scores, pos, 1.5)
+    i, j = gap_pairs(scores, pos, 1.5)
     pairs = set(zip(i.tolist(), j.tolist()))
     assert pairs == {(b, a) for a in range(5) for b in range(a + 1, 5)
                      if scores[b] - scores[a] <= 1.5}
@@ -405,9 +411,9 @@ def test_oof_scores_are_leak_free_and_cached(trans, tmp_path, monkeypatch):
     again = oof_base_scores(trans, GBMMedian, SMALL, min_history=396, threads=1, cache_dir=tmp_path)
     pd.testing.assert_frame_equal(again, oof)
     # prepare() fills `oof` only when near_ties is on
-    import banzuke.models as models
+    import banzuke.oof as oof_mod
     stub, calls = pd.DataFrame({"basho": [200311], "rikishi_id": [1], "oof": [1.0]}), []
-    monkeypatch.setattr(models, "oof_base_scores", lambda *a, **k: calls.append(a) or stub)
+    monkeypatch.setattr(oof_mod, "oof_base_scores", lambda *a, **k: calls.append(a) or stub)
     assert GBMRerank.prepare(SMALL, trans)["oof"] is stub and len(calls) == 1
     off = {**SMALL, "near_ties": False}
     assert GBMRerank.prepare(off, trans) == off and len(calls) == 1
@@ -417,7 +423,6 @@ def test_committed_oof_table_is_current(trans):
     """data/processed/oof.parquet carries the key of the data and base stage
     it was built from; a data update or base-stage change must rebuild it
     (`banzuke data build`) before the commit."""
-    from banzuke.models import MODELS, OOF_MIN_HISTORY, oof_key
     from banzuke.paths import OOF_TABLE
 
     table = pd.read_parquet(OOF_TABLE)
@@ -426,10 +431,10 @@ def test_committed_oof_table_is_current(trans):
     assert list(table.columns) == ["basho", "rikishi_id", "oof"] and not table["oof"].isna().any()
     labeled = sorted(trans.loc[trans["position_next"].notna(), "basho"].unique())
     assert sorted(table["basho"].unique()) == labeled[OOF_MIN_HISTORY:]
-    # Ah and the pair-stage options share the default table; anything that
-    # changes the base stage, or --train-start, has its own key
-    assert oof_key(trans, MODELS["Ah"], {}) == key
+    # the pair-stage options share the default table; anything that changes
+    # the base stage, or --train-start, has its own key
     assert oof_key(trans, GBMRerank, {"pair": {"n_estimators": 50}, "gap": 0.5, "oof_gap": 3.0}) == key
+    assert oof_key(trans, GBMRerank, {"extra": "kinboshi"}) != key
     assert oof_key(trans, GBMRerank, {"n_seeds": 1}) != key
     assert oof_key(trans, GBMRerank, {}, train_start=200401) != key
     pd.testing.assert_frame_equal(GBMRerank.prepare({}, trans)["oof"], table)
@@ -437,7 +442,6 @@ def test_committed_oof_table_is_current(trans):
 
 def test_stale_oof_table_is_rebuilt_in_place(trans, tmp_path, monkeypatch, capsys):
     from banzuke import paths
-    from banzuke.models import OOF_MIN_HISTORY, oof_key
 
     monkeypatch.setattr(paths, "OOF_TABLE", tmp_path / "oof.parquet")
     monkeypatch.setattr(paths, "OOF_CACHE", tmp_path / "oof")
@@ -477,7 +481,7 @@ def test_backtest_deterministic_and_parallel(trans, tidy):
 def test_backtest_runs_every_model_together(trans, tidy):
     # each model takes only the options it declares; near_ties off: no OOF pass
     kw = {**SMALL, "pair": {"n_estimators": 10}, "near_ties": False}
-    names = ["R", "L", "A", "Aq", "Aw", "B", "C", "Ar"]
+    names = list(MODELS)
     r = run_backtest(names, [202609], trans, tidy, progress=False, model_kwargs=kw)
     assert sorted(r["model"]) == sorted(names) and (r["basho"] == 202609).all()
 

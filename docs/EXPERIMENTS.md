@@ -1286,6 +1286,12 @@ Removed, recoverable from git history before this note:
   sekiwake, has been in the resolver since E22. A future rule search
   starts from `banzuke explain build` and a copy of the resolver, which
   is what the harness amounted to.
+- Models `L`, `Aw`, `C` and `Ah`, with the `half_life` and `h2h` options
+  they were aliases of. Settled nulls (E3, E6, E7, E14); nothing since
+  protocol v2 compared them, and `Ah` was `Ar --set h2h=true`. The
+  registry keeps `R` (the cheap baseline), `A`, `Aq`, `B` (the E14
+  truncation lead) and `Ar`. The OOF table was rebuilt once for the
+  base-stage edit (`half_life` removed); its values are unchanged.
 
 ## Reading a forecast: reviewer checklist (from E19, updated E22-E25)
 

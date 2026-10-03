@@ -12,7 +12,7 @@ code, rebuilding data or changing a parameter invalidates it automatically;
 
 --set KEY=VALUE (repeatable) overrides a model option: dotted keys address
 the LightGBM stages (base.*, pair.*), bare keys are model options (n_seeds,
-gap, cluster_max, context, near_ties, half_life, ...). --baseline MODEL runs
+gap, cluster_max, context, near_ties, extra, ...). --baseline MODEL runs
 that model's defaults alongside and pairs every row against them
 (MODEL:label for another configuration present in the results).
 """

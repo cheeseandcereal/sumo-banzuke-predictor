@@ -42,7 +42,9 @@ notes:
 
 Multiple ordering models (rules formula, linear, gradient-boosted
 regression/ranking/pairwise variants) competed on a shared
-rolling-origin backtest covering every banzuke transition since 1959.
+rolling-origin backtest covering every banzuke transition since 1959
+(the losers are logged in `docs/EXPERIMENTS.md`; the tree keeps the
+baselines `R`, `A`, `Aq` and `B` next to the default).
 The default model used (`Ar`) is a seed-bagged L1 gradient-boosted
 movement model whose near-tie clusters are reordered by a pairwise
 classifier that learned the committee's conflict-resolution habits,

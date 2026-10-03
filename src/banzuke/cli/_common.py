@@ -47,7 +47,7 @@ def add_set(ap, help=None):
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help=help or "model option override, repeatable: dotted keys address the "
                                  "LightGBM stages (base.*, pair.*), bare keys are model options "
-                                 "(n_seeds, gap, cluster_max, context, near_ties, half_life, ...)")
+                                 "(n_seeds, gap, cluster_max, context, near_ties, extra, ...)")
 
 
 def add_seeds(ap, default, help):

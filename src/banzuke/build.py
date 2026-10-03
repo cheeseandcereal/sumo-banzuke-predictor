@@ -5,7 +5,7 @@ Outputs to data/processed/:
 - bouts.parquet: competitive head-to-head wins (fusen excluded)
 - transitions.parquet: tidy + history features + next-basho targets
 - oof.parquet: the default model's rolling out-of-fold base scores, the
-  one training input derived from a model fit (models.oof_base_scores)
+  one training input derived from a model fit (oof.oof_base_scores)
 
 Normally run via `banzuke data update` (fetch, then build) or
 `banzuke data build` (rebuild from the committed raw JSON).
@@ -128,7 +128,8 @@ def main(oof=True, threads=1):
     n_target = trans["position_next"].notna().sum()
     print(f"transitions: {len(trans)} rows, {n_target} with targets")
     if oof:
-        from banzuke.models import GBMRerank, oof_base_scores
+        from banzuke.models import GBMRerank
+        from banzuke.oof import oof_base_scores
 
         table = oof_base_scores(trans, GBMRerank, {}, threads=threads)
         print(f"oof: {len(table)} rows, {table['basho'].nunique()} basho")

@@ -36,7 +36,7 @@ from banzuke import confidence
 from banzuke.experiments import precedent
 from banzuke.harness import fingerprint
 from banzuke.metrics import evaluate
-from banzuke.models import GBMRerank, _gap_pairs, _twin_units
+from banzuke.models import GBMRerank, gap_pairs, twin_units
 from banzuke.overrides import OverrideError
 from banzuke.paths import EXPLAIN_CACHE as SCRATCH
 from banzuke.ranks import (CLS_CHARS as CLS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA,
@@ -68,7 +68,7 @@ def rerank_detail(model, cands, base):
     pos = cands["position"].to_numpy()
     units = [[i] for i in range(len(cands))]
     if model.twin_unit:
-        for e, w in _twin_units(cands, model.twin_unit):
+        for e, w in twin_units(cands, model.twin_unit):
             units[e], units[w] = [e, w], []
     units = [u for u in units if u]
     ubase = np.array([base[u].mean() for u in units])
@@ -113,7 +113,7 @@ def pair_table(model, cands, base, detail):
     """Every pair within PAIR_GAP base points, oriented i = currently higher
     ranked: P(i above j), cluster membership, the actual outcome."""
     pos = cands["position"].to_numpy()
-    i_arr, j_arr = _gap_pairs(base, pos, PAIR_GAP)
+    i_arr, j_arr = gap_pairs(base, pos, PAIR_GAP)
     if not len(i_arr):
         return pd.DataFrame()
     p = model.pair.proba(cands, i_arr, j_arr, base)

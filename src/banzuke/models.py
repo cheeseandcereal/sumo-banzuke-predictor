@@ -4,6 +4,8 @@
     fit(train)       train: transition rows with position_next targets
     score(cands, k)  -> np.ndarray, lower = ranked higher; k scores with one
                         bag member only
+    base_score       the regression stage's score when the model has one
+                     (Ar reranks within it), else None
 
 All models receive the same FEATURES; they differ in objective, which is
 the experiment axis (see docs/EXPERIMENTS.md). base/pair override
@@ -12,17 +14,12 @@ n_seeds*seed .. n_seeds*(seed+1)-1 and averages (the GBMs default to 5);
 seed=None uses LightGBM's library defaults. threads: how many bag members
 fit at once, each on one LightGBM thread.
 """
-import sys
 from concurrent.futures import ThreadPoolExecutor
 from itertools import combinations
 
 import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier, LGBMRanker, LGBMRegressor
-from sklearn.impute import SimpleImputer
-from sklearn.linear_model import Ridge
-from sklearn.pipeline import make_pipeline
-from sklearn.preprocessing import StandardScaler
 
 from banzuke.ranks import JURYO, KOMUSUBI, MAEGASHIRA, SEKIWAKE
 from banzuke.features import FEATURES
@@ -33,7 +30,6 @@ BASE_PARAMS = dict(
     verbose=-1,
 )
 PAIR_PARAMS = {**BASE_PARAMS, "n_estimators": 150}
-OOF_MIN_HISTORY = 60  # labeled basho required before a basho gets an out-of-fold score
 
 
 def _seeds(seed, n_seeds):
@@ -76,6 +72,7 @@ class _Model:
 
     OPTIONS: dict = {}
     N_SEEDS = 1
+    base_score = None
 
     def __init__(self, seed=0, n_seeds=None, base=None, pair=None, threads=1, **options):
         self.seeds = _seeds(seed, self.N_SEEDS if n_seeds is None else n_seeds)
@@ -128,46 +125,25 @@ class RulesBaseline(_Model):
         return cands["position"].to_numpy() + delta
 
 
-class LinearModel(_Model):
-    name = "L"
-    OPTIONS = {"alpha": 1.0}
-
-    def fit(self, train):
-        self.pipe = make_pipeline(
-            SimpleImputer(strategy="median"), StandardScaler(), Ridge(alpha=self.alpha)
-        )
-        self.pipe.fit(train[FEATURES], train["delta"])
-
-    def score(self, cands, k=None):
-        return cands["position"].to_numpy() + self.pipe.predict(cands[FEATURES])
-
-
 class GBMRegression(_Model):
-    """A: gradient-boosted regression on movement delta (L2). half_life:
-    optional exponential recency weight in basho, normalized to mean 1.
-    extra: dataset columns appended to FEATURES, for measuring a candidate
-    input without a code change (`--set extra=kinboshi`)."""
+    """A: gradient-boosted regression on movement delta (L2). extra: dataset
+    columns appended to FEATURES, for measuring a candidate input without a
+    code change (`--set extra=kinboshi`)."""
 
     name = "A"
     objective = "regression"
     N_SEEDS = 5
-    OPTIONS = {"half_life": None, "extra": ()}
+    OPTIONS = {"extra": ()}
 
     @property
     def features(self):
         return FEATURES + _cols(self.extra)
 
     def fit(self, train):
-        w = None
-        if self.half_life:
-            order = {b: i for i, b in enumerate(sorted(train["basho"].unique()))}
-            age = train["basho"].map(order).max() - train["basho"].map(order)
-            w = (0.5 ** (age / self.half_life)).to_numpy()
-            w = w / w.mean()
         X, y = train[self.features], train["delta"]
         self.ms = _fit_bag(
             lambda s: LGBMRegressor(objective=self.objective, **_seeded(self.base_params, s))
-            .fit(X, y, sample_weight=w),
+            .fit(X, y),
             self.seeds, self.threads)
 
     def base_score(self, cands, k=None):
@@ -185,14 +161,6 @@ class GBMMedian(GBMRegression):
 
     name = "Aq"
     objective = "regression_l1"
-
-
-class GBMRecency(GBMRegression):
-    """Aw: L2 GBM with exponential recency weights (half-life 60 basho, ~10y),
-    biasing training toward the modern committee's behavior."""
-
-    name = "Aw"
-    OPTIONS = {**GBMRegression.OPTIONS, "half_life": 60}
 
 
 class GBMRanker(_Model):
@@ -223,23 +191,11 @@ class GBMRanker(_Model):
 
 # --- pairwise stage -------------------------------------------------------
 
-_H2H: set | None = None  # {(basho, winner_id, loser_id)}
-
 # context appended to pair feature differences: columns differencing zeroes
 # (era, division sizes), the pair's location (means), each endpoint's class
 CONTEXT_SHARED = ["year", "kosho", "mak_size", "jur_size"]
 CONTEXT_MEAN = ["position", "rank_number", "wins", "boundary_dist"]
 CONTEXT_ENDS = ["rank_class", "division"]
-
-
-def _h2h_wins():
-    global _H2H
-    if _H2H is None:
-        from banzuke.paths import load_bouts
-
-        b = load_bouts()
-        _H2H = set(zip(b["basho"], b["winner"], b["loser"]))
-    return _H2H
 
 
 def _window_pairs(n, window):
@@ -250,7 +206,7 @@ def _window_pairs(n, window):
     return i_arr, j_grid[mask]
 
 
-def _gap_pairs(scores, pos, gap):
+def gap_pairs(scores, pos, gap):
     """Index pairs whose scores differ by at most gap, oriented i = currently
     higher ranked (NaN scores pair with nothing)."""
     order = np.argsort(scores, kind="stable")
@@ -267,19 +223,12 @@ def _gap_pairs(scores, pos, gap):
     return np.where(swap, j_arr, i_arr), np.where(swap, i_arr, j_arr)
 
 
-def _pair_matrix(df, i_arr, j_arr, h2h=False, context=False, base=None, extra=()):
+def _pair_matrix(df, i_arr, j_arr, context=False, base=None, extra=()):
     """Feature rows for index pairs of one basho's rows (i = currently higher
-    ranked): feature differences (FEATURES + extra), then optionally the
-    pair's head-to-head bout this basho (+1 i won, -1 i lost), context
-    columns, base-score gap."""
+    ranked): feature differences (FEATURES + extra), then optionally context
+    columns and the base-score gap."""
     X = df[FEATURES + list(extra)].to_numpy(dtype=float)
     cols = [X[i_arr] - X[j_arr]]
-    if h2h:
-        wins = _h2h_wins()
-        rid, basho = df["rikishi_id"].to_numpy(), int(df["basho"].iloc[0])
-        won = [(basho, rid[i], rid[j]) in wins for i, j in zip(i_arr, j_arr)]
-        lost = [(basho, rid[j], rid[i]) in wins for i, j in zip(i_arr, j_arr)]
-        cols.append((np.array(won, dtype=float) - np.array(lost, dtype=float))[:, None])
     if context:
         means = df[CONTEXT_MEAN].to_numpy(dtype=float)
         ends = df[CONTEXT_ENDS].to_numpy(dtype=float)
@@ -297,16 +246,16 @@ class _PairStage:
     differ by at most `oof_gap` (the near-ties the reranker adjudicates, with
     the base-score gap as a feature)."""
 
-    def __init__(self, seeds, params, window, h2h=False, context=False, oof=None,
-                 oof_gap=2.0, extra=(), threads=1):
+    def __init__(self, seeds, params, window, context=False, oof=None, oof_gap=2.0, extra=(),
+                 threads=1):
         self.seeds, self.params, self.window = seeds, params, window
-        self.h2h, self.context, self.oof_gap = h2h, context, oof_gap
+        self.context, self.oof_gap = context, oof_gap
         self.extra = _cols(extra)
         self.oof = None if oof is None else oof.set_index(["basho", "rikishi_id"])["oof"]
         self.threads = threads
 
     def _matrix(self, df, i_arr, j_arr, base):
-        return _pair_matrix(df, i_arr, j_arr, self.h2h, self.context, base, self.extra)
+        return _pair_matrix(df, i_arr, j_arr, self.context, base, self.extra)
 
     def _base(self, df):
         if self.oof is None:
@@ -322,7 +271,7 @@ class _PairStage:
             base = self._base(df)
             pairs = [_window_pairs(len(df), self.window)]
             if base is not None and not np.isnan(base).all():
-                pairs.append(_gap_pairs(base, pos, self.oof_gap))
+                pairs.append(gap_pairs(base, pos, self.oof_gap))
             for i_arr, j_arr in pairs:
                 Xs.append(self._matrix(df, i_arr, j_arr, base))
                 ys.append((nxt[i_arr] < nxt[j_arr]).astype(int))
@@ -338,118 +287,10 @@ class _PairStage:
         return np.mean([m.predict_proba(X)[:, 1] for m in ms], axis=0)
 
 
-def oof_key(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, train_start=None):
-    """Identity of an out-of-fold table: the base configuration, BASE_PARAMS,
-    the base-stage and _oof_one source, and the labelled data's content."""
-    import hashlib
-    import inspect
-    import json
-
-    lab = trans[trans["position_next"].notna()]
-    kwargs = {k: v for k, v in kwargs.items() if k not in ("oof", "seed")}
-    base_kw = {k: kwargs[k] for k in ("n_seeds", "base", "half_life", "extra") if k in kwargs}
-    base_spec = [cls.objective, base_kw, BASE_PARAMS, min_history, train_start]
-    key = hashlib.sha256(json.dumps(base_spec, sort_keys=True).encode())
-    key.update((inspect.getsource(GBMRegression) + inspect.getsource(_oof_one)).encode())
-    cols = FEATURES + _cols(kwargs.get("extra"))
-    key.update(pd.util.hash_pandas_object(lab[["basho", "rikishi_id", "position_next"] + cols],
-                                          index=False).to_numpy().tobytes())
-    return key.hexdigest()[:16]
-
-
-def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, threads=1,
-                    cache_dir=None, train_start=None):
-    """Rolling out-of-fold base scores: rows of source basho b are scored by
-    cls(**kwargs)'s base stage fitted on transitions labeled by b
-    (next_basho <= b), i.e. the backtest's own base prediction for target
-    next(b), so no row is scored by a model that saw its label. The default
-    model's table is committed as data/processed/oof.parquet (built by
-    `banzuke data build`, its oof_key in the frame's attrs) and rebuilt in
-    place when that key no longer matches; any other configuration is cached
-    under cache/oof/<key>.parquet (or cache_dir)."""
-    from concurrent.futures import ProcessPoolExecutor
-    from multiprocessing import get_context
-    from pathlib import Path
-
-    from banzuke.paths import OOF_CACHE, OOF_TABLE
-
-    lab = trans[trans["position_next"].notna()]
-    kwargs = {k: v for k, v in kwargs.items() if k not in ("oof", "seed")}
-    key = oof_key(trans, cls, kwargs, min_history, train_start)
-    committed = cache_dir is None and key == oof_key(trans, GBMRerank, {})
-    path = OOF_TABLE if committed else Path(cache_dir or OOF_CACHE) / f"{key}.parquet"
-    if path.exists():
-        out = pd.read_parquet(path)
-        if not committed or out.attrs.get("oof_key") == key:
-            return out
-        print(f"{path} is stale (data or base stage changed): rebuilding it", file=sys.stderr)
-
-    todo = sorted(lab["basho"].unique())[min_history:]
-    print(f"computing out-of-fold base scores for {len(todo)} basho ({threads} processes; "
-          "cached afterwards)...", file=sys.stderr, flush=True)
-    args = [(b, cls, kwargs, train_start) for b in todo]
-    if threads > 1:
-        with ProcessPoolExecutor(threads, mp_context=get_context("spawn"),
-                                 initializer=_oof_init, initargs=(lab,)) as ex:
-            parts = list(ex.map(_oof_one, args, chunksize=4))
-    else:
-        _oof_init(lab)
-        parts = [_oof_one(a) for a in args]
-    out = pd.concat(parts, ignore_index=True)
-    out.attrs["oof_key"] = key
-    path.parent.mkdir(parents=True, exist_ok=True)
-    out.to_parquet(path, index=False)
-    return out
-
-
-_OOF_LAB = None
-
-
-def _oof_init(lab):
-    global _OOF_LAB
-    _OOF_LAB = lab
-
-
-def _oof_one(args):
-    b, cls, kwargs, train_start = args
-    train = _OOF_LAB[_OOF_LAB["next_basho"] <= b]
-    if train_start:
-        train = train[train["basho"] >= train_start]
-    rows = _OOF_LAB[_OOF_LAB["basho"] == b]
-    m = cls(**kwargs)
-    GBMRegression.fit(m, train)  # base stage only
-    return pd.DataFrame({"basho": rows["basho"].to_numpy(),
-                         "rikishi_id": rows["rikishi_id"].to_numpy(),
-                         "oof": GBMRegression.score(m, rows)})
-
-
-class PairwiseBT(_Model):
-    """C: classifier on nearby candidate pairs (feature diffs), aggregated
-    into local movement from the current order (approximate Bradley-Terry)."""
-
-    name = "C"
-    N_SEEDS = 5
-    OPTIONS = {"pair_window": 12, "scale": 2.0}
-
-    def fit(self, train):
-        self.pair = _PairStage(self.seeds, self.pair_params, self.pair_window,
-                               threads=self.threads).fit(train)
-
-    def score(self, cands, k=None):
-        df = cands.sort_values("position", kind="stable")
-        i_arr, j_arr = _window_pairs(len(df), self.pair_window)
-        p = self.pair.proba(df, i_arr, j_arr, k=k)
-        movement = np.zeros(len(df))
-        np.add.at(movement, i_arr, p - 0.5)
-        np.add.at(movement, j_arr, 0.5 - p)
-        score = df["position"].to_numpy() - self.scale * movement
-        return pd.Series(score, index=df.index).reindex(cands.index).to_numpy()
-
-
 TWIN_SCOPE = {"sk": (SEKIWAKE, KOMUSUBI), "all": (SEKIWAKE, KOMUSUBI, MAEGASHIRA, JURYO)}
 
 
-def _twin_units(cands, scope):
+def twin_units(cands, scope):
     """[e, w] row-index pairs of E/W twins: one rank number, identical W-L-A
     record, class within `scope` ("sk" or "all" = S/K/M/J)."""
     if scope not in TWIN_SCOPE:
@@ -475,7 +316,6 @@ class GBMRerank(GBMMedian):
     context: append absolute/era context to the pair feature differences
     gap, cluster_max: cluster break when consecutive base scores differ by
         more than gap; largest cluster the reranker may reorder
-    h2h: include the pair's head-to-head bout this basho as a pair feature
     twin_unit: "" / "sk" / "all": E and W of one rank number with identical
         records (of S/K, or S/K/M/J) form one unit in the reranker: clustered
         at their mean base score, compared with a rival by the mean of the
@@ -488,11 +328,18 @@ class GBMRerank(GBMMedian):
 
     name = "Ar"
     OPTIONS = {**GBMMedian.OPTIONS, "pair_window": 6, "near_ties": True, "oof_gap": 2.0,
-               "oof": None, "context": True, "gap": 1.0, "cluster_max": 6, "h2h": False,
-               "twin_unit": "sk"}
+               "oof": None, "context": True, "gap": 1.0, "cluster_max": 6, "twin_unit": "sk"}
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.twin_unit and self.twin_unit not in TWIN_SCOPE:
+            raise ValueError(f"twin_unit must be one of {sorted(TWIN_SCOPE)} or empty, "
+                             f"got {self.twin_unit!r}")
 
     @classmethod
     def prepare(cls, kwargs, trans, threads=1, train_start=None):
+        from banzuke.oof import oof_base_scores  # oof builds on this module
+
         if not kwargs.get("near_ties", cls.OPTIONS["near_ties"]) or kwargs.get("oof") is not None:
             return kwargs
         return {**kwargs, "oof": oof_base_scores(trans, cls, kwargs, threads=threads,
@@ -502,16 +349,16 @@ class GBMRerank(GBMMedian):
         if self.near_ties and self.oof is None:
             raise ValueError("near_ties needs rolling OOF base scores: call prepare() first")
         super().fit(train)
-        self.pair = _PairStage(self.seeds, self.pair_params, self.pair_window, self.h2h,
-                               self.context, self.oof if self.near_ties else None,
-                               self.oof_gap, self.extra, self.threads).fit(train)
+        self.pair = _PairStage(self.seeds, self.pair_params, self.pair_window, self.context,
+                               self.oof if self.near_ties else None, self.oof_gap, self.extra,
+                               self.threads).fit(train)
 
     def score(self, cands, k=None):
         base = self.base_score(cands, k)
         pos = cands["position"].to_numpy()
         units = [[i] for i in range(len(cands))]
         if self.twin_unit:
-            for e, w in _twin_units(cands, self.twin_unit):
+            for e, w in twin_units(cands, self.twin_unit):
                 units[e], units[w] = [e, w], []
         units = [u for u in units if u]
         ubase = np.array([base[u].mean() for u in units])
@@ -544,14 +391,4 @@ class GBMRerank(GBMMedian):
         return out
 
 
-class GBMRerankH2H(GBMRerank):
-    """Ah: Ar + the pair's head-to-head bout result as a rerank feature.
-    The committee reportedly breaks near-ties by who beat whom."""
-
-    name = "Ah"
-    OPTIONS = {**GBMRerank.OPTIONS, "h2h": True}
-
-
-MODELS = {m.name: m for m in
-          (RulesBaseline, LinearModel, GBMRegression, GBMMedian, GBMRecency,
-           GBMRanker, PairwiseBT, GBMRerank, GBMRerankH2H)}
+MODELS = {m.name: m for m in (RulesBaseline, GBMRegression, GBMMedian, GBMRanker, GBMRerank)}

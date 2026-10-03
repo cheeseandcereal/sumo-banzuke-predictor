@@ -98,7 +98,7 @@ four Parquet files under `data/processed/` (all committed):
 |---|---|---|
 | `tidy.parquet` | rikishi x basho on the makuuchi or juryo banzuke | rank, record, prizes, division sizes, `position` |
 | `bouts.parquet` | competitive bout | `(basho, winner, loser)`, read off each man's record array; fusen excluded |
-| `transitions.parquet` | the same rows as tidy | tidy + history features + next-banzuke labels; what the models and the resolver read (`bouts.parquet` is read only by the `h2h` option) |
+| `transitions.parquet` | the same rows as tidy | tidy + history features + next-banzuke labels; what the models and the resolver read (`bouts.parquet` is an input of the build only) |
 | `oof.parquet` | labelled row from the 61st basho on | `(basho, rikishi_id, oof)`: the default base stage's rolling out-of-fold score (4.4), the reranker's training input; the key it was built under is in the file's pandas attrs |
 
 Through 202609 the data holds 400 banzuke (195911-202609), 26,878 rows,
@@ -381,9 +381,6 @@ The 49-column feature vector of a pair:
 | endpoints | 4 | `rank_class` and `division` of i, then of j |
 | base gap | 1 | `base[i] - base[j]`: the OOF gap in training, the live bag's gap at inference |
 
-`h2h = true` would append the pair's head-to-head bout this basho
-(+1 i won, -1 i lost, 0 none); that is model `Ah`.
-
 ### 4.4 Rolling out-of-fold base scores (`oof_base_scores`)
 
 The pair stage's gap feature must have the same distribution in training
@@ -394,8 +391,8 @@ labelled by b (`next_basho <= b`) and scores the rows of b: exactly the
 base prediction the backtest would have made for target next(b), so no
 row is scored by a model that saw its label. The table is identified by
 `oof_key`: the base configuration (objective, `n_seeds`, `base.*`,
-`half_life`, `extra`, `--train-start`), `BASE_PARAMS`, the base-stage
-source and a content hash of the labelled data. The default model's
+`extra`, `--train-start`), `BASE_PARAMS`, the base-stage source and a
+content hash of the labelled data. The default model's
 table is built by `banzuke data build` (one process per `--threads`;
 `--skip-oof` to leave it alone) and committed as
 `data/processed/oof.parquet` with its key in the frame's attrs, so a
@@ -404,9 +401,9 @@ clone needs no one-off computation. A command that finds the key stale
 rebuilds the file in place; `tests/test_banzuke.py` fails on a stale
 file so the rebuild lands in the same commit as the change. Any other
 base configuration (`--seeds`, `--set base.*`, `--train-start`) computes
-its own table under `cache/oof/<key>.parquet`; pair-stage options and
-`Ah` share the default one. `GBMRerank.prepare()` supplies it before
-`fit()`.
+its own table under `cache/oof/<key>.parquet`; pair-stage options share
+the default one. `GBMRerank.prepare()` supplies it before `fit()`
+(`banzuke/oof.py`).
 
 ### 4.5 Aggregation and output
 
@@ -433,8 +430,6 @@ the confidence signals measure gaps on (7).
 | `gap` | 1.0 | cluster break, in cells |
 | `cluster_max` | 6 | largest cluster the reranker may reorder |
 | `twin_unit` | `sk` | identical-record S/K E/W pairs are one unit; `all` adds M/J, empty disables |
-| `h2h` | false | head-to-head bout as a pair feature (model `Ah`) |
-| `half_life` | none | exponential recency weight on base-stage rows, in basho (model `Aw` uses 60) |
 | `extra` | none | dataset columns appended to `FEATURES` in both stages, e.g. `--set extra=kinboshi`; the no-code path for measuring a candidate input |
 | `base.*`, `pair.*` | `BASE_PARAMS`, `PAIR_PARAMS` | LightGBM parameters of each stage |
 
@@ -831,16 +826,14 @@ configuration, so edits and rebuilds invalidate it automatically.
 All share `FEATURES`, the resolver and the backtest; the ordering
 objective is what differs between them. `--model X` on `banzuke predict`,
 `--models X,Y` on `banzuke backtest`; `docs/EXPERIMENTS.md` has their
-head-to-head results.
+head-to-head results, and those of the variants removed from the tree
+(`L` ridge, `Aw` recency-weighted, `C` standalone pairwise, `Ah` with the
+head-to-head bout as a pair feature; E3, E6, E7, E14).
 
 | name | class | what it is | role |
 |---|---|---|---|
 | `R` | `RulesBaseline` | per-zone least squares, `delta ~ a + b (wins - 8) + c absences`, fitted on the last 60 basho | mechanical baseline |
-| `L` | `LinearModel` | ridge on `FEATURES` (median-imputed, standardised) | linear baseline |
 | `A` | `GBMRegression` | LightGBM L2 on `delta`, 5 seeds | `Aq` with the L2 objective |
 | `Aq` | `GBMMedian` | L1 objective | stage 1 of `Ar` |
-| `Aw` | `GBMRecency` | `A` with half-life 60 recency weights | recency-weighted variant |
 | `B` | `GBMRanker` | LambdaRank on the next-basho order, relevance capped at 60, truncation 60 | the ranking-objective alternative |
-| `C` | `PairwiseBT` | pair classifier within 12 rows, local Bradley-Terry movement | the pair machinery of `Ar`'s stage 2, standalone |
 | `Ar` | `GBMRerank` | `Aq` + near-tie reranker | **default** |
-| `Ah` | `GBMRerankH2H` | `Ar` + head-to-head bout as a pair feature | `Ar` with `h2h=true` |

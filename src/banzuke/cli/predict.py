@@ -31,7 +31,7 @@ SPEC_KEYS = ("above", "below", "class", "count", "pin")
 def add_parser(sub):
     ap = subcommand(sub, "predict", __doc__, "predict the next banzuke from the latest results")
     ap.add_argument("--model", default="Ar", metavar="NAME",
-                    help="ordering model (R, L, A, Aq, Aw, B, C, Ar, Ah; see docs/MODEL.md)")
+                    help="ordering model (docs/MODEL.md lists them)")
     ap.add_argument("--retired", default="", help="comma-separated shikona to exclude")
     ap.add_argument("--protected", default="",
                     help="comma-separated shikona whose full absence the JSA exempted "
@@ -225,7 +225,7 @@ def run(args):
     point = model.score(cands)
     per_seed = [model.score(cands, k) for k in range(len(model.seeds))] \
         if len(model.seeds) > 1 else []
-    base = pd.Series(getattr(model, "base_score", model.score)(cands),
+    base = pd.Series((model.base_score or model.score)(cands),
                      index=cands["rikishi_id"].to_numpy())
     rates = confidence.claim_rates(trans)
 

@@ -43,7 +43,6 @@ def evaluate(pred: pd.DataFrame, cands: pd.DataFrame, actual: pd.DataFrame) -> d
     )
 
     return {
-        "n_slots": len(all_mak),
         "exact_n": int(exact.sum()),
         "exact": exact.sum() / len(all_mak),
         "gtb_points": int(2 * exact.sum() + hits.sum()),  # dichne.com scoring

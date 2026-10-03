@@ -23,10 +23,6 @@ FEATURES = [
     "rank_protected",
 ]
 
-# computed into the dataset but excluded from model inputs: joi/schedule
-# awareness tested as a null result, see docs/EXPERIMENTS.md E8
-SCHEDULE_FEATURES = ["opp_pos_mean", "n_joi_opp", "wins_vs_joi", "kinboshi"]
-
 # rank_protected (in FEATURES since E23): the committee did not count a full
 # absence against the man (kosho era 1972-2003: kosho granted; 2004+: the
 # PROTECTED table).
@@ -55,8 +51,8 @@ JOI = 16  # top-of-banzuke group that shares the toughest schedule
 
 def schedule_features(tidy: pd.DataFrame, bouts: pd.DataFrame) -> pd.DataFrame:
     """Realized strength-of-schedule per rikishi-basho, from actual bouts.
-    The joi boundary is dynamic (absences pull lower maegashira up), so the
-    fought schedule carries information the banzuke position does not."""
+    In the dataset but not in FEATURES (a null result, docs/EXPERIMENTS.md E8);
+    `--set extra=` can measure them."""
     a = bouts.rename(columns={"winner": "rikishi_id", "loser": "opp"}).assign(win=1)
     b = bouts.rename(columns={"loser": "rikishi_id", "winner": "opp"}).assign(win=0)
     ab = pd.concat([a, b], ignore_index=True)

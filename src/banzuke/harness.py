@@ -48,7 +48,7 @@ def _run_target(args):
         rows.append({"config": config, "model": name, "seed": seed, "basho": target,
                      **evaluate(pred, cands, actual)})
         if return_preds:
-            base = model.base_score(cands) if hasattr(model, "base_score") else score
+            base = model.base_score(cands) if model.base_score else score
             p = cands.assign(score=score, base=base).merge(pred, on="rikishi_id")
             p["config"], p["model"], p["seed"], p["target"] = config, name, seed, target
             preds.append(p)
