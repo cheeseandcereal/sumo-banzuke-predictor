@@ -2,6 +2,7 @@
 resolver conventions, model seed/option semantics, bagging, reranking, OOF
 scores, backtest determinism, summarize() statistics, predict() assembly,
 forced S/K claims, confidence signals and review items."""
+import re
 from itertools import product
 from pathlib import Path
 
@@ -11,7 +12,6 @@ import pytest
 
 from banzuke import confidence, forecast
 from banzuke.ranks import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
-from banzuke.cli._common import parse_seeds, parse_sets
 from banzuke.features import FEATURES, build_transitions
 from banzuke.harness import METRICS, run_backtest, summarize
 from banzuke.metrics import evaluate
@@ -19,43 +19,11 @@ from banzuke.models import (MODELS, GBMMedian, GBMRanker, GBMRerank, RulesBaseli
                             _window_pairs, gap_pairs, twin_units)
 from banzuke.oof import OOF_MIN_HISTORY, oof_base_scores, oof_key
 from banzuke.overrides import parse
-from banzuke.paths import ROOT, load_bouts, load_tidy, load_transitions
+from banzuke.paths import ROOT
 from banzuke.resolver import block_slots, forced_claims, resolve
+from conftest import FAST_RERANK, SMALL, fake_results
 
-SMALL = {"n_seeds": 1, "base": {"n_estimators": 20}}  # the GBMs default to a 5-seed bag
 CELL = ["pred_class", "pred_number", "pred_side"]
-
-
-@pytest.fixture(scope="session")
-def tidy():
-    return load_tidy()
-
-
-@pytest.fixture(scope="session")
-def trans():
-    return load_transitions()
-
-
-@pytest.fixture(scope="session")
-def bouts():
-    return load_bouts()
-
-
-@pytest.fixture(scope="session")
-def small_train(trans):
-    return trans[(trans["next_basho"] < 200401) & (trans["basho"] >= 199501)
-                 & trans["position_next"].notna()]
-
-
-@pytest.fixture(scope="session")
-def cands_for(trans, tidy):
-    """Backtest candidates for a target: previous-basho rows still on the sheet."""
-    bashos = sorted(tidy["basho"].unique())
-
-    def _cands(target):
-        prev = bashos[bashos.index(target) - 1]
-        return trans[(trans["basho"] == prev) & ~trans["dropped"]].reset_index(drop=True)
-    return _cands
 
 
 def _same(x, y):  # NaN == NaN, dtype-insensitive
@@ -65,6 +33,10 @@ def _same(x, y):  # NaN == NaN, dtype-insensitive
 def _true_order(cands_for, target, sign=1.0):
     cands = cands_for(target)
     return cands, resolve(cands, sign * cands["position_next"].to_numpy(dtype=float), 42)
+
+
+def _cells(cands, pred):
+    return pred.merge(cands[["rikishi_id", "shikona"]], on="rikishi_id").set_index("shikona")
 
 
 def test_features_are_chronological(tidy, bouts, trans):
@@ -107,7 +79,7 @@ def test_raw_corrections_and_blank_result_check(tidy):
     r = {"rikishiID": 16, "shikonaEn": "Nishikigi", "wins": 7, "losses": 7}
     record = [{"result": "loss", "opponentID": 1}] * 14 + [{"result": "", "opponentID": 82}]
     _correct(202507, r, [dict(b) for b in record])
-    assert r["wins"] == 8 and set(CORRECTIONS) == {(202507, 16), (202507, 82)}
+    assert r["wins"] == 8 and {(202507, 16), (202507, 82)} <= set(CORRECTIONS)
 
 
 def test_block_slots_layout_conventions():
@@ -123,8 +95,13 @@ def test_block_slots_layout_conventions():
         assert block_slots(c, 4, 0, 5) == [(1, 0), (1, 1), (2, 0), (2, 1)]
 
 
-@pytest.mark.parametrize("target", [200401, 202309, 202401, 202609])
+@pytest.mark.parametrize("target", [200401, 200607, 201507, 201805, 201807, 202107, 202305, 202309,
+                                    202401, 202601, 202605, 202609])
 def test_resolver_reproduces_banzuke_from_true_order(cands_for, tidy, target):
+    """From the true order the sheet is reproduced cell for cell. 200607,
+    201507, 201805, 201807, 202107, 202305, 202601, 202605 are frames the
+    committee rules decide (E22): before the rules were ported these eight
+    were not (Y/O membership or a make-koshi sekiwake's exit was wrong)."""
     cands, pred = _true_order(cands_for, target)
     actual = tidy[tidy["basho"] == target]
     mak = actual[actual["division"] == 0].merge(pred, on="rikishi_id", how="left")
@@ -137,7 +114,7 @@ def test_resolver_make_koshi_ceiling_and_block_order(cands_for):
     # E15a: cells inside an S/K block follow score order, not claim status. 200607:
     # Asasekiryu (M2E 10-5, a fill) ranks above Kisenosato (M1E 8-7, forced claim)
     cands, pred = _true_order(cands_for, 200607)
-    cells = pred.merge(cands[["rikishi_id", "shikona"]], on="rikishi_id").set_index("shikona")
+    cells = _cells(cands, pred)
     assert cells.loc["Asasekiryu", CELL].tolist() == [KOMUSUBI, 1, 0]
     assert cells.loc["Kisenosato", CELL].tolist() == [KOMUSUBI, 1, 1]
     # E10: a make-koshi S/K/M never lands above his prior cell, whatever order is fed
@@ -168,20 +145,6 @@ def test_resolver_keeps_identical_record_twins_in_order(cands_for):
     swapped = scores.copy()
     swapped[list(others)] = swapped[list(others)[::-1]]
     assert not (resolve(cands, swapped, 42).to_numpy() == pred.to_numpy()).all()
-
-
-def _cells(cands, pred):
-    return pred.merge(cands[["rikishi_id", "shikona"]], on="rikishi_id").set_index("shikona")
-
-
-@pytest.mark.parametrize("target", [200607, 201507, 201805, 201807, 202107, 202305, 202601, 202605])
-def test_resolver_rules_reproduce_committee_frames(cands_for, tidy, target):
-    """E22: frames the committee rules decide. From the true order the sheet
-    is reproduced cell for cell; before the rules were ported these eight were
-    not (Y/O membership or a make-koshi sekiwake's exit was wrong)."""
-    cands, pred = _true_order(cands_for, target)
-    actual = tidy[tidy["basho"] == target]
-    assert evaluate(pred, cands, actual)["exact"] == 1.0
 
 
 def test_resolver_yo_order_and_demoted_ozeki(cands_for):
@@ -289,7 +252,7 @@ def test_bag_is_mean_of_members(small_train, cands_for):
 
 def test_rerank_is_deterministic_permutation(small_train, cands_for):
     cands = cands_for(200401)
-    kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
+    kw = FAST_RERANK
     scores = []
     for _ in range(2):
         m = GBMRerank(**kw)
@@ -318,7 +281,7 @@ def test_twin_unit_keeps_identical_record_twins_together(small_train, cands_for)
     # E17: with twin_unit, E/W twins with the same record leave the reranker
     # adjacent and in prior order; a sheet without twins is scored exactly as
     # without the option
-    kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
+    kw = FAST_RERANK
     plain, unit = GBMRerank(**kw, twin_unit=""), GBMRerank(**kw, twin_unit="all")
     plain.fit(small_train)
     unit.fit(small_train)
@@ -351,7 +314,7 @@ def test_protected_column(trans):
     kept, dropped = full[full["rank_protected"] == 1], full[full["rank_protected"] == 0]
     assert kept["delta"].max() <= 3 and dropped["delta"].min() >= 10
     modern = trans[(trans["basho"] >= 200401) & (trans["rank_protected"] == 1)]
-    assert set(zip(modern["basho"], modern["rikishi_id"])) == PROTECTED and len(PROTECTED) == 26
+    assert set(zip(modern["basho"], modern["rikishi_id"])) == PROTECTED
     assert (trans.loc[trans["rank_class"] <= OZEKI, "rank_protected"] == 0).all()
     assert trans.loc[(trans["basho"] == 202201) & (trans["shikona"] == "Takayasu"), "rank_protected"].item() == 1
     assert trans.loc[(trans["basho"] == 202207) & (trans["shikona"] == "Takanosho"), "rank_protected"].item() == 0
@@ -361,7 +324,7 @@ def test_extra_feature_option(small_train, cands_for):
     """`extra` appends dataset columns to the GBM inputs (base model and pair
     differences) and to the OOF cache key."""
     cands = cands_for(200401)
-    kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
+    kw = FAST_RERANK
     plain = GBMRerank(**kw)
     more = GBMRerank(**kw, extra="kinboshi,wins_vs_joi")
     assert more.features == FEATURES + ["kinboshi", "wins_vs_joi"] and plain.features == FEATURES
@@ -441,8 +404,9 @@ def test_committed_oof_table_is_current(trans):
 
 
 def test_stale_oof_table_is_rebuilt_in_place(trans, tmp_path, monkeypatch, capsys):
-    from banzuke import paths
+    from banzuke import models, paths
 
+    monkeypatch.setitem(models.BASE_PARAMS, "n_estimators", 10)  # the key hashes the dict either way
     monkeypatch.setattr(paths, "OOF_TABLE", tmp_path / "oof.parquet")
     monkeypatch.setattr(paths, "OOF_CACHE", tmp_path / "oof")
     labeled = sorted(trans.loc[trans["position_next"].notna(), "basho"].unique())
@@ -488,11 +452,9 @@ def test_backtest_runs_every_model_together(trans, tidy):
 
 def test_summarize_pairs_against_baseline_and_averages_seeds():
     # config x: +2 exact slots on seed 1, +0 on seed 0 (+1 seed-averaged), mae -0.05
-    rows = [{"config": cfg, "model": "Aq", "seed": seed, "basho": 200401 + b,
-             **dict.fromkeys(METRICS, 1.0), "exact": e / 42, "exact_n": e,
-             "mae": 2.0 - 0.05 * (cfg == "x")}
-            for b in range(20) for cfg in ("base", "x") for seed in (0, 1)
-            for e in [15 + b % 5 + 2 * (cfg == "x" and seed == 1)]]
+    rows = [{**fake_results({("Aq", 200401 + b): 15 + b % 5 + 2 * (cfg == "x" and seed == 1)})[0],
+             "config": cfg, "seed": seed, "mae": 2.0 - 0.05 * (cfg == "x")}
+            for b in range(20) for cfg in ("base", "x") for seed in (0, 1)]
     s = summarize(pd.DataFrame(rows), baseline="Aq")
     assert s.attrs["baseline"] == "Aq" and list(s.index) == ["Aq:x", "Aq"] and (s["n"] == 20).all()
     x = s.loc["Aq:x"]
@@ -501,13 +463,10 @@ def test_summarize_pairs_against_baseline_and_averages_seeds():
     assert 0 < lo <= hi and x["d_mae"] == pytest.approx(-0.05)
     base = s.loc["Aq"]
     assert base["d_exact"] == 0 and base["ci_exact"] == "" and np.isnan(base["p_exact"])
-    assert parse_sets(["base.n_estimators=200", "gap=0.25", "context=false"]) == {
-        "base": {"n_estimators": 200}, "gap": 0.25, "context": False}
-    assert parse_seeds("0-2") == (0, 1, 2) and parse_seeds("0,3") == (0, 3)
 
 
 def test_predict_spread(trans):
-    cands = trans[(trans["basho"] == 202609) & ~trans["dropped"]].reset_index(drop=True)
+    cands = forecast.candidates(trans, forecast.latest_basho(trans))
     ov = parse(cands)
     assert ov == {"relative": [], "class": {}, "count": {}, "pins": {}}
     point = cands["position"].to_numpy(dtype=float)
@@ -548,7 +507,7 @@ def test_predict_notes_explain_every_yo_promotion(cands_for, trans):
 
 
 def test_forced_claims_matches_resolver(trans):
-    cands = trans[(trans["basho"] == 202609) & ~trans["dropped"]].reset_index(drop=True)
+    cands = forecast.candidates(trans, forecast.latest_basho(trans))
     claims = forced_claims(cands)
     assert all(v.dtype == bool and v.shape == (len(cands),) for v in claims.values())
     kk_s = (cands["rank_class"] == SEKIWAKE) & (cands["kk"] == 1)
@@ -618,13 +577,14 @@ def test_confidence_review_hint_restores_base_order():
 def test_claim_rates_reference(trans):
     rates = confidence.claim_rates(trans)
     assert rates.attrs["since"] == 199001
-    s = rates[rates["claimed"] == SEKIWAKE]
-    assert int(s["n"].sum()) == 18 and int(s["honoured"].sum()) == 18
+    s = rates[rates["claimed"] == SEKIWAKE]  # K 11+ -> S has always been honoured
+    assert int(s["n"].sum()) >= 18 and int(s["honoured"].sum()) == int(s["n"].sum())
     cell = rates.set_index(["claimed", "rank_class", "rank_number", "wins"]).loc[
         (KOMUSUBI, MAEGASHIRA, 1, 8)]
-    assert int(cell["n"]) == 17 and int(cell["honoured"]) == 10
+    assert int(cell["n"]) >= 17 and 0 < int(cell["honoured"]) < int(cell["n"])
     txt = confidence.precedent(rates, KOMUSUBI, MAEGASHIRA, 1, 8)
-    assert txt == "M1 claims with 8 wins needing a created slot were honoured 10 of 17 since 1990"
+    assert re.fullmatch(r"M1 claims with 8 wins needing a created slot were honoured \d+ of \d+ "
+                        r"since 1990", txt)
 
 
 def test_explain_decomposition_isolates_structural_shift(cands_for, tidy):

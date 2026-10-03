@@ -9,7 +9,7 @@ import pytest
 from banzuke import gtb
 from banzuke.cli import main
 from banzuke.cli.gtb import parse_percentiles
-from banzuke.harness import METRICS
+from conftest import fake_results
 
 
 def page(rows, header=("Place", "Shikona", "Basho<br />Count", "Rank", "Correct<br />Guesses",
@@ -129,9 +129,8 @@ def test_command_runs_offline_against_csv_rows(monkeypatch, tmp_path, capsys):
     monkeypatch.setattr(gtb, "_get", lambda url: page(ROWS))
     monkeypatch.setattr(gtb, "DELAY_S", 0)
     monkeypatch.setattr(gtb, "GTB_CACHE", tmp_path / "gtb")
-    rows = [{"config": "base", "model": m, "seed": 0, "basho": b, **dict.fromkeys(METRICS, 1.0),
-             "gtb_points": p, "exact_n": p / 2}
-            for b in (202607, 202609) for m, p in (("Ar", 65), ("Aq", 44))]
+    rows = fake_results({(m, b): p / 2 for b in (202607, 202609) for m, p in (("Ar", 65), ("Aq", 44))},
+                        gtb_points=lambda r: 2 * r["exact_n"])
     csv = tmp_path / "x_per_basho.csv"
     pd.DataFrame(rows).to_csv(csv, index=False)
     argv = ["gtb", "--start", "202607", "--end", "202609", "--csv", str(csv)]

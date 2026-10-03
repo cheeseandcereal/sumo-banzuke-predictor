@@ -145,11 +145,9 @@ def test_predict_interactive_loop(monkeypatch, capsys):
 def test_backtest_summarize_reads_csv(tmp_path, capsys):
     import pandas as pd
 
-    from banzuke.harness import METRICS
+    from conftest import fake_results
 
-    rows = [{"config": "base", "model": m, "seed": 0, "basho": 202001 + 2 * b,
-             **dict.fromkeys(METRICS, 1.0), "exact": e / 42, "exact_n": e}
-            for b in range(6) for m, e in (("Ar", 20), ("Aq", 18))]
+    rows = fake_results({(m, 202001 + 2 * b): e for b in range(6) for m, e in (("Ar", 20), ("Aq", 18))})
     csv = tmp_path / "x_per_basho.csv"
     pd.DataFrame(rows).to_csv(csv, index=False)
     assert main(["backtest", "--summarize", str(csv), "--baseline", "Ar"]) == 0
