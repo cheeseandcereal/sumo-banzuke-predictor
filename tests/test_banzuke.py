@@ -627,23 +627,10 @@ def test_claim_rates_reference(trans):
     assert txt == "M1 claims with 8 wins needing a created slot were honoured 10 of 17 since 1990"
 
 
-def test_explain_reconstructs_rerank_and_isolates_structural_shift(small_train, cands_for, tidy):
-    """banzuke.experiments.explain: the step-by-step reranker reconstruction reproduces
-    GBMRerank.score (with and without twin units), and the miss decomposition
-    charges an over-created komusubi slot to the structure, not to the rows below."""
-    from banzuke.experiments.explain import decompose, rerank_detail
-
-    kw = {**SMALL, "seed": 0, "near_ties": False, "pair": {"n_estimators": 10}}
-    for twin_unit, target in (("sk", 200401), ("all", 202609)):
-        m = GBMRerank(**kw, twin_unit=twin_unit)
-        m.fit(small_train)
-        cands = cands_for(target)
-        base = m.base_score(cands)
-        d = rerank_detail(m, cands, base)
-        assert np.array_equal(d["score"], m.score(cands))
-        assert len(d["cluster_of"]) == len(cands) and (d["cluster_size"] >= 1).all()
-        if twin_unit == "all":
-            assert any(len(u) == 2 for u in d["units"])
+def test_explain_decomposition_isolates_structural_shift(cands_for, tidy):
+    """banzuke.experiments.explain: the miss decomposition charges an
+    over-created komusubi slot to the structure, not to the rows below."""
+    from banzuke.experiments.explain import decompose
 
     target = 202309
     cands = cands_for(target)

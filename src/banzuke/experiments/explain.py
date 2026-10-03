@@ -2,7 +2,7 @@
 
     banzuke explain build --start 201901 --end 202609 --seeds 3 --threads 14
     banzuke explain sheet 202101 [--seed 0] [--all]      # side-by-side banzuke
-    banzuke explain explain 202101 [--seed 0] [--all]    # per-rikishi stage table
+    banzuke explain detail 202101 [--seed 0] [--all]     # per-rikishi stage table
     banzuke explain docket --start 201901               # every missed cell, classified
     banzuke explain calibration                         # pair probability reliability
 
@@ -26,7 +26,6 @@ the cell).
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from itertools import combinations
 from multiprocessing import get_context
 
 import numpy as np
@@ -36,7 +35,7 @@ from banzuke import confidence
 from banzuke.experiments import precedent
 from banzuke.harness import fingerprint
 from banzuke.metrics import evaluate
-from banzuke.models import GBMRerank, gap_pairs, twin_units
+from banzuke.models import GBMRerank, gap_pairs
 from banzuke.overrides import OverrideError
 from banzuke.paths import EXPLAIN_CACHE as SCRATCH
 from banzuke.ranks import (CLS_CHARS as CLS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA,
@@ -45,7 +44,7 @@ from banzuke.resolver import forced_claims, resolve
 
 PAIR_GAP = 5.0          # record pair probabilities for every pair this close in base score
                         # (clusters span up to 4.4 points: every in-cluster pair is present)
-VERSION = 2             # bump to invalidate caches when the dump format changes
+VERSION = 3             # bump to invalidate caches when the dump format changes
 UPPER = (YOKOZUNA, OZEKI, SEKIWAKE, KOMUSUBI)
 STAGES = ("cascade", "structural", "boundary", "rerank", "base", "resolver")
 
@@ -60,54 +59,7 @@ def cache_dir(kwargs, seeds):
     return SCRATCH / fingerprint(kwargs=kwargs, seeds=list(seeds), explain=VERSION)
 
 
-# --- reranker reconstruction ---------------------------------------------------
-
-def rerank_detail(model, cands, base):
-    """GBMRerank.score step by step: units, clusters, unit-pair probabilities,
-    Borda, final integer ranks. Must reproduce model.score(cands) exactly."""
-    pos = cands["position"].to_numpy()
-    units = [[i] for i in range(len(cands))]
-    if model.twin_unit:
-        for e, w in twin_units(cands, model.twin_unit):
-            units[e], units[w] = [e, w], []
-    units = [u for u in units if u]
-    ubase = np.array([base[u].mean() for u in units])
-    upos = np.array([pos[u].min() for u in units])
-    order = np.lexsort((upos, ubase))
-    clusters, cur = [], [order[0]]
-    for prev, i in zip(order, order[1:]):
-        if ubase[i] - ubase[prev] <= model.gap and len(cur) < model.cluster_max:
-            cur.append(i)
-        else:
-            clusters.append(cur)
-            cur = [i]
-    clusters.append(cur)
-    upairs = [(a, b) if upos[a] <= upos[b] else (b, a)
-              for cl in clusters for a, b in combinations(cl, 2)]
-    borda, pu = np.zeros(len(units)), np.array([])
-    if upairs:
-        i_arr, j_arr, owner = map(np.array, zip(*[
-            (i, j, q) for q, (a, b) in enumerate(upairs) for i in units[a] for j in units[b]]))
-        p = model.pair.proba(cands, i_arr, j_arr, base)
-        pu = np.bincount(owner, p) / np.bincount(owner)
-        for (a, b), q in zip(upairs, pu):
-            borda[a] += q
-            borda[b] += 1 - q
-    final = [i for cl in clusters for u in sorted(cl, key=lambda u: (-borda[u], ubase[u]))
-             for i in sorted(units[u], key=lambda i: pos[i])]
-    score = np.empty(len(cands))
-    score[final] = np.arange(len(final))
-    unit_of = np.empty(len(cands), dtype=int)
-    cluster_of = np.empty(len(cands), dtype=int)
-    for u, members in enumerate(units):
-        unit_of[members] = u
-    for c, cl in enumerate(clusters):
-        for u in cl:
-            cluster_of[units[u]] = c
-    csize = np.array([len(clusters[c]) for c in cluster_of])
-    return dict(score=score, units=units, clusters=clusters, upairs=upairs, pu=pu,
-                borda=borda, unit_of=unit_of, cluster_of=cluster_of, cluster_size=csize)
-
+# --- pair probabilities ---------------------------------------------------------
 
 def pair_table(model, cands, base, detail):
     """Every pair within PAIR_GAP base points, oriented i = currently higher
@@ -121,8 +73,7 @@ def pair_table(model, cands, base, detail):
     rid = cands["rikishi_id"].to_numpy()
     same = detail["cluster_of"][i_arr] == detail["cluster_of"][j_arr]
     return pd.DataFrame({
-        "rid_i": rid[i_arr], "rid_j": rid[j_arr], "p": p,
-        "base_i": base[i_arr], "base_j": base[j_arr], "gap": base[j_arr] - base[i_arr],
+        "rid_i": rid[i_arr], "rid_j": rid[j_arr], "p": p, "gap": base[j_arr] - base[i_arr],
         "same_cluster": same, "cluster": np.where(same, detail["cluster_of"][i_arr], -1),
         "twin_i": [len(detail["units"][u]) > 1 for u in detail["unit_of"][i_arr]],
         "twin_j": [len(detail["units"][u]) > 1 for u in detail["unit_of"][j_arr]],
@@ -195,8 +146,6 @@ def decompose(p, actual):
     p["rerank_fixed"] = mak & p["hit"] & ~p["hit_base"]
     p["cascade"] = cascade
     p["flip"] = miss & (p["pred_class"] == p["class_next"]) & (p["pred_number"] == p["number_next"])
-    for c in UPPER:
-        p[f"n_pred_{CLS[c]}"], p[f"n_act_{CLS[c]}"] = n_pred[c], n_act[c]
     return p
 
 
@@ -226,10 +175,8 @@ def _build_target(args):
     for seed in seeds:
         model = GBMRerank(seed=seed, **kw)
         model.fit(train)
-        base = model.base_score(cands)
-        score = model.score(cands)
-        detail = rerank_detail(model, cands, base)
-        repro = bool(np.array_equal(detail["score"], score))
+        detail = model.rerank(cands)
+        base, score = detail["base"], detail["score"]
         pred = resolve(cands, score, mak_size)
         try:
             pred_base = resolve(cands, base, mak_size)
@@ -258,7 +205,7 @@ def _build_target(args):
             created[f"committee_{CLS[c]}"] = _names(p, (p["class_next"] == c) & (p["pred_class"] > c))
         frames.append({
             "target": target, "seed": seed, "prev": prev, "train_max": int(train["next_basho"].max()),
-            "repro": repro, **m,
+            **m,
             **{f"n_pred_{CLS[c]}": int((p["pred_class"] == c).sum()) for c in UPPER},
             **{f"n_act_{CLS[c]}": int((actual["rank_class"] == c).sum()) for c in UPPER},
             "n_cascade": int(p["cascade"].sum()),
@@ -299,8 +246,8 @@ def build(trans, tidy, start, end, seeds, kwargs=None, threads=1):
     for name, parts in (("rows", rows), ("pairs", pairs), ("frames", frames)):
         pd.concat(parts, ignore_index=True).to_parquet(out / f"{name}_{tag}.parquet", index=False)
     fr = pd.concat(frames, ignore_index=True)
-    print(f"wrote {out} ({tag}); repro {fr['repro'].mean():.3f}; "
-          f"exact {fr['exact_n'].mean():.2f} MAE {fr['mae'].mean():.3f} over {fr['target'].nunique()} targets")
+    print(f"wrote {out} ({tag}); exact {fr['exact_n'].mean():.2f} MAE {fr['mae'].mean():.3f} "
+          f"over {fr['target'].nunique()} targets")
     return fr
 
 
@@ -440,8 +387,6 @@ def explain_text(rows, pairs, frames, tidy, trans, target, seed):
     fr = frames[(frames["target"] == target) & (frames["seed"] == seed)].iloc[0]
     actual = tidy[(tidy["basho"] == target) & (tidy["division"] == 0)]
     lines = header(p, fr, actual)
-    if not fr["repro"]:
-        lines.append("WARNING: reconstructed reranker order differs from model.score")
     p = p.sort_values("pred_pos")
     lines.append("")
     lines.append(f"{'pp':>3} {'name':<14} {'prior':<5} {'rec':<7} {'base':>6} {'brk':>3} {'fin':>3} {'cl':>3} {'sz':>2} "

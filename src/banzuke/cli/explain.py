@@ -57,8 +57,7 @@ def add_parser(sub):
     _cache_key(p)
     p.set_defaults(run=run_sheet, _parser=p, text=_sheet)
 
-    p = action_parser(what, "detail", "per-rikishi stage table, reranker clusters and precedent",
-                      aliases=["explain"])
+    p = action_parser(what, "detail", "per-rikishi stage table, reranker clusters and precedent")
     _which(p)
     _cache_key(p)
     p.set_defaults(run=run_sheet, _parser=p, text=_detail)
@@ -135,11 +134,12 @@ def run_sheet(args):
                    else [args.target])
         for t in targets:
             text, sub = args.text(explain, data, t, args.seed)
+            if not args.all:
+                print(text)
+                continue
             out = explain.SCRATCH / sub
             out.mkdir(parents=True, exist_ok=True)
             (out / f"{t}.txt").write_text(text + "\n")
-            if not args.all:
-                print(text)
     except explain.NoCache as e:
         raise CommandError(str(e))
     if args.all:

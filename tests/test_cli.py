@@ -10,7 +10,7 @@ HELP = [
     [], ["predict"], ["data"], ["data", "update"], ["data", "fetch"], ["data", "build"],
     ["backtest"], ["analyze"], ["conventions"], ["gtb"],
     ["explain"], ["explain", "build"], ["explain", "sheet"], ["explain", "detail"],
-    ["explain", "explain"], ["explain", "docket"], ["explain", "calibration"],
+    ["explain", "docket"], ["explain", "calibration"],
     ["precedent"], ["precedent", "landing"], ["precedent", "cells"], ["precedent", "pair"],
 ]
 
@@ -21,8 +21,7 @@ def test_every_command_has_help(argv, capsys):
         main([*argv, "--help"])
     assert e.value.code == 0
     out = capsys.readouterr().out
-    canonical = [{"explain": "detail"}.get(a, a) if i else a for i, a in enumerate(argv)]
-    assert out.startswith("usage: banzuke" + "".join(f" {a}" for a in canonical))
+    assert out.startswith("usage: banzuke" + "".join(f" {a}" for a in argv))
     assert "options:" in out
 
 

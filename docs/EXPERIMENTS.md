@@ -1261,7 +1261,7 @@ invocations as they were run; the map:
 | `uv run python backtest.py ...` / `analyze.py ...` | `banzuke backtest ...` / `banzuke analyze ...` |
 | `uv run python -m banzuke.conventions` | `banzuke conventions` |
 | `uv run python -m experiments.explain build\|sheet\|docket\|calibration` | `banzuke explain build\|sheet\|docket\|calibration` |
-| `uv run python -m experiments.explain explain T` | `banzuke explain detail T` (`explain explain` still accepted) |
+| `uv run python -m experiments.explain explain T` | `banzuke explain detail T` |
 | `uv run python -m experiments.precedent landing\|pair\|cells` | `banzuke precedent landing\|pair\|cells` |
 | `uv run python -m experiments.rules` | `banzuke rules` (removed since, see below) |
 

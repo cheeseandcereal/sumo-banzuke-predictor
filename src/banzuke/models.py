@@ -354,7 +354,14 @@ class GBMRerank(GBMMedian):
                                self.threads).fit(train)
 
     def score(self, cands, k=None):
-        base = self.base_score(cands, k)
+        return self.rerank(cands, k)["score"]
+
+    def rerank(self, cands, k=None, base=None):
+        """score() step by step: units, clusters, unit-pair probabilities,
+        Borda, final integer ranks (lower = ranked higher). base: the base
+        scores to rerank within (default: this bag member's own)."""
+        if base is None:
+            base = self.base_score(cands, k)
         pos = cands["position"].to_numpy()
         units = [[i] for i in range(len(cands))]
         if self.twin_unit:
@@ -376,19 +383,29 @@ class GBMRerank(GBMMedian):
         # training; a unit pair's probability is the mean over its member pairs
         upairs = [(a, b) if upos[a] <= upos[b] else (b, a)
                   for cl in clusters for a, b in combinations(cl, 2)]
-        borda = np.zeros(len(units))
+        borda, pu = np.zeros(len(units)), np.array([])
         if upairs:
             i_arr, j_arr, owner = map(np.array, zip(*[
                 (i, j, q) for q, (a, b) in enumerate(upairs) for i in units[a] for j in units[b]]))
             p = self.pair.proba(cands, i_arr, j_arr, base, k)
-            for (a, b), pu in zip(upairs, np.bincount(owner, p) / np.bincount(owner)):
-                borda[a] += pu
-                borda[b] += 1 - pu
+            pu = np.bincount(owner, p) / np.bincount(owner)
+            for (a, b), q in zip(upairs, pu):
+                borda[a] += q
+                borda[b] += 1 - q
         final = [i for cl in clusters for u in sorted(cl, key=lambda u: (-borda[u], ubase[u]))
                  for i in sorted(units[u], key=lambda i: pos[i])]
-        out = np.empty(len(cands))
-        out[final] = np.arange(len(final))
-        return out
+        score = np.empty(len(cands))
+        score[final] = np.arange(len(final))
+        unit_of = np.empty(len(cands), dtype=int)
+        cluster_of = np.empty(len(cands), dtype=int)
+        for u, members in enumerate(units):
+            unit_of[members] = u
+        for c, cl in enumerate(clusters):
+            for u in cl:
+                cluster_of[units[u]] = c
+        return dict(score=score, base=base, units=units, clusters=clusters, upairs=upairs, pu=pu,
+                    borda=borda, unit_of=unit_of, cluster_of=cluster_of,
+                    cluster_size=np.array([len(clusters[c]) for c in cluster_of]))
 
 
 MODELS = {m.name: m for m in (RulesBaseline, GBMRegression, GBMMedian, GBMRanker, GBMRerank)}
