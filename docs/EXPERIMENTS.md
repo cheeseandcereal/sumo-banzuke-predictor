@@ -1263,9 +1263,9 @@ invocations as they were run; the map:
 | `uv run python -m experiments.explain build\|sheet\|docket\|calibration` | `banzuke explain build\|sheet\|docket\|calibration` |
 | `uv run python -m experiments.explain explain T` | `banzuke explain detail T` (`explain explain` still accepted) |
 | `uv run python -m experiments.precedent landing\|pair\|cells` | `banzuke precedent landing\|pair\|cells` |
-| `uv run python -m experiments.rules` | `banzuke rules` |
+| `uv run python -m experiments.rules` | `banzuke rules` (removed since, see below) |
 
-`--seeds` on `explain` and `rules` takes the same SPEC as `backtest`
+`--seeds` on `explain` takes the same SPEC as `backtest`
 (`0-2` is the former `3`). The package moved to `src/banzuke/` with the
 research tools under `banzuke.experiments`; `banzuke.ranks` holds the
 rank vocabulary (ordinals, `fmt_cell`, `fmt_record`, `next_basho`),
@@ -1275,6 +1275,17 @@ backtest and explain caches were invalidated once by the move (the
 fingerprint covers `uv.lock`, which the packaging changed); the OOF
 cache survived. `precedent` and `analyze` print cells as `M3W`, like the
 other commands, instead of `M3w`.
+
+## Housekeeping (2026-10, simplification)
+
+Removed, recoverable from git history before this note:
+
+- `experiments/rules.py` and `banzuke rules`. Its two remaining rules were
+  measured twice and not adopted (R11 and R13, E20 and E22); the part of
+  R13 that did pay, trimming weak M1 claims only behind a falling 7-win
+  sekiwake, has been in the resolver since E22. A future rule search
+  starts from `banzuke explain build` and a copy of the resolver, which
+  is what the harness amounted to.
 
 ## Reading a forecast: reviewer checklist (from E19, updated E22-E25)
 

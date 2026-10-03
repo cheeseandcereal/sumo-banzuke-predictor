@@ -12,7 +12,6 @@ HELP = [
     ["explain"], ["explain", "build"], ["explain", "sheet"], ["explain", "detail"],
     ["explain", "explain"], ["explain", "docket"], ["explain", "calibration"],
     ["precedent"], ["precedent", "landing"], ["precedent", "cells"], ["precedent", "pair"],
-    ["rules"],
 ]
 
 
@@ -57,7 +56,6 @@ def test_version_and_dispatch_table(capsys):
     (["precedent", "landing", "K1 5-10", "--where", "no_such_col > 1"], "--where 'no_such_col > 1'"),
     (["explain", "sheet"], "give a target basho or --all"),
     (["explain", "sheet", "202101", "--seeds", "7-9"], "no rows cache"),
-    (["rules", "--cache", "/nonexistent"], "no cached frames"),
 ])
 def test_usage_errors_exit_2_with_message(argv, message, capsys):
     with pytest.raises(SystemExit) as e:
