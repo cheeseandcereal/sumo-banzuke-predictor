@@ -787,6 +787,18 @@ LightGBM thread each.
 Men absent from the previous banzuke (a court reinstatement, say) are
 automatic misses and excluded from `mae` and `tau`.
 
+`gtb_points` is the scoring of the human "Guess the Banzuke" game
+(dichne.com), whose players predict the same target banzuke after each
+basho. `banzuke gtb` (`banzuke/gtb.py`) fetches the game's per-basho
+result lists from the sumodb archive into `cache/gtb/` (git-ignored,
+never committed) and prints, per target basho and averaged over the
+window, the field's size and the percentiles of its points and
+bullseyes (exact cells); `--model` places a model's backtest rows in
+each basho's field (place, share of the field beaten, points behind the
+winner), seeds averaged per basho. The archive posts a basho's results
+once its banzuke is out; a target without them is skipped and asked
+for again next time.
+
 The experiment protocol (`docs/EXPERIMENTS.md`) compares configurations
 on a screen window, 2004-2019, and evaluates the finalists once on a
 confirm window, 2020 onward; seeds are averaged within a basho and the

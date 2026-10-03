@@ -22,6 +22,7 @@ CACHE = ROOT / "cache"              # git-ignored: keyed caches and per-run dump
 BACKTEST_CACHE = CACHE / "backtest_cache.parquet"
 OOF_CACHE = CACHE / "oof"
 EXPLAIN_CACHE = CACHE / "explain"
+GTB_CACHE = CACHE / "gtb"           # fetched "Guess the Banzuke" archive pages, never committed
 
 
 class MissingDataError(FileNotFoundError):

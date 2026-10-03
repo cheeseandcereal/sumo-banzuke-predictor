@@ -8,7 +8,7 @@ from banzuke.cli._common import CommandError, parse_seeds, parse_sets
 
 HELP = [
     [], ["predict"], ["data"], ["data", "update"], ["data", "fetch"], ["data", "build"],
-    ["backtest"], ["analyze"], ["conventions"],
+    ["backtest"], ["analyze"], ["conventions"], ["gtb"],
     ["explain"], ["explain", "build"], ["explain", "sheet"], ["explain", "detail"],
     ["explain", "explain"], ["explain", "docket"], ["explain", "calibration"],
     ["precedent"], ["precedent", "landing"], ["precedent", "cells"], ["precedent", "pair"],
@@ -49,6 +49,9 @@ def test_version_and_dispatch_table(capsys):
     (["backtest", "--models", "R", "--start", "209901"], "no target basho"),
     (["backtest", "--models", "R", "--set", "oops", "--end", "200403"], "--set expects KEY=VALUE"),
     (["backtest", "--models", "R", "--seeds", "x", "--end", "200403"], "--seeds expects"),
+    (["gtb", "--percentiles", "x"], "--percentiles expects"),
+    (["gtb", "--start", "209901"], "no target basho"),
+    (["gtb", "--model", "Zz", "--end", "202001"], "unknown model"),
     (["precedent", "landing", "Z9 1-1"], "bad rank spec"),
     (["precedent", "pair", "K 5-10", "M1 8-7", "--where", "nonsense column"], "--where 'nonsense column'"),
     (["precedent", "landing", "K1 5-10", "--where", "no_such_col > 1"], "--where 'no_such_col > 1'"),

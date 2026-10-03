@@ -243,19 +243,42 @@ rare to move a 42-slot metric. Columns remain in the dataset
 
 ## Benchmark calibration: human "Guess the Banzuke" players
 
-Verified from dichne.com (2026-08). GTB "bullseye" = our exact-slot
-metric; a "hit" is the right rank on the wrong side. Numbers:
+GTB (dichne.com) players predict the same banzuke the backtest predicts
+and are scored like `gtb_points`: a "bullseye" is our exact slot, a
+"hit" the right rank on the wrong side, 2 and 1 points. The 2026-08
+version of this section quoted dichne.com's all-time top-ten table
+(25-27 bullseyes per basho over each player's whole career) and guessed
+the field at ~470 entries; neither describes the field the model is
+compared with. Measured instead from the sumodb archive with
+`banzuke gtb` (pages fetched into cache/gtb/, not committed) on the 40
+confirm-window targets 202001-202609:
 
-- all-time top-10 GTB players average 25-27 bullseyes per basho
-- the per-basho winning entry (best of ~470 correlated entries, a
-  strong selection effect) lands roughly 33-36 in predictable basho
-- this model's held-out average is 17.1, with 6.5 E/W flips and 7.8
-  off-by-one misses per basho; resolving every near-tie perfectly
-  would yield ~32/42
+| per basho, mean over 40 basho | points | bullseyes |
+|---|---:|---:|
+| median entry (P50) | 47.3 | 20.3 |
+| 75th percentile (P75) | 53.2 | 23.6 |
+| winning entry (P100) | 67.7 | 32.0 |
 
-So the gap to the best individual humans is ~8 slots and lives almost
-entirely in near-tie resolution and sanyaku-count calls. Note also
-that GTB entries close ~4 weeks after the basho: players see announced
+Entries per basho 102-396 (mean 206), growing through the window. The
+winning score ranges 50-82 points (22-40 bullseyes), the median 34-59.
+
+Paired on identical targets (`banzuke gtb --model Ar --seeds 0-1`: the
+final default, two bag replicates): 49.0 points (21.1 exact) per basho,
+mean place 85 of 206, ahead of 56% of the field; above the median entry
+in 24 of 40 basho, above P75 in 11, top ten in 4 (202407 and 202511
+2nd, 202503 4th, 202203 7th), never first, 18.6 points behind the
+winner on average. Hard banzuke are hard for everyone (model points vs
+field median, r = .68), but the model's spread is wider (SD 12.9 points
+across basho; 9.7 for a typical player with 30+ of the 40 basho, 6.4
+for the field median): its five worst basho (202301 16 points, 202109
+24.5, 202007 25.5, 202505 27.5, 202403 30) place it near the bottom
+(141/141, 136/140, 103/106, 288/316, 183/206) of fields whose medians
+were 37, 34, 42, 48 and 42.5.
+
+So the gap to the best human each basho is ~11 bullseyes, to the P75
+entry ~2.5, and the median entry is already behind; the gap lives in
+near-tie resolution and sanyaku-count calls (E19). Note also that GTB
+entries close ~4 weeks after the basho: players see announced
 yokozuna/ozeki promotions, retirements, and the shin-juryo
 announcement (which pins boundary exchange counts); the backtest gets
 none of these.
@@ -1345,5 +1368,7 @@ unless stated.
 - Untried ideas for the near-tie gap: committee-regime features
   (banzuke committee membership changes); for live use, feeding
   announced Y/O promotions and shin-juryo counts into the resolver as
-  constraints (information GTB players have); scraping GTB archives for
-  a paired per-basho model-vs-human comparison on identical targets.
+  constraints (information GTB players have). The paired model-vs-human
+  comparison exists (`banzuke gtb --model Ar`, benchmark section above);
+  its five bottom-of-field basho are the obvious place to look for a
+  structural cause with `banzuke explain sheet`.
