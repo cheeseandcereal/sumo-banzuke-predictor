@@ -7,8 +7,7 @@ requires-python = ">=3.14"
 dependencies = [
     "pandas>=3.0.6",
     "pyarrow>=25.0.1",
-    "lightgbm>=4.7.0",
-    "scikit-learn>=1.9.1",
+    "lightgbm[scikit-learn]>=4.7.0",
     "scipy>=1.18.1",
 ]
 
