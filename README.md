@@ -1,15 +1,51 @@
 # Sumo Banzuke Predictor
 
 Predicts the next makuuchi banzuke (grand sumo top-division rankings)
-from the results of the previous basho.
+from the results of the previous basho using a machine learning algorithm
+trained on historical records.
+
+```
+$ uv run banzuke predict
+training...
+predicted makuuchi banzuke for 202611 (from 202609 results, model Ar, 5-seed bag)
+
+           EAST                                  WEST
+   Y1      Onosato        ( Y1E 12-3)            Hoshoryu       ( Y1W 0-0-15)
+   O1      Aonishiki      ( O2E 11-4)            Kotozakura     ( O1W 9-6)
+   O2      Kirishima      ( O1E 8-7)
+   S1      Fujinokawa     ( S1W 11-4)            Atamifuji      ( S1E 8-7)
+   K1      Churanoumi     ( M3W 10-5)            Yoshinofuji    ( M2W 9-6)
+   M1  ~   Asanoyama      ( M6E 10-5)            Fujiryoga      ( M4W 8-7)
+   M2      Takayasu       ( M2E 7-8)         ?   Hakunofuji     ( K1E 5-10)
+   M3  ??  Daieisho       ( K1W 5-10)        ??~ Ura            ( M9E 10-5)
+   M4  ?   Fujiseiun      ( M7E 9-6)         ?   Kotoshoho      ( M1E 5-7-3)
+   M5      Takerufuji     ( M8E 9-6)             Hiradoumi      ( M8W 9-6)
+   M6  ?   Gonoyama       ( M3E 6-9)         ?~  Kotoeiho       ( M1W 5-10)
+   M7  ~   Wakamotoharu   (M11E 10-5)            Kinbozan       (M10W 9-6)
+   M8      Roga           ( M5E 6-9)             Oshoma         ( M5W 6-9)
+   M9      Nishikifuji    ( M7W 7-8)         ~   Takanosho      ( M4E 4-9-2)
+  M10      Asakoryu       (M13E 9-6)             Shishi         ( M9W 7-8)
+  M11      Oho            (M10E 7-8)             Asahakuryu     (M12W 8-7)
+  M12      Abi            (M13W 8-7)         ?~  Ichiyamamoto   ( M6W 4-11)
+  M13  ?   Toshinofuji    (M16W 9-6)             Asasuiryu      (M15E 8-7)
+  M14      Tokihayate     (M15W 8-7)             Dewanoryu      ( J1E 10-5)
+  M15      Tamawashi      ( J3E 10-5)        ?   Kyokukaiyu     ( J1W 8-7)
+  M16  ?   Kitanowaka     ( J6E 11-4)        ?   Arashifuji     ( J5W 10-5)
+  M17  ?   Daiseizan      ( J2E 8-7)
+
+(! created slot, ?? very low confidence, ? low confidence, ~ big move)
+
+notes:
+  - Atamifuji: ozeki run, 20 wins over last 2 basho in sanyaku
+  - demoted to juryo: Chiyoshoma (M14W), Shodai (M11W), Tobizaru (M14E), Shonannoumi (M17E), Wakatakakage (M12E), Wakanosho (M16E)
+```
 
 Multiple ordering models (rules formula, linear, gradient-boosted
 regression/ranking/pairwise variants) competed on a shared
 rolling-origin backtest covering every banzuke transition since 1959.
-The promoted default, `Ar`, is a seed-bagged L1 gradient-boosted
+The default model used (`Ar`) is a seed-bagged L1 gradient-boosted
 movement model whose near-tie clusters are reordered by a pairwise
-classifier that learned the committee's conflict-resolution habits
-(identical-record sanyaku E/W pairs move as one unit),
+classifier that learned the committee's conflict-resolution habits,
 feeding a resolver that applies the near-inviolable structure (Y/O
 promotion rules and order, make-koshi sanyaku exits, sanyaku minimums,
 empirically-derived E/W layout, no promotion after make-koshi for S/K/M).
@@ -28,13 +64,19 @@ Backtested performance (202001-202609, 40 basho, two bag replicates):
 **21.1 of 42 slots exactly right** per basho on average, **83% of
 wrestlers placed within one position**, mean absolute error 0.75
 half-ranks, juryo promotion/demotion F1 0.92/0.94, GTB score 49
-points/basho (2 per exact slot, 1 per right-rank-wrong-side).
+points/basho (2 per exact slot, 1 per right-rank-wrong-side). For scale,
+in the long-running human "Guess the Banzuke" game
+([dichne.com](https://www.dichne.com/Guess.htm), scored the same way), human
+entries ([from the archive](https://sumodb.sumogames.de/gtb/gtbarchive.aspx))
+over the same period (102-396 entries per basho) averaged:
 
-For scale, in the long-running human "Guess the Banzuke" game
-([dichne.com](https://www.dichne.com/Guess.htm), scored the same way:
-a "bullseye" is an exact slot), the all-time top-10 players average
-25-27 bullseyes (~53-55 points) per basho, and the single best entry
-out of ~470 each basho lands around 33-36. Much of the model's
+* Median (P50): 47
+* 75th Percentile (P75): 53
+* Winning Guess (P100): 68
+
+Placed in each basho's field (`banzuke gtb --model Ar`), the model's
+forecast comes 85th of 206 on average, ahead of 56% of the entries, top
+ten in 4 of the 40 basho and never first. Much of the model's
 remaining gap is near-tie resolution: pure E/W flips and placements
 off by one position, both zones where the committee's choice is close
 to a coin flip on paper. See the experiment log for what has been tried.
@@ -42,13 +84,12 @@ to a coin flip on paper. See the experiment log for what has been tried.
 ## Data
 
 All data comes from the excellent [sumo-api.com](https://www.sumo-api.com)
-(banzuke, results, yusho, and special prizes for every basho since
-1959). Raw API responses and processed Parquet datasets are committed
-under `data/`, including the reranker's out-of-fold training scores, so
-a clone is ready to use without fetching, rebuilding or any one-off
-computation.
+(banzuke, results, yusho, and special prizes for every basho since 1959).
 If you find the API useful, consider [supporting its server
-costs](https://ko-fi.com/sumoapi).
+costs](https://ko-fi.com/sumoapi). Raw API responses and processed Parquet
+datasets are committed under `data/`, including the reranker's out-of-fold
+training scores, so a clone is ready to use without fetching, rebuilding or
+any one-off computation.
 
 ## Usage
 
@@ -68,7 +109,6 @@ Predict the upcoming banzuke from the latest fetched results:
 ```sh
 uv run banzuke predict
 uv run banzuke predict --retired Shikona1,Shikona2   # announced retirees
-uv run banzuke predict --protected Shikona           # a full absence the JSA exempted (rank frozen)
 ```
 
 Disagree with a placement? Overrides constrain the assignment while the
@@ -118,6 +158,7 @@ uv run banzuke backtest --out cache/all       # 2004 through latest basho
 uv run banzuke backtest --end 202311          # original dev window only
 uv run banzuke analyze --model Ar             # residual analysis
 uv run banzuke conventions                    # resolver rules vs committee history
+uv run banzuke gtb --model Ar --seeds 0-1     # the human GTB field per basho, the model placed in it
 uv run banzuke explain build --start 201901   # cache the frames the research tools read
 uv run banzuke explain sheet 202309           # one historical forecast next to the real banzuke
 uv run banzuke precedent landing "K1 5-10"    # where did the committee put that record
@@ -156,29 +197,3 @@ restrict training to newer transitions. Tested and neutral-to-worse
 specialize to the modern regime, so full history remains the default.
 
 `uv run pytest -q` runs the regression tests (a few seconds).
-
-## Layout
-
-- `src/banzuke/`: the package
-  - `cli/`: the `banzuke` command, one module per subcommand (options and
-    printing only)
-  - `paths.py`, `ranks.py`: where the files are; the rank vocabulary
-    (class ordinals, cell and record formatting, basho calendar)
-  - `fetch.py`, `build.py`, `features.py`: raw API fetcher, dataset
-    build, history features and targets
-  - `models.py`, `resolver.py`, `overrides.py`, `confidence.py`,
-    `forecast.py`: ordering models, the structural resolver, human
-    overrides, confidence markers, forecast assembly
-  - `harness.py`, `metrics.py`, `analysis.py`, `conventions.py`:
-    backtest harness and cache, scoring, residual analysis, convention
-    audit
-  - `experiments/`: tools for finding and testing committee conventions
-    without retraining (`explain`, `precedent`, `rules`)
-- `data/banzuke/`, `data/basho/`: committed raw API responses
-- `data/processed/`: committed, reproducible Parquet datasets and the
-  default model's out-of-fold table
-- `tests/`: regression tests (library invariants, command line)
-- `cache/`: git-ignored; every regenerable file (keyed backtest, OOF and
-  explain caches, per-run dumps, `--out` reports) lands here
-- `docs/MODEL.md`: how the default model works, stage by stage
-- `docs/EXPERIMENTS.md`: experiment log and model-selection rationale
