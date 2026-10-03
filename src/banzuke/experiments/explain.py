@@ -504,7 +504,7 @@ def docket(start, kwargs=None, seeds=(0, 1, 2)):
 
 # --- calibration -----------------------------------------------------------------
 
-def calibration(kwargs=None, seeds=(0, 1, 2)):
+def pair_calibration(kwargs=None, seeds=(0, 1, 2)):
     """Reliability of the pair probabilities, by window and pair type."""
     rows, pairs = load("rows", kwargs, seeds), load("pairs", kwargs, seeds)
     info = rows.set_index(["target", "seed", "rikishi_id"])

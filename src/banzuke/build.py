@@ -44,7 +44,7 @@ def _correct(basho: int, r: dict, record: list) -> None:
                          "check the torikumi and add to CORRECTIONS")
 
 
-def load_tidy() -> tuple[pd.DataFrame, pd.DataFrame]:
+def tidy_from_raw() -> tuple[pd.DataFrame, pd.DataFrame]:
     rows, bouts = [], []
     for path in sorted(RAW_BANZUKE.glob("*.json")):
         d = json.loads(path.read_text())
@@ -118,7 +118,7 @@ def main(oof=True, threads=1):
     from banzuke.features import build_transitions
 
     PROCESSED.mkdir(parents=True, exist_ok=True)
-    tidy, bouts = load_tidy()
+    tidy, bouts = tidy_from_raw()
     tidy.to_parquet(PROCESSED / "tidy.parquet", index=False)
     bouts.to_parquet(PROCESSED / "bouts.parquet", index=False)
     print(f"tidy: {len(tidy)} rows, {tidy['basho'].nunique()} basho; {len(bouts)} bouts")

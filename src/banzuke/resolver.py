@@ -339,6 +339,23 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
         (YOKOZUNA, y_members), (OZEKI, o_members), (SEKIWAKE, s_members),
         (KOMUSUBI, k_members), (MAEGASHIRA, m_members), (JURYO, j_members),
     ]
+    out_idx, out_cls, out_num, out_side = _assign_slots(blocks, pins, eligible, limited, prior,
+                                                        shik, warn)
+    pred = pd.DataFrame({
+        "rikishi_id": df["rikishi_id"].to_numpy()[out_idx],
+        "pred_class": out_cls,
+        "pred_number": out_num,
+        "pred_side": out_side,
+    })
+    pred["pred_pos"] = np.arange(len(pred))
+    return pred
+
+
+def _assign_slots(blocks, pins, eligible, limited, prior, shik, warn):
+    """Lay each block's members out on its slots (block_slots), in precedence
+    order: pinned cells first, then the first eligible member per slot (the
+    make-koshi ceiling skips a man to the next slot he may have). Returns the
+    parallel lists (row index, class, number, side)."""
     out_idx, out_cls, out_num, out_side = [], [], [], []
     ne = nw = 0
     for c, members in blocks:
@@ -368,19 +385,11 @@ def resolve(cands: pd.DataFrame, scores: np.ndarray, mak_size: int,
             if limited[i] and (c, *s) < prior[i]:
                 warn.append(f"convention broken: make-koshi {shik[i]} promoted "
                             f"from {fmt_cell(*prior[i])} to {fmt_cell(c, *s)} by override")
-            out_idx.append(assign[s])
+            out_idx.append(i)
             out_cls.append(c)
             out_num.append(s[0])
             out_side.append(s[1])
         if c <= KOMUSUBI:
             ne += sum(s[1] == 0 for s in slots)
             nw += sum(s[1] == 1 for s in slots)
-
-    pred = pd.DataFrame({
-        "rikishi_id": df["rikishi_id"].to_numpy()[out_idx],
-        "pred_class": out_cls,
-        "pred_number": out_num,
-        "pred_side": out_side,
-    })
-    pred["pred_pos"] = np.arange(len(pred))
-    return pred
+    return out_idx, out_cls, out_num, out_side

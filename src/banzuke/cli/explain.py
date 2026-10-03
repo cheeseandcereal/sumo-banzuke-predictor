@@ -102,7 +102,7 @@ def run_calibration(args):
 
     kwargs, seeds = _key(args)
     try:
-        explain.calibration(kwargs, seeds)
+        explain.pair_calibration(kwargs, seeds)
     except explain.NoCache as e:
         raise CommandError(str(e))
 
