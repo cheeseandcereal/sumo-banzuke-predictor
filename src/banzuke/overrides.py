@@ -101,7 +101,7 @@ def parse(cands, above=(), below=(), classes=(), counts=(), pins=()):
         try:
             count_map[CLS_CHARS.index(c)] = int(n)
         except ValueError:
-            raise OverrideError(f"bad --count spec '{spec}': '{n}' is not a number")
+            raise OverrideError(f"bad --count spec '{spec}': '{n}' is not a number") from None
 
     return {"relative": relative, "class": cls_assert,
             "count": count_map, "pins": pin_map}

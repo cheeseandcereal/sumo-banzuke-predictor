@@ -54,7 +54,7 @@ def run_landing(args):
         for spec in args.spec:
             print(precedent.fmt_landing(spec, precedent.landing(t, spec, args.where)))
     except BAD_INPUT as e:
-        raise CommandError(f"{e} (spec {spec!r}, --where {args.where!r})")
+        raise CommandError(f"{e} (spec {spec!r}, --where {args.where!r})") from e
 
 
 def run_pair(args):
@@ -62,4 +62,4 @@ def run_pair(args):
     try:
         print(precedent.fmt_pair(*args.spec, precedent.pair_rate(t, *args.spec, args.where)))
     except BAD_INPUT as e:
-        raise CommandError(f"{e} (specs {args.spec}, --where {args.where!r})")
+        raise CommandError(f"{e} (specs {args.spec}, --where {args.where!r})") from e

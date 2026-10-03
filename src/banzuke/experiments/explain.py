@@ -33,8 +33,10 @@ from banzuke.metrics import evaluate
 from banzuke.models import GBMRerank, gap_pairs
 from banzuke.overrides import OverrideError
 from banzuke.paths import EXPLAIN_CACHE as SCRATCH
-from banzuke.ranks import (CLS_CHARS as CLS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, RECENT_ERA, SEKIWAKE,
-                           YOKOZUNA, fmt_cell as cell, fmt_rank, fmt_record as rec)
+from banzuke.ranks import CLS_CHARS as CLS
+from banzuke.ranks import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, RECENT_ERA, SEKIWAKE, YOKOZUNA, fmt_rank
+from banzuke.ranks import fmt_cell as cell
+from banzuke.ranks import fmt_record as rec
 from banzuke.resolver import forced_claims, resolve
 
 PAIR_GAP = 5.0          # record pair probabilities for every pair this close in base score
@@ -453,7 +455,7 @@ def docket_rows(rows, pairs, start, seed=0):
     out = pd.DataFrame({
         "target": miss["target"], "rikishi_id": miss["rikishi_id"], "shikona": miss["shikona"],
         "prior": [cell(c, n, s) for c, n, s in zip(miss["rank_class"], miss["rank_number"], miss["side"])],
-        "record": [rec(w, l, a) for w, l, a in zip(miss["wins"], miss["losses"], miss["absences"])],
+        "record": [rec(w, lo, a) for w, lo, a in zip(miss["wins"], miss["losses"], miss["absences"])],
         "pred": [cell(c, n, s) for c, n, s in zip(miss["pred_class"], miss["pred_number"], miss["pred_side"])],
         "actual": [cell(c, n, s) for c, n, s in zip(miss["class_next"], miss["number_next"], miss["side_next"])],
         "err": miss["err"], "cell_err": miss["cell_err"], "block_offset": miss["block_offset"],

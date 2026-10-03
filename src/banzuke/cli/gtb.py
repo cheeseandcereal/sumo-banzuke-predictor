@@ -26,9 +26,21 @@ winner.
 """
 from pathlib import Path
 
-from banzuke.cli._common import (CommandError, add_fresh, add_model, add_seeds, add_set,
-                                 add_train_start, add_window, add_threads, model_class, parse_seeds,
-                                 set_configs, subcommand, targets_in)
+from banzuke.cli._common import (
+    CommandError,
+    add_fresh,
+    add_model,
+    add_seeds,
+    add_set,
+    add_threads,
+    add_train_start,
+    add_window,
+    model_class,
+    parse_seeds,
+    set_configs,
+    subcommand,
+    targets_in,
+)
 from banzuke.ranks import CONFIRM_ERA
 
 
@@ -122,7 +134,7 @@ def backtest_rows(args, targets, tidy):
                              seeds=parse_seeds(args.seeds), train_start=args.train_start,
                              threads=args.threads)
     except (TypeError, ValueError) as e:
-        raise CommandError(f"--set: {e}")
+        raise CommandError(f"--set: {e}") from e
     return results, str(label_of(results)[0])
 
 

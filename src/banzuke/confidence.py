@@ -11,8 +11,7 @@ import numpy as np
 import pandas as pd
 
 from banzuke.overrides import OverrideError
-from banzuke.ranks import (CLS_CHARS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, fmt_cell,
-                           fmt_record)
+from banzuke.ranks import CLS_CHARS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, fmt_cell, fmt_record
 from banzuke.resolver import forced_claims, resolve
 
 # Ar model, 2024-2026 backtest, 3 seeds, exact / far (>1 position off):

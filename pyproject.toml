@@ -28,3 +28,16 @@ module-name = "banzuke"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 110
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B"]
+ignore = ["B905"]  # zip(strict=) everywhere is noise; the paired arrays are built together
+
+[tool.ruff.lint.per-file-ignores]
+"src/banzuke/experiments/explain.py" = ["E501"]  # wide report tables
+
+[tool.ruff.lint.isort]
+known-first-party = ["banzuke", "conftest"]

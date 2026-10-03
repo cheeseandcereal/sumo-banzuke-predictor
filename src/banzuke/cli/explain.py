@@ -23,8 +23,18 @@ it), base (the base order was wrong and the reranker did not fix it),
 resolver (the final order was right, the resolver's rules or layout moved
 the cell).
 """
-from banzuke.cli._common import (CommandError, action_parser, add_seeds, add_set, add_window,
-                                 add_threads, parse_seeds, parse_sets, subcommand, targets_in)
+from banzuke.cli._common import (
+    CommandError,
+    action_parser,
+    add_seeds,
+    add_set,
+    add_threads,
+    add_window,
+    parse_seeds,
+    parse_sets,
+    subcommand,
+    targets_in,
+)
 
 
 def _cache_key(ap):
@@ -94,7 +104,7 @@ def run_docket(args):
     try:
         explain.docket(args.start, kwargs, seeds)
     except explain.NoCache as e:
-        raise CommandError(str(e))
+        raise CommandError(str(e)) from e
 
 
 def run_calibration(args):
@@ -104,7 +114,7 @@ def run_calibration(args):
     try:
         explain.pair_calibration(kwargs, seeds)
     except explain.NoCache as e:
-        raise CommandError(str(e))
+        raise CommandError(str(e)) from e
 
 
 def _sheet(explain, data, target, seed):
@@ -141,6 +151,6 @@ def run_sheet(args):
             out.mkdir(parents=True, exist_ok=True)
             (out / f"{t}.txt").write_text(text + "\n")
     except explain.NoCache as e:
-        raise CommandError(str(e))
+        raise CommandError(str(e)) from e
     if args.all:
         print(f"wrote {len(targets)} files under {out}")

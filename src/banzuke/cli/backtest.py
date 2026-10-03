@@ -19,9 +19,20 @@ that model's defaults alongside and pairs every row against them
 import sys
 from pathlib import Path
 
-from banzuke.cli._common import (CommandError, add_fresh, add_seeds, add_set, add_train_start,
-                                 add_window, add_threads, model_classes, parse_seeds, set_configs,
-                                 subcommand, targets_in)
+from banzuke.cli._common import (
+    CommandError,
+    add_fresh,
+    add_seeds,
+    add_set,
+    add_threads,
+    add_train_start,
+    add_window,
+    model_classes,
+    parse_seeds,
+    set_configs,
+    subcommand,
+    targets_in,
+)
 from banzuke.ranks import CONFIRM_ERA, MODERN_ERA, in_window
 
 # committee behavior drifts; screen/confirm are the tuning windows of
@@ -84,7 +95,7 @@ def run(args):
         results = run_cached(names, targets, trans, tidy, configs, seeds=seeds,
                              train_start=args.train_start, threads=args.threads, fresh=args.fresh)
     except (TypeError, ValueError) as e:
-        raise CommandError(f"--set: {e}")
+        raise CommandError(f"--set: {e}") from e
     print_summaries(results, args.baseline)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)

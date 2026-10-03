@@ -9,8 +9,17 @@ import pandas as pd
 
 from banzuke import confidence
 from banzuke.overrides import OverrideError, splice
-from banzuke.ranks import (CLS_NAMES, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA,
-                           fmt_cell, fmt_record)
+from banzuke.ranks import (
+    CLS_NAMES,
+    JURYO,
+    KOMUSUBI,
+    MAEGASHIRA,
+    OZEKI,
+    SEKIWAKE,
+    YOKOZUNA,
+    fmt_cell,
+    fmt_record,
+)
 from banzuke.resolver import resolve
 
 
@@ -66,7 +75,8 @@ def context(cands, trans):
     prev = trans[trans["basho"] == previous].set_index("rikishi_id")
     out = cands.copy()
     out["rec1"] = out["rikishi_id"].map(
-        {r: fmt_record(w, l, a) for r, w, l, a in zip(prev.index, prev["wins"], prev["losses"], prev["absences"])})
+        {r: fmt_record(w, lo, a)
+         for r, w, lo, a in zip(prev.index, prev["wins"], prev["losses"], prev["absences"])})
     sk = prev[prev["rank_class"].isin((SEKIWAKE, KOMUSUBI)) & (prev["wins"] >= 8)]
     out["ozeki_run2"] = out["wins"] + out["rikishi_id"].map(sk["wins"])
     return out

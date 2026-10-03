@@ -21,8 +21,8 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier, LGBMRanker, LGBMRegressor
 
-from banzuke.ranks import JURYO, KOMUSUBI, MAEGASHIRA, SEKIWAKE, TWIN_KEY
 from banzuke.features import FEATURES
+from banzuke.ranks import JURYO, KOMUSUBI, MAEGASHIRA, SEKIWAKE, TWIN_KEY
 
 BASE_PARAMS = dict(
     n_estimators=300, learning_rate=0.05, num_leaves=63, min_child_samples=30,

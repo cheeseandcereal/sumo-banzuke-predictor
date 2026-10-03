@@ -27,8 +27,17 @@ import numpy as np
 import pandas as pd
 
 from banzuke.overrides import OverrideError
-from banzuke.ranks import (CLS_NAMES, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, TWIN_KEY,
-                           YOKOZUNA, fmt_cell)
+from banzuke.ranks import (
+    CLS_NAMES,
+    JURYO,
+    KOMUSUBI,
+    MAEGASHIRA,
+    OZEKI,
+    SEKIWAKE,
+    TWIN_KEY,
+    YOKOZUNA,
+    fmt_cell,
+)
 
 
 def block_slots(c, n, ne, nw):

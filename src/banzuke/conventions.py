@@ -12,8 +12,7 @@ silent. A few regularities the resolver does not enforce are tracked too
 import numpy as np
 import pandas as pd
 
-from banzuke.ranks import (KOMUSUBI, MAEGASHIRA, MODERN_ERA, OZEKI, SEKIWAKE, TWIN_KEY,
-                           YOKOZUNA)
+from banzuke.ranks import KOMUSUBI, MAEGASHIRA, MODERN_ERA, OZEKI, SEKIWAKE, TWIN_KEY, YOKOZUNA
 from banzuke.resolver import block_slots, forced_claims, rule_masks
 
 LAYOUT = {YOKOZUNA: "layout: yokozuna block", OZEKI: "layout: ozeki block (odd -> lighter column)",
@@ -48,11 +47,13 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
 
     rule("yokozuna never demoted", cls == YOKOZUNA, nxt == YOKOZUNA)
     rule("ozeki yusho after yusho / 12+ jun-yusho fought as ozeki -> yokozuna", y_promo, nxt == YOKOZUNA)
-    rule("yusho / jun-yusho fought at sekiwake does not count for that rule", y_fires & ~y_promo, nxt > YOKOZUNA)
+    rule("yusho / jun-yusho fought at sekiwake does not count for that rule", y_fires & ~y_promo,
+         nxt > YOKOZUNA)
     rule("yokozuna promotions met that rule", (cls == OZEKI) & (nxt == YOKOZUNA), y_promo)
     rule("kadoban ozeki with make-koshi drops out", claims["kadoban_out"], nxt > OZEKI)
     rule("other ozeki keep the rank", (cls == OZEKI) & ~claims["kadoban_out"], nxt <= OZEKI)
-    rule("S/K 10+ wins, 33-win run (32 with yusho) over three sanyaku basho -> ozeki", rm["o_run"], nxt == OZEKI)
+    rule("S/K 10+ wins, 33-win run (32 with yusho) over three sanyaku basho -> ozeki", rm["o_run"],
+         nxt == OZEKI)
     rule("S/K 12+ wins, 33-win run with one M1-M3 basho -> ozeki", rm["o_run_m"] & ~rm["o_run"], nxt == OZEKI)
     rule("ozeki promotions met those rules", np.isin(cls, (SEKIWAKE, KOMUSUBI)) & (nxt == OZEKI), o_promo)
     rule("demoted ozeki with 10+ wins returns", o_return, nxt == OZEKI)
@@ -63,11 +64,13 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
     rule("M1 8+ wins -> sanyaku", m1, nxt <= KOMUSUBI)
     rule("M2 11+ / M3 10+ / M4 12+ / M5 13+ -> sanyaku", claims["m_claim"] & ~m1, nxt <= KOMUSUBI)
     # make-koshi exits (E20/E22 R2, R3)
-    rule("sekiwake with 7 wins and two other sekiwake candidates -> komusubi", rm["k_from_s"], nxt == KOMUSUBI)
+    rule("sekiwake with 7 wins and two other sekiwake candidates -> komusubi", rm["k_from_s"],
+         nxt == KOMUSUBI)
     rule("sekiwake with <= 6 wins leaves sanyaku", (cls == SEKIWAKE) & (wins <= 6), nxt >= MAEGASHIRA)
     rule("komusubi with <= 6 wins leaves sanyaku", (cls == KOMUSUBI) & (wins <= 6), nxt >= MAEGASHIRA)
     k1e = (num == 1) & (t["side"].to_numpy() == 0)
-    rule("komusubi with 7 wins below K1E leaves sanyaku", (cls == KOMUSUBI) & (wins == 7) & ~k1e, nxt >= MAEGASHIRA)
+    rule("komusubi with 7 wins below K1E leaves sanyaku", (cls == KOMUSUBI) & (wins == 7) & ~k1e,
+         nxt >= MAEGASHIRA)
 
     def cell(c, n, s):  # lexicographic (class, number, side) as one integer
         return c.astype(int) * 1000 + n.astype(int) * 10 + s.astype(int)
@@ -96,14 +99,18 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
         return p[keep(p)] if keep is not None else p
 
     t["fought"] = ((t["wins"] + t["losses"]) > 0).astype(int)
+    def yo_key(p, s):
+        return list(zip(-p[f"wins_{s}"], -p[f"yusho_{s}"], -p[f"fought_{s}"], p[f"position_{s}"]))
+
     for c, name in ((YOKOZUNA, "yokozuna who stay are ordered by wins, yusho, fought, prior position"),
                     (OZEKI, "ozeki who stay are ordered by wins, yusho, fought, prior position")):
-        key = lambda p, s: list(zip(-p[f"wins_{s}"], -p[f"yusho_{s}"], -p[f"fought_{s}"], p[f"position_{s}"]))
         p = same_basho_pairs((cls == c) & (nxt == c))
-        p = p[[ka < kb for ka, kb in zip(key(p, "a"), key(p, "b"))]]
+        p = p[[ka < kb for ka, kb in zip(yo_key(p, "a"), yo_key(p, "b"))]]
         add(name, "resolver", p["basho"], p["position_next_a"] < p["position_next_b"])
-    p = same_basho_pairs(claims["kadoban_out"] & (nxt == SEKIWAKE), ~claims["kadoban_out"] & (nxt == SEKIWAKE))
-    add("demoted ozeki is the bottom sekiwake", "resolver", p["basho"], p["position_next_a"] > p["position_next_b"])
+    p = same_basho_pairs(claims["kadoban_out"] & (nxt == SEKIWAKE),
+                         ~claims["kadoban_out"] & (nxt == SEKIWAKE))
+    add("demoted ozeki is the bottom sekiwake", "resolver", p["basho"],
+        p["position_next_a"] > p["position_next_b"])
     p = same_basho_pairs((cls > KOMUSUBI) & (nxt == KOMUSUBI), (cls == KOMUSUBI) & kk & (nxt == KOMUSUBI))
     add("komusubi newcomers rank below kachi-koshi komusubi incumbents", "resolver",
         p["basho"], p["position_next_a"] > p["position_next_b"])

@@ -10,9 +10,20 @@ re-measured against the committee's decisions.
 Predictions are cached per (model, window, configuration) under cache/;
 --fresh recomputes them.
 """
-from banzuke.cli._common import (CommandError, add_fresh, add_model, add_seeds, add_set, add_window,
-                                 add_threads, model_class, parse_seeds, parse_sets, subcommand,
-                                 targets_in)
+from banzuke.cli._common import (
+    CommandError,
+    add_fresh,
+    add_model,
+    add_seeds,
+    add_set,
+    add_threads,
+    add_window,
+    model_class,
+    parse_seeds,
+    parse_sets,
+    subcommand,
+    targets_in,
+)
 from banzuke.ranks import MODERN_ERA
 
 
@@ -42,7 +53,7 @@ def run(args):
         preds = analysis.cached_predictions(args.model, targets, seeds, kwargs, trans, tidy,
                                             threads=args.threads, fresh=args.fresh)
     except (TypeError, ValueError) as e:
-        raise CommandError(f"--set: {e}")
+        raise CommandError(f"--set: {e}") from e
     analysis.residuals(preds, args.model, args.start, end, seeds)
     analysis.calibration(preds, trans)
     print()

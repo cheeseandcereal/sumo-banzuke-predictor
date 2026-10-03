@@ -11,15 +11,24 @@ import pandas as pd
 import pytest
 
 from banzuke import confidence, forecast
-from banzuke.ranks import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
 from banzuke.features import FEATURES, build_transitions
 from banzuke.harness import METRICS, run_backtest, summarize
 from banzuke.metrics import evaluate
-from banzuke.models import (MODELS, GBMMedian, GBMRanker, GBMRerank, RulesBaseline, _seeds,
-                            _window_pairs, gap_pairs, twin_units)
+from banzuke.models import (
+    MODELS,
+    GBMMedian,
+    GBMRanker,
+    GBMRerank,
+    RulesBaseline,
+    _seeds,
+    _window_pairs,
+    gap_pairs,
+    twin_units,
+)
 from banzuke.oof import OOF_MIN_HISTORY, oof_base_scores, oof_key
 from banzuke.overrides import parse
 from banzuke.paths import ROOT
+from banzuke.ranks import JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
 from banzuke.resolver import block_slots, forced_claims, resolve
 from conftest import FAST_RERANK, SMALL, fake_results
 
@@ -163,11 +172,13 @@ def test_resolver_yo_order_and_demoted_ozeki(cands_for):
     for sign in (1.0, -1.0):
         cands, pred = _true_order(cands_for, 202009, sign)
         cells = _cells(cands, pred)
-        assert cells.loc[["Okinoumi", "Endo"], CELL].to_numpy().tolist() == [[KOMUSUBI, 1, 0], [KOMUSUBI, 1, 1]]
+        assert cells.loc[["Okinoumi", "Endo"], CELL].to_numpy().tolist() == [[KOMUSUBI, 1, 0],
+                                                                              [KOMUSUBI, 1, 1]]
     # R4, 202607: Aonishiki (O 0-0-15, kadoban) is the bottom sekiwake even when
     # the model ranks him first among the sekiwake candidates
     cands, pred = _true_order(cands_for, 202607, -1.0)
-    s = pred[pred["pred_class"] == SEKIWAKE].merge(cands[["rikishi_id", "shikona", "kadoban"]], on="rikishi_id")
+    s = pred[pred["pred_class"] == SEKIWAKE].merge(cands[["rikishi_id", "shikona", "kadoban"]],
+                                                   on="rikishi_id")
     assert s["shikona"].iloc[-1] == "Aonishiki" and len(s) >= 2
     assert (s["kadoban"].iloc[:-1] == 0).all()
 
@@ -183,13 +194,15 @@ def test_resolver_make_koshi_exits(cands_for):
         assert (pred["pred_class"] == KOMUSUBI).sum() == 2
         assert cells.loc["Tamawashi", "pred_class"] >= MAEGASHIRA
         if sign > 0:  # true order: Endo K1W, Tamawashi M1E
-            assert cells.loc[["Endo", "Tamawashi"], CELL].to_numpy().tolist() == [[KOMUSUBI, 1, 1], [MAEGASHIRA, 1, 0]]
+            assert cells.loc[["Endo", "Tamawashi"], CELL].to_numpy().tolist() == [[KOMUSUBI, 1, 1],
+                                                                                 [MAEGASHIRA, 1, 0]]
     n = 0
     for target, sign in product((202105, 202111, 202403, 202603), (1.0, -1.0)):
         cands, pred = _true_order(cands_for, target, sign)
         m = cands.merge(pred, on="rikishi_id")
         out = m[m["rank_class"].isin([SEKIWAKE, KOMUSUBI]) & (m["wins"] <= 6)
-                | (m["rank_class"] == KOMUSUBI) & (m["wins"] == 7) & ~((m["rank_number"] == 1) & (m["side"] == 0))]
+                | (m["rank_class"] == KOMUSUBI) & (m["wins"] == 7)
+                & ~((m["rank_number"] == 1) & (m["side"] == 0))]
         n += len(out)
         assert (out["pred_class"] >= MAEGASHIRA).all(), target
     assert n >= 8
@@ -214,7 +227,8 @@ def test_rule_masks_yo_promotions(trans):
     assert not y[(202105, "Terunofuji")] and not y[(200605, "Hakuho")] and not y[(202601, "Aonishiki")]
     assert y[(200705, "Hakuho")] and y[(202505, "Onosato")]
     o = pd.Series(rm["o_promo"], index=index)
-    assert all(o[k] for k in [(201505, "Terunofuji"), (201805, "Tochinoshin"), (202511, "Aonishiki"), (202603, "Kirishima")])
+    assert all(o[k] for k in [(201505, "Terunofuji"), (201805, "Tochinoshin"), (202511, "Aonishiki"),
+                              (202603, "Kirishima")])
     assert not any(o[k] for k in [(202011, "Terunofuji"), (202405, "Onosato"), (200509, "Kotooshu")])
     assert not o[(201811, "Takakeisho")] and o[(201903, "Takakeisho")]  # 33 wins over K/S/S: the classic rule
     # kadoban survives an exempted second make-koshi (Mitakeumi 202207 -> 202209), so
@@ -316,8 +330,10 @@ def test_protected_column(trans):
     modern = trans[(trans["basho"] >= 200401) & (trans["rank_protected"] == 1)]
     assert set(zip(modern["basho"], modern["rikishi_id"])) == PROTECTED
     assert (trans.loc[trans["rank_class"] <= OZEKI, "rank_protected"] == 0).all()
-    assert trans.loc[(trans["basho"] == 202201) & (trans["shikona"] == "Takayasu"), "rank_protected"].item() == 1
-    assert trans.loc[(trans["basho"] == 202207) & (trans["shikona"] == "Takanosho"), "rank_protected"].item() == 0
+    def protected(basho, shikona):
+        return trans.loc[(trans["basho"] == basho) & (trans["shikona"] == shikona), "rank_protected"].item()
+
+    assert protected(202201, "Takayasu") == 1 and protected(202207, "Takanosho") == 0
 
 
 def test_extra_feature_option(small_train, cands_for):
@@ -596,9 +612,11 @@ def test_explain_decomposition_isolates_structural_shift(cands_for, tidy):
     cands = cands_for(target)
     actual = tidy[tidy["basho"] == target]
     truth = cands["position_next"].to_numpy(dtype=float)
-    pred = resolve(cands, truth, 42, overrides={"count": {KOMUSUBI: int((actual["rank_class"] == KOMUSUBI).sum()) + 1}})
+    n_k = int((actual["rank_class"] == KOMUSUBI).sum())
+    pred = resolve(cands, truth, 42, overrides={"count": {KOMUSUBI: n_k + 1}})
     pb = pred.rename(columns={c: f"{c}_base" for c in CELL + ["pred_pos"]})
-    p = cands.assign(score=truth.argsort().argsort(), base=truth).merge(pred, on="rikishi_id").merge(pb, on="rikishi_id")
+    p = (cands.assign(score=truth.argsort().argsort(), base=truth)
+         .merge(pred, on="rikishi_id").merge(pb, on="rikishi_id"))
     p = decompose(p, actual)
     mak = p[p["class_next"] == MAEGASHIRA]
     extra = p[(p["pred_class"] == KOMUSUBI) & (p["class_next"] == MAEGASHIRA)]

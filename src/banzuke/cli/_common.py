@@ -111,7 +111,7 @@ def build_model(model_cls, kwargs, trans, threads=1, train_start=None):
         kwargs = model_cls.prepare(kwargs, trans, threads, train_start)
         return model_cls(**kwargs, threads=threads)
     except (TypeError, ValueError) as e:
-        raise CommandError(f"--set: {e}")
+        raise CommandError(f"--set: {e}") from e
 
 
 # --- option value grammar -----------------------------------------------------
@@ -124,7 +124,7 @@ def parse_seeds(spec) -> tuple:
         try:
             out.extend(range(int(a), int(b or a) + 1))
         except ValueError:
-            raise CommandError(f"--seeds expects N, A-B or a comma-separated list, got {spec!r}")
+            raise CommandError(f"--seeds expects N, A-B or a comma-separated list, got {spec!r}") from None
     return tuple(out)
 
 

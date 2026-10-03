@@ -22,8 +22,17 @@ alternative.
 """
 import sys
 
-from banzuke.cli._common import (CommandError, add_model, add_set, add_train_start, add_threads,
-                                 build_model, model_class, parse_sets, subcommand)
+from banzuke.cli._common import (
+    CommandError,
+    add_model,
+    add_set,
+    add_threads,
+    add_train_start,
+    build_model,
+    model_class,
+    parse_sets,
+    subcommand,
+)
 
 SPEC_KEYS = ("above", "below", "class", "count", "pin")
 
@@ -76,7 +85,8 @@ def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds):
         if r is None:
             return ""
         prev = fmt_cell(r['rank_class'], r['rank_number'], r['side'])
-        out = f"{r['marker']:<3} {r['shikona']:<14} ({prev:>4} {fmt_record(r['wins'], r['losses'], r['absences'])})"
+        rec = fmt_record(r["wins"], r["losses"], r["absences"])
+        out = f"{r['marker']:<3} {r['shikona']:<14} ({prev:>4} {rec})"
         if r["rikishi_id"] in ov["pins"]:
             out += " [pin]"
         now = fmt_cell(r["pred_class"], r["pred_number"], r["pred_side"])
@@ -202,7 +212,7 @@ def run(args):
     try:
         cands = forecast.candidates(trans, latest, retired, protected)
     except OverrideError as e:
-        raise CommandError(str(e))
+        raise CommandError(str(e)) from e
     if any(retired):
         wanted = {n.strip().lower() for n in retired}
         on_sheet = trans.loc[trans["basho"] == latest, "shikona"]
@@ -240,7 +250,7 @@ def run(args):
         run_once(state)
     except OverrideError as e:
         if not args.interactive:
-            raise CommandError(str(e))
+            raise CommandError(str(e)) from e
         print(f"error: {e}")
         state = {k: [] for k in state}
         run_once(state)
