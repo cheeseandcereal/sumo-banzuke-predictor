@@ -298,6 +298,16 @@ def test_rerank_is_deterministic_permutation(small_train, cands_for):
         GBMRerank(seed=0, n_seeds=1, base={"n_estimators": 1}).fit(small_train)
 
 
+def test_default_rerank_trains_on_oof_near_ties(small_train, cands_for, trans):
+    # the production configuration: near_ties with the committed OOF table
+    oof = GBMRerank.prepare({}, trans)["oof"]
+    m = GBMRerank(seed=0, **SMALL, pair={"n_estimators": 10}, oof=oof)
+    m.fit(small_train)
+    assert m.pair.oof is not None and m.pair.ms[0].n_features_in_ > len(FEATURES)
+    s = m.score(cands_for(200401))
+    assert sorted(s.tolist()) == list(range(len(s)))
+
+
 def test_twin_unit_keeps_identical_record_twins_together(small_train, cands_for):
     # E17: with twin_unit, E/W twins with the same record leave the reranker
     # adjacent and in prior order; a sheet without twins is scored exactly as

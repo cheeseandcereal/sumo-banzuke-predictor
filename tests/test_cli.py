@@ -101,6 +101,50 @@ def test_conventions_and_precedent_run(capsys):
     assert out.startswith("K 5-10 above M9-10 10-5:") and "2004+" in out
 
 
+def _latest_candidates():
+    from banzuke import forecast
+    from banzuke.paths import load_transitions
+
+    trans = load_transitions()
+    cands = forecast.candidates(trans, forecast.latest_basho(trans))
+    return cands.sort_values("position").reset_index(drop=True)
+
+
+def test_predict_runs_with_every_override_kind(capsys):
+    # R trains in milliseconds; the names come from the data so a data update
+    # does not break the test: two adjacent mid-table maegashira, the M1E
+    # man pinned far below where any model puts him, the top man demoted
+    from banzuke.ranks import CLS_CHARS, MAEGASHIRA
+
+    cands = _latest_candidates()
+    top = cands.iloc[0]
+    m = cands.loc[cands["rank_class"] == MAEGASHIRA, "shikona"].tolist()
+    first, a, b = m[0], m[6], m[7]
+    demote = f"{top['shikona']}={CLS_CHARS[int(top['rank_class']) + 1]}"
+    assert main(["predict", "--model", "R", "--above", f"{b} > {a}", "--pin", f"{first}=M15E",
+                 "--count", "K=3", "--class", demote]) == 0
+    out = capsys.readouterr().out
+    assert out.startswith("predicted makuuchi banzuke for") and "EAST" in out and "WEST" in out
+    pinned = next(line for line in out.splitlines() if f" {first:<14} (" in line)
+    assert "[pin]" in pinned and "<-" in out
+    assert "\noverrides:\n" in out and f"'{b} > {a}'" in out
+    assert "\nwarnings:\n" in out and "demoted by override" in out
+
+
+def test_predict_interactive_loop(monkeypatch, capsys):
+    cands = _latest_candidates()
+    a, b = cands.loc[cands["rank_class"] == 4, "shikona"].iloc[[6, 7]]
+    lines = iter([f"above {b} > {a}", "flags", f"unset {b}", "flags", "bogus", f"pin {a}=Z9Z", "quit"])
+    monkeypatch.setattr("builtins.input", lambda prompt="": next(lines))
+    # a bad override on the command line is reported and dropped, not fatal
+    assert main(["predict", "--model", "R", "--interactive", "--pin", f"{a}=Q1E"]) == 0
+    out = capsys.readouterr().out
+    assert "error: bad slot 'Q1E'" in out
+    assert f'banzuke predict --above "{b} > {a}"' in out and "(no overrides)" in out
+    assert "unknown command 'bogus'" in out and "(override not applied)" in out
+    assert out.count("predicted makuuchi banzuke for") == 3  # initial, above, unset
+
+
 def test_backtest_summarize_reads_csv(tmp_path, capsys):
     import pandas as pd
 
