@@ -382,7 +382,7 @@ def test_pair_helpers():
 def test_oof_scores_are_leak_free_and_cached(trans, tmp_path, monkeypatch):
     lab = trans[trans["position_next"].notna()]
     labeled = sorted(lab["basho"].unique())
-    oof = oof_base_scores(trans, GBMMedian, SMALL, min_history=396, workers=1, cache_dir=tmp_path)
+    oof = oof_base_scores(trans, GBMMedian, SMALL, min_history=396, threads=1, cache_dir=tmp_path)
     assert sorted(oof["basho"].unique()) == labeled[396:]
     assert list(oof.columns) == ["basho", "rikishi_id", "oof"]
     b = labeled[-1]  # source basho b is scored by the base stage fitted on labels known at b
@@ -392,7 +392,7 @@ def test_oof_scores_are_leak_free_and_cached(trans, tmp_path, monkeypatch):
     got = oof[oof["basho"] == b].set_index("rikishi_id")["oof"].reindex(rows["rikishi_id"])
     assert got.to_numpy() == pytest.approx(m.score(rows))
     assert len(list(tmp_path.glob("*.parquet"))) == 1
-    again = oof_base_scores(trans, GBMMedian, SMALL, min_history=396, workers=1, cache_dir=tmp_path)
+    again = oof_base_scores(trans, GBMMedian, SMALL, min_history=396, threads=1, cache_dir=tmp_path)
     pd.testing.assert_frame_equal(again, oof)
     # prepare() fills `oof` only when near_ties is on
     import banzuke.models as models
@@ -437,16 +437,16 @@ def test_stale_oof_table_is_rebuilt_in_place(trans, tmp_path, monkeypatch, capsy
     stale.attrs["oof_key"] = "0" * 16
     stale.to_parquet(paths.OOF_TABLE, index=False)
 
-    out = oof_base_scores(small, GBMRerank, {}, workers=1)
+    out = oof_base_scores(small, GBMRerank, {}, threads=1)
     err = capsys.readouterr().err
     assert "stale" in err and "computing out-of-fold" in err
     assert sorted(out["basho"].unique()) == labeled[OOF_MIN_HISTORY:OOF_MIN_HISTORY + 3]
     key = oof_key(small, GBMRerank, {})
     assert pd.read_parquet(paths.OOF_TABLE).attrs["oof_key"] == key
-    assert oof_base_scores(small, GBMRerank, {}, workers=1).attrs["oof_key"] == key
+    assert oof_base_scores(small, GBMRerank, {}, threads=1).attrs["oof_key"] == key
     assert capsys.readouterr().err == ""  # current: read back, nothing recomputed
     # a non-default base configuration never touches the committed table
-    other = oof_base_scores(small, GBMRerank, SMALL, workers=1)
+    other = oof_base_scores(small, GBMRerank, SMALL, threads=1)
     assert [p.name for p in paths.OOF_CACHE.iterdir()] == [f"{other.attrs['oof_key']}.parquet"]
     assert pd.read_parquet(paths.OOF_TABLE).attrs["oof_key"] == key
 
@@ -460,7 +460,7 @@ def test_backtest_deterministic_and_parallel(trans, tidy):
     assert r["exact_n"].between(1, 42).all()
     again = run_backtest(["Aq"], targets, trans, tidy, progress=False, model_kwargs=SMALL)
     pd.testing.assert_frame_equal(again, r)
-    par = run_backtest(["Aq"], targets, trans, tidy, progress=False, model_kwargs=SMALL, workers=2)
+    par = run_backtest(["Aq"], targets, trans, tidy, progress=False, model_kwargs=SMALL, threads=2)
     pd.testing.assert_frame_equal(par, r)
 
 

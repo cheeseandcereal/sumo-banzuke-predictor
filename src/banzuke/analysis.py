@@ -101,7 +101,7 @@ def calibration(preds, trans):
             print(f"  M{num} {int(row['wins'])} wins: {int(row['honoured'])} of {int(row['n'])}")
 
 
-def cached_predictions(model, start, end, seeds, kwargs, trans, tidy, workers=1, fresh=False):
+def cached_predictions(model, start, end, seeds, kwargs, trans, tidy, threads=1, fresh=False):
     """Per-row backtest predictions of `model` over start..end for every seed,
     cached under cache/ by configuration and data fingerprint."""
     fp = fingerprint(kwargs=kwargs, seeds=seeds)
@@ -110,7 +110,7 @@ def cached_predictions(model, start, end, seeds, kwargs, trans, tidy, workers=1,
         return pd.read_parquet(cache)
     targets = [b for b in sorted(tidy["basho"].unique()) if start <= b <= end]
     _, preds = run_backtest([model], targets, trans, tidy, return_preds=True,
-                            seeds=seeds, model_kwargs=kwargs, workers=workers)
+                            seeds=seeds, model_kwargs=kwargs, threads=threads)
     CACHE.mkdir(parents=True, exist_ok=True)
     preds.to_parquet(cache, index=False)
     return preds

@@ -22,7 +22,7 @@ alternative.
 """
 import sys
 
-from banzuke.cli._common import (CommandError, add_set, add_train_start, add_workers, model_class,
+from banzuke.cli._common import (CommandError, add_set, add_train_start, add_threads, model_class,
                                  parse_sets, subcommand)
 
 SPEC_KEYS = ("above", "below", "class", "count", "pin")
@@ -43,9 +43,10 @@ def add_parser(sub):
                          "also feed the confidence markers")
     add_set(ap)
     add_train_start(ap)
-    add_workers(ap, "processes for the out-of-fold table when a non-default base stage "
-                    "(--seeds, --set base.*, --train-start) needs its own, or the committed "
-                    "one is stale")
+    add_threads(ap, "CPU threads: the bag's seeds are fitted concurrently, up to this many; "
+                    "also the processes for the out-of-fold table when a non-default base "
+                    "stage (--seeds, --set base.*, --train-start) needs its own, or the "
+                    "committed one is stale")
     ap.add_argument("--above", action="append", default=[], metavar='"A > B"',
                     help="A rises to immediately above B (repeatable)")
     ap.add_argument("--below", action="append", default=[], metavar='"A < B"',
@@ -218,8 +219,8 @@ def run(args):
     # train once; everything downstream is instant
     print("training...", file=sys.stderr)
     kwargs = {**parse_sets(args.set), **({"n_seeds": args.seeds} if args.seeds else {})}
-    kwargs = cls.prepare(kwargs, trans, args.workers, args.train_start)
-    model = cls(**kwargs)
+    kwargs = cls.prepare(kwargs, trans, args.threads, args.train_start)
+    model = cls(**kwargs, threads=args.threads)
     model.fit(train)
     point = model.score(cands)
     per_seed = [model.score(cands, k) for k in range(len(model.seeds))] \

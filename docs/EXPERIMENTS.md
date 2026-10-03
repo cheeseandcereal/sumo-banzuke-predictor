@@ -827,7 +827,7 @@ Tooling, committed under `experiments/`:
   in (cascade / structural / boundary / rerank / base / resolver). Readers:
   `sheet` (side-by-side banzuke), `explain` (per-rikishi stage table, cluster
   pair probabilities, precedent lines), `docket`, `calibration`. The cache
-  (135 targets x 3 seeds, 25 min on 24 workers) reproduces the E17 confirm
+  (135 targets x 3 seeds, 25 min on 24 threads) reproduces the E17 confirm
   figures exactly (17.93 / .937).
 - `precedent.py`: "where did K1 5-10 land" / "who was higher, K 5-10 or
   M9-10 10-5" with counts for all history, 2004+ and the last 60 basho.
@@ -969,11 +969,11 @@ corrected records and Nishikigi's lags at 202509 and 202511), so the OOF
 table recomputed (2 min) and every cache was rebuilt. `explain.py` records
 pair probabilities within 5.0 base points (was 2.0; clusters span up to
 4.4, so every in-cluster pair is now on disk, E24 needs that).
-Worker defaults are now cpu_count - 2 everywhere and `predict.py` gained
-`--workers`.
+Thread defaults are now logical process count everywhere and
+`predict.py` gained `--threads`.
 
 Reproduction: the E19 cache rebuilt on the fixed data (135 targets x 3
-seeds, 12 min on 14 workers) gives 19.62 exact / 0.864 MAE over 2004-2026
+seeds, 12 min on 14 threads) gives 19.62 exact / 0.864 MAE over 2004-2026
 (E19: 20.37 / 0.852 on 2004-2018, reproduced to the decimal, and 18.14 /
 0.892 on 2019+, now 18.16 / 0.888), seeds 0-1 on 2020-2026 17.94 / 0.932
 (E17's adopted configuration: 17.93 / 0.937 on the old data; the frames

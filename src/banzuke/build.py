@@ -111,7 +111,7 @@ def load_tidy() -> tuple[pd.DataFrame, pd.DataFrame]:
     return df, pd.DataFrame(bouts).drop_duplicates()
 
 
-def main(oof=True, workers=1):
+def main(oof=True, threads=1):
     """Rebuild every processed dataset from the raw JSON under data/, then
     (unless oof is False) the default model's out-of-fold table, a no-op when
     the committed one already matches the data and the base stage."""
@@ -130,5 +130,5 @@ def main(oof=True, workers=1):
     if oof:
         from banzuke.models import GBMRerank, oof_base_scores
 
-        table = oof_base_scores(trans, GBMRerank, {}, workers=workers)
+        table = oof_base_scores(trans, GBMRerank, {}, threads=threads)
         print(f"oof: {len(table)} rows, {table['basho'].nunique()} basho")

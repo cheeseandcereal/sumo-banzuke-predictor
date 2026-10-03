@@ -6,7 +6,7 @@ is re-resolved and re-evaluated, exactly paired with V0 (the cached order
 re-resolved by the current resolver). Used for E20 (whose rules now live in
 banzuke.resolver) and for the E22 port check.
 
-    banzuke rules [--start 200401] [--rules R11,R13] [--workers 14]
+    banzuke rules [--start 200401] [--rules R11,R13] [--threads 14]
     banzuke rules --cache cache/explain/<old fingerprint>
 
 A resolver edit changes the fingerprint, so `--cache` names the frames to
@@ -193,7 +193,7 @@ def load_frames(start=200401, seeds=(0, 1, 2), cache=None):
     return rows[rows["target"] >= start]
 
 
-def measure(rows, tidy, names, workers=1):
+def measure(rows, tidy, names, threads=1):
     """Every rule in `names` alone and, with several, all of them together
     ("ALL", in the order given), re-resolved frame by frame against V0.
     Returns (per-frame results, variants); the results are also written to
@@ -206,7 +206,7 @@ def measure(rows, tidy, names, workers=1):
         variants["ALL"] = [RULE_FUNCS[r] for r in names]
     tasks = [(t, g, tidy[tidy["basho"] == t], variants) for t, g in rows.groupby("target")]
     out = []
-    with ProcessPoolExecutor(workers) as ex:
+    with ProcessPoolExecutor(threads) as ex:
         for k, r in enumerate(ex.map(run_target, tasks, chunksize=2), 1):
             out += r
             print(f"\r{k}/{len(tasks)} targets", end="", file=sys.stderr, flush=True)

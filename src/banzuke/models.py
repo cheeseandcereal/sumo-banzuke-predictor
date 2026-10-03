@@ -1,6 +1,6 @@
 """Ordering models. Shared interface:
 
-    Model(seed=0, n_seeds=None, base=None, pair=None, **options)
+    Model(seed=0, n_seeds=None, base=None, pair=None, threads=1, **options)
     fit(train)       train: transition rows with position_next targets
     score(cands, k)  -> np.ndarray, lower = ranked higher; k scores with one
                         bag member only
@@ -9,9 +9,11 @@ All models receive the same FEATURES; they differ in objective, which is
 the experiment axis (see docs/EXPERIMENTS.md). base/pair override
 BASE_PARAMS/PAIR_PARAMS. n_seeds > 1 bags LightGBM seeds
 n_seeds*seed .. n_seeds*(seed+1)-1 and averages (the GBMs default to 5);
-seed=None uses LightGBM's library defaults.
+seed=None uses LightGBM's library defaults. threads: how many bag members
+fit at once, each on one LightGBM thread.
 """
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from itertools import combinations
 
 import numpy as np
@@ -27,7 +29,8 @@ from banzuke.features import FEATURES
 
 BASE_PARAMS = dict(
     n_estimators=300, learning_rate=0.05, num_leaves=63, min_child_samples=30,
-    subsample=0.9, subsample_freq=1, colsample_bytree=0.9, n_jobs=1, verbose=-1,
+    subsample=0.9, subsample_freq=1, colsample_bytree=0.9, force_row_wise=True, n_jobs=1,
+    verbose=-1,
 )
 PAIR_PARAMS = {**BASE_PARAMS, "n_estimators": 150}
 OOF_MIN_HISTORY = 60  # labeled basho required before a basho gets an out-of-fold score
@@ -41,6 +44,18 @@ def _seeds(seed, n_seeds):
             raise ValueError("seed=None (library defaults) cannot be bagged")
         return [None]
     return list(range(seed * n_seeds, (seed + 1) * n_seeds))
+
+
+def _fit_bag(fit_one, seeds, threads=1):
+    """[fit_one(seed) for seed in seeds], up to `threads` fits at once
+    (LightGBM releases the GIL while training). Every fit keeps n_jobs=1:
+    LightGBM's thread count is process-global, so concurrent fits asking
+    for different counts corrupt each other."""
+    pool = min(threads, len(seeds))
+    if pool <= 1:
+        return [fit_one(s) for s in seeds]
+    with ThreadPoolExecutor(pool) as ex:
+        return list(ex.map(fit_one, seeds))
 
 
 def _cols(spec):
@@ -62,10 +77,11 @@ class _Model:
     OPTIONS: dict = {}
     N_SEEDS = 1
 
-    def __init__(self, seed=0, n_seeds=None, base=None, pair=None, **options):
+    def __init__(self, seed=0, n_seeds=None, base=None, pair=None, threads=1, **options):
         self.seeds = _seeds(seed, self.N_SEEDS if n_seeds is None else n_seeds)
         self.base_params = {**BASE_PARAMS, **(base or {})}
         self.pair_params = {**PAIR_PARAMS, **(pair or {})}
+        self.threads = threads
         unknown = set(options) - set(self.OPTIONS)
         if unknown:
             raise TypeError(f"{type(self).__name__}: unknown options {sorted(unknown)}")
@@ -73,7 +89,7 @@ class _Model:
             setattr(self, k, options.get(k, v))
 
     @classmethod
-    def prepare(cls, kwargs, trans, workers=1, train_start=None):
+    def prepare(cls, kwargs, trans, threads=1, train_start=None):
         """Target-independent inputs a configuration needs, computed once."""
         return kwargs
 
@@ -148,11 +164,11 @@ class GBMRegression(_Model):
             age = train["basho"].map(order).max() - train["basho"].map(order)
             w = (0.5 ** (age / self.half_life)).to_numpy()
             w = w / w.mean()
-        self.ms = [
-            LGBMRegressor(objective=self.objective, **_seeded(self.base_params, s))
-            .fit(train[self.features], train["delta"], sample_weight=w)
-            for s in self.seeds
-        ]
+        X, y = train[self.features], train["delta"]
+        self.ms = _fit_bag(
+            lambda s: LGBMRegressor(objective=self.objective, **_seeded(self.base_params, s))
+            .fit(X, y, sample_weight=w),
+            self.seeds, self.threads)
 
     def base_score(self, cands, k=None):
         ms = self.ms if k is None else [self.ms[k]]
@@ -192,13 +208,13 @@ class GBMRanker(_Model):
         t = train.sort_values(["basho", "position"], kind="stable")
         label = np.clip(self.top - t["position_next"], 0, self.top).astype(int)
         groups = t.groupby("basho", sort=True).size().to_numpy()
-        self.ms = [
-            LGBMRanker(objective="lambdarank", label_gain=list(range(self.top + 1)),
-                       lambdarank_truncation_level=self.truncation,
-                       **_seeded(self.base_params, s))
-            .fit(t[FEATURES], label, group=groups)
-            for s in self.seeds
-        ]
+        X = t[FEATURES]
+        self.ms = _fit_bag(
+            lambda s: LGBMRanker(objective="lambdarank", label_gain=list(range(self.top + 1)),
+                                 lambdarank_truncation_level=self.truncation,
+                                 **_seeded(self.base_params, s))
+            .fit(X, label, group=groups),
+            self.seeds, self.threads)
 
     def score(self, cands, k=None):
         ms = self.ms if k is None else [self.ms[k]]
@@ -282,11 +298,12 @@ class _PairStage:
     the base-score gap as a feature)."""
 
     def __init__(self, seeds, params, window, h2h=False, context=False, oof=None,
-                 oof_gap=2.0, extra=()):
+                 oof_gap=2.0, extra=(), threads=1):
         self.seeds, self.params, self.window = seeds, params, window
         self.h2h, self.context, self.oof_gap = h2h, context, oof_gap
         self.extra = _cols(extra)
         self.oof = None if oof is None else oof.set_index(["basho", "rikishi_id"])["oof"]
+        self.threads = threads
 
     def _matrix(self, df, i_arr, j_arr, base):
         return _pair_matrix(df, i_arr, j_arr, self.h2h, self.context, base, self.extra)
@@ -310,7 +327,8 @@ class _PairStage:
                 Xs.append(self._matrix(df, i_arr, j_arr, base))
                 ys.append((nxt[i_arr] < nxt[j_arr]).astype(int))
         X, y = np.vstack(Xs), np.concatenate(ys)
-        self.ms = [LGBMClassifier(**_seeded(self.params, s)).fit(X, y) for s in self.seeds]
+        self.ms = _fit_bag(lambda s: LGBMClassifier(**_seeded(self.params, s)).fit(X, y),
+                           self.seeds, self.threads)
         return self
 
     def proba(self, df, i_arr, j_arr, base=None, k=None):
@@ -339,7 +357,7 @@ def oof_key(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, train_start=None):
     return key.hexdigest()[:16]
 
 
-def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, workers=1,
+def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, threads=1,
                     cache_dir=None, train_start=None):
     """Rolling out-of-fold base scores: rows of source basho b are scored by
     cls(**kwargs)'s base stage fitted on transitions labeled by b
@@ -367,11 +385,11 @@ def oof_base_scores(trans, cls, kwargs, min_history=OOF_MIN_HISTORY, workers=1,
         print(f"{path} is stale (data or base stage changed): rebuilding it", file=sys.stderr)
 
     todo = sorted(lab["basho"].unique())[min_history:]
-    print(f"computing out-of-fold base scores for {len(todo)} basho ({workers} workers; "
+    print(f"computing out-of-fold base scores for {len(todo)} basho ({threads} processes; "
           "cached afterwards)...", file=sys.stderr, flush=True)
     args = [(b, cls, kwargs, train_start) for b in todo]
-    if workers > 1:
-        with ProcessPoolExecutor(workers, mp_context=get_context("spawn"),
+    if threads > 1:
+        with ProcessPoolExecutor(threads, mp_context=get_context("spawn"),
                                  initializer=_oof_init, initargs=(lab,)) as ex:
             parts = list(ex.map(_oof_one, args, chunksize=4))
     else:
@@ -414,7 +432,8 @@ class PairwiseBT(_Model):
     OPTIONS = {"pair_window": 12, "scale": 2.0}
 
     def fit(self, train):
-        self.pair = _PairStage(self.seeds, self.pair_params, self.pair_window).fit(train)
+        self.pair = _PairStage(self.seeds, self.pair_params, self.pair_window,
+                               threads=self.threads).fit(train)
 
     def score(self, cands, k=None):
         df = cands.sort_values("position", kind="stable")
@@ -473,10 +492,10 @@ class GBMRerank(GBMMedian):
                "twin_unit": "sk"}
 
     @classmethod
-    def prepare(cls, kwargs, trans, workers=1, train_start=None):
+    def prepare(cls, kwargs, trans, threads=1, train_start=None):
         if not kwargs.get("near_ties", cls.OPTIONS["near_ties"]) or kwargs.get("oof") is not None:
             return kwargs
-        return {**kwargs, "oof": oof_base_scores(trans, cls, kwargs, workers=workers,
+        return {**kwargs, "oof": oof_base_scores(trans, cls, kwargs, threads=threads,
                                                   train_start=train_start)}
 
     def fit(self, train):
@@ -485,7 +504,7 @@ class GBMRerank(GBMMedian):
         super().fit(train)
         self.pair = _PairStage(self.seeds, self.pair_params, self.pair_window, self.h2h,
                                self.context, self.oof if self.near_ties else None,
-                               self.oof_gap, self.extra).fit(train)
+                               self.oof_gap, self.extra, self.threads).fit(train)
 
     def score(self, cands, k=None):
         base = self.base_score(cands, k)

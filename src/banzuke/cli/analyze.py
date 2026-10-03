@@ -10,7 +10,7 @@ re-measured against the committee's decisions.
 Predictions are cached per (model, window, configuration) under cache/;
 --fresh recomputes them.
 """
-from banzuke.cli._common import (add_seeds, add_set, add_window, add_workers, model_class, parse_seeds,
+from banzuke.cli._common import (add_seeds, add_set, add_window, add_threads, model_class, parse_seeds,
                                  parse_sets, subcommand)
 
 
@@ -21,7 +21,7 @@ def add_parser(sub):
     add_seeds(ap, "0", "bag replicates; the first drives the residual sections, all of them "
                        "the seed-spread section")
     add_set(ap)
-    add_workers(ap)
+    add_threads(ap)
     ap.add_argument("--fresh", action="store_true", help="ignore cached predictions")
     ap.set_defaults(run=run, _parser=ap)
     return ap
@@ -37,7 +37,7 @@ def run(args):
     tidy, trans = load_tidy(), load_transitions()
     end = args.end or int(tidy["basho"].max())
     preds = analysis.cached_predictions(args.model, args.start, end, seeds, kwargs, trans, tidy,
-                                        workers=args.workers, fresh=args.fresh)
+                                        threads=args.threads, fresh=args.fresh)
     analysis.residuals(preds, args.model, args.start, end, seeds)
     analysis.calibration(preds, trans)
     print()

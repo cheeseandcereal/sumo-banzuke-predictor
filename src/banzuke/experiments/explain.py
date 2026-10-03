@@ -1,6 +1,6 @@
 """E19: per-basho explain dumps, miss docket and pair calibration for Ar.
 
-    banzuke explain build --start 201901 --end 202609 --seeds 3 --workers 14
+    banzuke explain build --start 201901 --end 202609 --seeds 3 --threads 14
     banzuke explain sheet 202101 [--seed 0] [--all]      # side-by-side banzuke
     banzuke explain explain 202101 [--seed 0] [--all]    # per-rikishi stage table
     banzuke explain docket --start 201901               # every missed cell, classified
@@ -276,7 +276,7 @@ def _build_target(args):
     return pd.concat(rows, ignore_index=True), pd.concat(pairs, ignore_index=True), pd.DataFrame(frames)
 
 
-def build(trans, tidy, start, end, seeds, kwargs=None, workers=1):
+def build(trans, tidy, start, end, seeds, kwargs=None, threads=1):
     """Dump rows/pairs/frames for every target in start..end (one frame per
     seed) under cache_dir(kwargs, seeds). Returns the frames table."""
     kwargs = kwargs or {}
@@ -284,10 +284,10 @@ def build(trans, tidy, start, end, seeds, kwargs=None, workers=1):
     targets = [b for b in sorted(tidy["basho"].unique()) if start <= b <= end]
     out = cache_dir(kwargs, seeds)
     out.mkdir(parents=True, exist_ok=True)
-    kw = GBMRerank.prepare(kwargs, trans, workers)
+    kw = GBMRerank.prepare(kwargs, trans, threads)
     tasks = [(t, seeds, kw) for t in targets[::-1]]
     rows, pairs, frames, t0 = [], [], [], time.time()
-    with ProcessPoolExecutor(min(workers, len(tasks)), mp_context=get_context("spawn"),
+    with ProcessPoolExecutor(min(threads, len(tasks)), mp_context=get_context("spawn"),
                              initializer=_init, initargs=(trans, tidy)) as ex:
         for n, (r, p, f) in enumerate(ex.map(_build_target, tasks), 1):
             rows.append(r)

@@ -1,7 +1,7 @@
 """Per-basho explain dumps, miss docket and pair calibration for the default
 model Ar (docs/EXPERIMENTS.md E19).
 
-    banzuke explain build --start 201901 --end 202609 --seeds 0-2 --workers 14
+    banzuke explain build --start 201901 --end 202609 --seeds 0-2 --threads 14
     banzuke explain sheet 202101 [--seed 0]      # side-by-side predicted / actual banzuke
     banzuke explain sheet --all --start 201901   # one file per cached target
     banzuke explain detail 202101 [--seed 0]     # per-rikishi stage table, clusters, precedent
@@ -24,7 +24,7 @@ resolver (the final order was right, the resolver's rules or layout moved
 the cell).
 """
 from banzuke.cli._common import (CommandError, action_parser, add_seeds, add_set, add_window,
-                                 add_workers, parse_seeds, parse_sets, subcommand, targets_in)
+                                 add_threads, parse_seeds, parse_sets, subcommand, targets_in)
 
 
 def _cache_key(ap):
@@ -49,7 +49,7 @@ def add_parser(sub):
     p = action_parser(what, "build", "run the frames and cache them (minutes)")
     add_window(ap=p, start=201901)
     _cache_key(p)
-    add_workers(p)
+    add_threads(p)
     p.set_defaults(run=run_build, _parser=p)
 
     p = action_parser(what, "sheet", "predicted and actual banzuke side by side")
@@ -85,7 +85,7 @@ def run_build(args):
     kwargs, seeds = _key(args)
     tidy = load_tidy()
     _, end = targets_in(tidy, args.start, args.end)
-    explain.build(load_transitions(), tidy, args.start, end, seeds, kwargs, args.workers)
+    explain.build(load_transitions(), tidy, args.start, end, seeds, kwargs, args.threads)
 
 
 def run_docket(args):

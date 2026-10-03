@@ -1,13 +1,12 @@
 """Shared pieces of the `banzuke` subcommands: the error type the dispatcher
 reports without a traceback, the help formatter, the grammar of the options
-several commands share (--set, --seeds) and the helpers that declare them
-with one wording everywhere."""
+several commands share (--set, --seeds, --threads) and the helpers that
+declare them with one wording everywhere."""
 import argparse
 import json
 import os
 
-# leave two cores to the rest of the machine (one worker saturates one core)
-DEFAULT_WORKERS = max(1, (os.cpu_count() or 1) - 2)
+DEFAULT_THREADS = os.process_cpu_count() or 1
 
 
 class CommandError(Exception):
@@ -55,8 +54,8 @@ def add_seeds(ap, default, help):
     ap.add_argument("--seeds", default=default, metavar="SPEC", help=help + " (e.g. 0, 0-2, 0,3)")
 
 
-def add_workers(ap, help="worker processes"):
-    ap.add_argument("--workers", type=int, default=DEFAULT_WORKERS, help=help)
+def add_threads(ap, help="CPU threads: worker processes, one single-threaded fit each"):
+    ap.add_argument("--threads", type=int, default=DEFAULT_THREADS, help=help)
 
 
 def add_window(ap, start, start_help="first target basho", end_help="last target basho"):

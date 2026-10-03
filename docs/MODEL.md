@@ -80,10 +80,10 @@ notes say where the sheet is shaky (7). Section 8 walks through
 `banzuke predict` in call order, 9 covers how the whole thing is scored, and
 the appendix lists the other models in the tree.
 
-Everything after the data build is retrained on every invocation (about
-30 s for the default bag); nothing is persisted. The one training input
-that comes from a model fit, the reranker's out-of-fold table (4.4), is
-part of the data build and committed with it.
+Everything after the data build is retrained on every invocation (the
+bag's members fit concurrently, `--threads`); nothing is persisted. The
+one training input that comes from a model fit, the reranker's
+out-of-fold table (4.4), is part of the data build and committed with it.
 
 ## 2. The dataset
 
@@ -305,7 +305,8 @@ single fit, which the resolver would otherwise turn into block shifts.
 | `min_child_samples` | 30 | |
 | `subsample`, `subsample_freq` | 0.9, 1 | row bagging every round |
 | `colsample_bytree` | 0.9 | |
-| `n_jobs` | 1 | one thread per fit; parallelism is across backtest targets and OOF basho |
+| `force_row_wise` | true | fixes the histogram layout LightGBM would otherwise pick by timing |
+| `n_jobs` | 1 | one thread per fit; parallelism is across backtest targets, OOF basho and, in `banzuke predict`, the bag's seeds (`--threads`) |
 
 The base stage scores men independently: everything it knows is in its
 own row (2.2). The field, who else is competing for the same cells,
@@ -395,8 +396,8 @@ row is scored by a model that saw its label. The table is identified by
 `oof_key`: the base configuration (objective, `n_seeds`, `base.*`,
 `half_life`, `extra`, `--train-start`), `BASE_PARAMS`, the base-stage
 source and a content hash of the labelled data. The default model's
-table is built by `banzuke data build` (about two minutes with many
-workers; `--skip-oof` to leave it alone) and committed as
+table is built by `banzuke data build` (one process per `--threads`;
+`--skip-oof` to leave it alone) and committed as
 `data/processed/oof.parquet` with its key in the frame's attrs, so a
 clone needs no one-off computation. A command that finds the key stale
 (a data update or a base-stage change without a rebuild) says so and
@@ -707,8 +708,10 @@ juryo promotees landing 8+ cells above the boundary 25% / 67%.
 4. `GBMRerank.prepare()`: the rolling OOF table (4.4), read from the
    committed `oof.parquet` for the default base stage.
 5. Fit on the training set: five L1 regressors, then five pair
-   classifiers (about 30 s). `--seeds 1` fits one of each; `--set`
-   changes options; `--train-start` shortens the training set.
+   classifiers, the five of each stage fitted concurrently (up to
+   `--threads`, one LightGBM thread each, so the result does not depend
+   on the thread count). `--seeds 1` fits one of each; `--set` changes
+   options; `--train-start` shortens the training set.
 6. Score the candidates: `point` (the bag's rank index), one rank index
    per single seed (for `spread`), the bag's `base_score` (for gaps);
    `claim_rates` from the full history.
@@ -770,8 +773,8 @@ on transitions with `next_basho < T`, the candidates are the previous
 banzuke's rows that appear on T's banzuke (announced departures are
 assumed known, as a "Guess the Banzuke" player would know them), the
 makuuchi is sized like the previous banzuke, and the resolved sheet is
-scored against T's actual banzuke. Targets run in worker processes, one
-LightGBM thread each.
+scored against T's actual banzuke. Targets run in separate processes
+(`--threads`), one LightGBM thread each.
 
 | metric | definition |
 |---|---|

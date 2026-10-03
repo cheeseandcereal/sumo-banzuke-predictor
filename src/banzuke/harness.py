@@ -57,7 +57,7 @@ def _run_target(args):
 
 def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=False,
                  skip=None, train_start=None, seeds=(0,), model_kwargs=None,
-                 config="base", workers=1):
+                 config="base", threads=1):
     """skip: set of (model_name, seed, target) combos to leave out (cached).
     train_start: ignore training transitions from basho before this.
     seeds: one fit per seed (bag replicate); summarize() averages them per basho.
@@ -68,7 +68,7 @@ def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=
         cls = MODELS[name]
         kw = {k: v for k, v in (model_kwargs or {}).items()
               if k in ("n_seeds", "base", "pair") or k in cls.OPTIONS}
-        kw_by_model[name] = cls.prepare(kw, trans, workers, train_start)
+        kw_by_model[name] = cls.prepare(kw, trans, threads, train_start)
     per_target = []
     for target in targets:
         jobs = [(n, s) for n in model_names for s in seeds
@@ -77,8 +77,8 @@ def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=
             per_target.append((target, jobs, train_start, kw_by_model, config, return_preds))
 
     rows, preds, t0 = [], [], time.time()
-    if workers > 1 and len(per_target) > 1:
-        pool = ProcessPoolExecutor(min(workers, len(per_target)), mp_context=get_context("spawn"),
+    if threads > 1 and len(per_target) > 1:
+        pool = ProcessPoolExecutor(min(threads, len(per_target)), mp_context=get_context("spawn"),
                                    initializer=_init_worker, initargs=(trans, tidy))
         outputs = pool.map(_run_target, per_target[::-1])  # latest (largest) targets first
     else:
@@ -178,7 +178,7 @@ def fingerprint(**extra) -> str:
 
 
 def run_cached(model_names, targets, trans, tidy, configs, seeds=(0,), train_start=None,
-               workers=1, fresh=False, cache=None):
+               threads=1, fresh=False, cache=None):
     """run_backtest() for each labelled configuration in `configs` ({label:
     model_kwargs}), reusing rows of the on-disk store keyed by fingerprint()
     and writing the new ones back. fresh recomputes everything."""
@@ -201,7 +201,7 @@ def run_cached(model_names, targets, trans, tidy, configs, seeds=(0,), train_sta
         skip = set(zip(cached["model"], cached["seed"], cached["basho"])) if len(cached) else None
         computed = run_backtest(model_names, targets, trans, tidy, skip=skip, seeds=seeds,
                                 train_start=train_start, model_kwargs=kwargs,
-                                config=label, workers=workers)
+                                config=label, threads=threads)
         if len(computed):
             store = pd.concat([store, computed.assign(fp=fp)], ignore_index=True)
         results += [f for f in (cached, computed) if len(f)]

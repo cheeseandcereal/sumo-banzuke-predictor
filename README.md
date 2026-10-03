@@ -141,9 +141,9 @@ calibration.
 
 Fetch available data and rebuild the processed datasets after a banzuke
 release or completed basho (completed tournaments are skipped). The
-build ends with the reranker's out-of-fold table, `oof.parquet` (about
-two minutes with many workers; a no-op when the committed one still
-matches; `--skip-oof` leaves it alone); commit it with the other files:
+build ends with the reranker's out-of-fold table, `oof.parquet` (one
+process per `--threads`; a no-op when the committed one still matches;
+`--skip-oof` leaves it alone); commit it with the other files:
 
 ```sh
 uv run banzuke data update        # fetch what is new, then rebuild
@@ -183,12 +183,13 @@ seed, basho) in `cache/`; the cache key hashes the processed
 dataset, all result-affecting source files and the configuration, so
 edits, data rebuilds and parameter changes invalidate it automatically
 (`--fresh` to force). Model training itself is never persisted:
-`banzuke predict` retrains on every invocation (about 30 s; `--seeds 1`
-for the fastest run). The one training input derived from a model fit,
+`banzuke predict` retrains on every invocation, fitting the bag's seeds
+concurrently (`--threads`, default: every CPU; `--seeds 1` for the
+fastest run). The one training input derived from a model fit,
 the reranker's out-of-fold base scores, is committed as
 `data/processed/oof.parquet` with the key of the data and base stage it
-came from; a command that finds it stale rebuilds it in place (about two
-minutes), and a configuration with a different base stage (`--seeds`,
+came from; a command that finds it stale rebuilds it in place, and a
+configuration with a different base stage (`--seeds`,
 `--set base.*`, `--train-start`) computes its own under `cache/oof/`.
 
 `banzuke predict` and `banzuke backtest` accept `--train-start BASHO` to

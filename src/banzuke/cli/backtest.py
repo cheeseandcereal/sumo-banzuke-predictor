@@ -20,7 +20,7 @@ import sys
 from pathlib import Path
 
 from banzuke.cli._common import (CommandError, add_seeds, add_set, add_train_start, add_window,
-                                 add_workers, parse_seeds, parse_sets, subcommand, targets_in)
+                                 add_threads, parse_seeds, parse_sets, subcommand, targets_in)
 
 # committee behavior drifts; screen/confirm are the tuning windows of
 # docs/EXPERIMENTS.md protocol v2
@@ -40,7 +40,7 @@ def add_parser(sub):
     add_set(ap)
     ap.add_argument("--baseline", default=None, metavar="LABEL",
                     help="configuration paired comparisons refer to (default: the leader)")
-    add_workers(ap)
+    add_threads(ap)
     ap.add_argument("--out", default=None, metavar="STEM",
                     help="write STEM_per_basho.csv and STEM_summary.csv, e.g. cache/dev")
     ap.add_argument("--summarize", default=None, metavar="CSVS",
@@ -82,7 +82,7 @@ def run(args):
                   f"basho with --train-start {args.train_start}", file=sys.stderr)
 
     results = run_cached(names, targets, trans, tidy, configs, seeds=seeds,
-                         train_start=args.train_start, workers=args.workers, fresh=args.fresh)
+                         train_start=args.train_start, threads=args.threads, fresh=args.fresh)
     print_summaries(results, args.baseline)
     if args.out:
         Path(args.out).parent.mkdir(parents=True, exist_ok=True)

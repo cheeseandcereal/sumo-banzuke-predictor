@@ -27,7 +27,7 @@ winner.
 from pathlib import Path
 
 from banzuke.cli._common import (CommandError, add_seeds, add_set, add_train_start, add_window,
-                                 add_workers, model_class, parse_seeds, parse_sets, subcommand,
+                                 add_threads, model_class, parse_seeds, parse_sets, subcommand,
                                  targets_in)
 
 
@@ -41,7 +41,7 @@ def add_parser(sub):
     add_seeds(ap, "0", "bag replicates of --model, averaged per basho")
     add_set(ap)
     add_train_start(ap)
-    add_workers(ap, "worker processes for backtest rows not in the cache")
+    add_threads(ap, "worker processes for backtest rows not in the cache")
     ap.add_argument("--csv", default=None, metavar="FILES",
                     help="take the model's rows from these per-basho csv(s) instead "
                          "(comma-separated; `banzuke backtest --out`)")
@@ -119,7 +119,7 @@ def backtest_rows(args, targets, tidy):
     configs = {",".join(args.set) or "base": parse_sets(args.set)}
     results = run_cached([args.model], targets, load_transitions(), tidy, configs,
                          seeds=parse_seeds(args.seeds), train_start=args.train_start,
-                         workers=args.workers)
+                         threads=args.threads)
     return results, str(label_of(results)[0])
 
 
