@@ -31,16 +31,8 @@ def calibration(preds, trans):
     """Confidence signals on the first seed's banzuke, using base scores
     averaged over seeds and per-seed orders for the spread."""
     seeds = sorted(preds["seed"].unique())
-    s0 = seeds[0]
-    out = []
-    for target, g in preds.groupby("target"):
-        pred = g[g["seed"] == s0].reset_index(drop=True)
-        base = g.pivot(index="rikishi_id", columns="seed", values="base").mean(axis=1)
-        final = pred.set_index("rikishi_id")["score"]
-        seed_preds = [g.loc[g["seed"] == s, ["rikishi_id", "pred_pos"]] for s in seeds]
-        sig = confidence.signals(pred, base, final, seed_preds)
-        out.append(pred.join(sig))
-    m = pd.concat(out, ignore_index=True)
+    m = pd.concat([confidence.with_signals(g, seeds[0]) for _, g in preds.groupby("target")],
+                  ignore_index=True)
     m = m[m["class_next"] <= MAEGASHIRA].copy()
     m["err"] = (m["pred_pos"] - m["position_next"]).abs()
     m["hit"] = (
@@ -101,14 +93,13 @@ def calibration(preds, trans):
             print(f"  M{num} {int(row['wins'])} wins: {int(row['honoured'])} of {int(row['n'])}")
 
 
-def cached_predictions(model, start, end, seeds, kwargs, trans, tidy, threads=1, fresh=False):
-    """Per-row backtest predictions of `model` over start..end for every seed,
-    cached under cache/ by configuration and data fingerprint."""
+def cached_predictions(model, targets, seeds, kwargs, trans, tidy, threads=1, fresh=False):
+    """Per-row backtest predictions of `model` over the target basho for every
+    seed, cached under cache/ by configuration and data fingerprint."""
     fp = fingerprint(kwargs=kwargs, seeds=seeds)
-    cache = CACHE / f"preds_{model}_{start}_{end}_{fp}.parquet"
+    cache = CACHE / f"preds_{model}_{targets[0]}_{targets[-1]}_{fp}.parquet"
     if cache.exists() and not fresh:
         return pd.read_parquet(cache)
-    targets = [b for b in sorted(tidy["basho"].unique()) if start <= b <= end]
     _, preds = run_backtest([model], targets, trans, tidy, return_preds=True,
                             seeds=seeds, model_kwargs=kwargs, threads=threads)
     CACHE.mkdir(parents=True, exist_ok=True)

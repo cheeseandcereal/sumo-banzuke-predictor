@@ -19,14 +19,15 @@ that model's defaults alongside and pairs every row against them
 import sys
 from pathlib import Path
 
-from banzuke.cli._common import (CommandError, add_seeds, add_set, add_train_start, add_window,
-                                 add_threads, model_classes, parse_seeds, parse_sets, subcommand,
-                                 targets_in)
+from banzuke.cli._common import (CommandError, add_fresh, add_seeds, add_set, add_train_start,
+                                 add_window, add_threads, model_classes, parse_seeds, set_configs,
+                                 subcommand, targets_in)
+from banzuke.ranks import CONFIRM_ERA, MODERN_ERA, in_window
 
 # committee behavior drifts; screen/confirm are the tuning windows of
 # docs/EXPERIMENTS.md protocol v2
-WINDOWS = [("full", None, None), ("screen 2004-2019", 200401, 201911),
-           ("confirm 2020+", 202001, None)]
+WINDOWS = [("full", None, None), ("screen 2004-2019", MODERN_ERA, CONFIRM_ERA - 100),
+           ("confirm 2020+", CONFIRM_ERA, None)]
 SHOW = ["n", "exact_n", "gtb_points", "mae", "within1", "promo_f1", "demo_f1",
         "sanyaku_exact", "d_exact", "ci_exact", "p_exact", "wl", "d_mae", "ci_mae", "p_mae"]
 
@@ -47,7 +48,7 @@ def add_parser(sub):
     ap.add_argument("--summarize", default=None, metavar="CSVS",
                     help="skip running; summarize existing per-basho csv(s), comma-separated")
     add_train_start(ap)
-    ap.add_argument("--fresh", action="store_true", help="recompute instead of using the cache")
+    add_fresh(ap)
     ap.set_defaults(run=run, _parser=ap)
     return ap
 
@@ -67,7 +68,7 @@ def run(args):
 
     names = [m.name for m in model_classes(args.models)]
     seeds = parse_seeds(args.seeds)
-    configs = {",".join(args.set) or "base": parse_sets(args.set)}
+    configs = set_configs(args)
     if args.baseline in MODELS or (args.baseline or "").endswith(":base"):
         configs.setdefault("base", {})
 
@@ -90,7 +91,7 @@ def run(args):
         results.to_csv(f"{args.out}_per_basho.csv", index=False)
         pd.concat([summarize(results, args.baseline, s, u).assign(window=w)
                    for w, s, u in WINDOWS
-                   if results["basho"].between(s or 0, u or 10**8).any()]
+                   if in_window(results["basho"], s, u).any()]
                   ).round(4).to_csv(f"{args.out}_summary.csv")
         print(f"\nwrote {args.out}_per_basho.csv, {args.out}_summary.csv")
 
@@ -99,7 +100,7 @@ def print_summaries(results, baseline=None):
     from banzuke.harness import summarize
 
     for label, since, until in WINDOWS:
-        sub = results[(results["basho"] >= (since or 0)) & (results["basho"] <= (until or 10**8))]
+        sub = results[in_window(results["basho"], since, until)]
         if not len(sub):
             continue
         s = summarize(results, baseline, since, until)

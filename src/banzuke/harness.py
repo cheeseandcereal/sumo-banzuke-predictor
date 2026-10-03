@@ -7,7 +7,6 @@ import json
 import sys
 import time
 from concurrent.futures import ProcessPoolExecutor
-from contextlib import nullcontext
 from multiprocessing import get_context
 
 import numpy as np
@@ -15,12 +14,13 @@ import pandas as pd
 
 from banzuke.metrics import evaluate
 from banzuke.models import MODELS
+from banzuke.ranks import in_window
 from banzuke.resolver import resolve
 
 METRICS = ["exact", "exact_n", "gtb_points", "within1", "mae", "tau",
            "promo_f1", "demo_f1", "sanyaku_acc", "sanyaku_exact"]
 
-_TRANS = _TIDY = None
+_TRANS = _TIDY = None  # the frames every target reads, set once per worker process
 
 
 def _init_worker(trans, tidy):
@@ -28,17 +28,47 @@ def _init_worker(trans, tidy):
     _TRANS, _TIDY = trans, tidy
 
 
-def _run_target(args):
-    target, jobs, train_start, kw_by_model, config, return_preds = args
-    trans, tidy = _TRANS, _TIDY
+def pmap(fn, tasks, threads, init, initargs, label=None, chunksize=1):
+    """fn over tasks in up to `threads` spawned processes (in this process when
+    one is enough), each initialised once with init(*initargs). Yields the
+    results in task order; label ("basho") turns on a progress line."""
+    t0 = time.time()
+    if threads > 1 and len(tasks) > 1:
+        pool = ProcessPoolExecutor(min(threads, len(tasks)), mp_context=get_context("spawn"),
+                                   initializer=init, initargs=initargs)
+        with pool:
+            outputs = pool.map(fn, tasks, chunksize=chunksize)
+            yield from _progress(outputs, len(tasks), label, t0)
+    else:
+        init(*initargs)
+        yield from _progress(map(fn, tasks), len(tasks), label, t0)
+
+
+def _progress(outputs, n, label, t0):
+    for i, out in enumerate(outputs, 1):
+        yield out
+        if label:
+            print(f"\r{i}/{n} {label}, {time.time() - t0:.0f}s", end="", file=sys.stderr, flush=True)
+    if label and n:
+        print(file=sys.stderr)
+
+
+def split(trans, tidy, target, train_start=None):
+    """The frames of one backtest target: (prev, train, cands, actual, mak_size).
+    Training rows are the transitions decided before `target`, candidates the
+    previous banzuke's rows still on a sheet, the makuuchi sized like it."""
     bashos = sorted(tidy["basho"].unique())
     prev = bashos[bashos.index(target) - 1]
     train = trans[(trans["next_basho"] < target) & trans["position_next"].notna()]
     if train_start:
         train = train[train["basho"] >= train_start]
     cands = trans[(trans["basho"] == prev) & ~trans["dropped"]].reset_index(drop=True)
-    actual = tidy[tidy["basho"] == target]
-    mak_size = int(cands["mak_size"].iloc[0])  # sized like the previous banzuke
+    return prev, train, cands, tidy[tidy["basho"] == target], int(cands["mak_size"].iloc[0])
+
+
+def _run_target(args):
+    target, jobs, train_start, kw_by_model, config, return_preds = args
+    _, train, cands, actual, mak_size = split(_TRANS, _TIDY, target, train_start)
     rows, preds = [], []
     for name, seed in jobs:
         model = MODELS[name](seed=seed, **kw_by_model[name])
@@ -80,23 +110,12 @@ def run_backtest(model_names, targets, trans, tidy, progress=True, return_preds=
         if jobs:
             per_target.append((target, jobs, train_start, kw_by_model, config, return_preds))
 
-    rows, preds, t0 = [], [], time.time()
-    if threads > 1 and len(per_target) > 1:
-        pool = ProcessPoolExecutor(min(threads, len(per_target)), mp_context=get_context("spawn"),
-                                   initializer=_init_worker, initargs=(trans, tidy))
-        outputs = pool.map(_run_target, per_target[::-1])  # latest (largest) targets first
-    else:
-        _init_worker(trans, tidy)
-        pool, outputs = nullcontext(), map(_run_target, per_target)
-    with pool:
-        for n, (r, p) in enumerate(outputs, 1):
-            rows.extend(r)
-            preds.extend(p)
-            if progress:
-                print(f"\r{n}/{len(per_target)} basho, {time.time() - t0:.0f}s",
-                      end="", file=sys.stderr, flush=True)
-    if progress and per_target:
-        print(file=sys.stderr)
+    rows, preds = [], []
+    # latest (largest) targets first: the longest fits start earliest
+    for r, p in pmap(_run_target, per_target[::-1], threads, _init_worker, (trans, tidy),
+                     label="basho" if progress else None):
+        rows.extend(r)
+        preds.extend(p)
     results = pd.DataFrame(rows)
     if len(results):
         results = results.sort_values(["config", "model", "seed", "basho"]).reset_index(drop=True)
@@ -134,7 +153,7 @@ def summarize(results, baseline=None, since=None, until=None):
     and the win-loss count."""
     from scipy.stats import wilcoxon
 
-    r = results[(results["basho"] >= (since or 0)) & (results["basho"] <= (until or 10**8))]
+    r = results[in_window(results["basho"], since, until)]
     per = r.assign(label=label_of(r)).groupby(["label", "basho"])[METRICS].mean()
     summary = per.groupby("label").mean().sort_values("exact", ascending=False)
     summary.insert(0, "n", per.groupby("label").size())

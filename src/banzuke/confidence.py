@@ -11,7 +11,8 @@ import numpy as np
 import pandas as pd
 
 from banzuke.overrides import OverrideError
-from banzuke.ranks import CLS_CHARS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, fmt_cell
+from banzuke.ranks import (CLS_CHARS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, fmt_cell,
+                           fmt_record)
 from banzuke.resolver import forced_claims, resolve
 
 # Ar model, 2024-2026 backtest, 3 seeds, exact / far (>1 position off):
@@ -72,6 +73,18 @@ def signals(pred, base, final, seed_preds=(), skip=()):
     out["tier"] = np.select([out["n_signals"] >= 2, out["n_signals"] == 1], ["??", "?"], "")
     out["marker"] = out["tier"] + np.where(out["big_move"], "~", "")
     return out
+
+
+def with_signals(frames, seed):
+    """One target's backtest prediction frames, every seed (harness rows with
+    score/base/pred_*): the `seed` frame joined with signals(); base scores
+    averaged over the seeds, the single-seed sheets give the spread."""
+    seeds = sorted(frames["seed"].unique())
+    pred = frames[frames["seed"] == seed].reset_index(drop=True)
+    base = frames.pivot(index="rikishi_id", columns="seed", values="base").mean(axis=1)
+    final = pred.set_index("rikishi_id")["score"]
+    seed_preds = [frames.loc[frames["seed"] == s, ["rikishi_id", "pred_pos"]] for s in seeds]
+    return pred.join(signals(pred, base, final, seed_preds))
 
 
 def _gap(g):
@@ -216,9 +229,7 @@ def structural(pred, cands, scores, mak_size, ov, rates):
                          for k in cells if cells[k][0] == JURYO and cf[k][0] < JURYO]
                 if stays:
                     foot += f" and {', '.join(stays)} stays in makuuchi"
-            rec = f"{int(r['wins'])}-{int(r['losses'])}"
-            if r["absences"]:
-                rec += f"-{int(r['absences'])}"
+            rec = fmt_record(r["wins"], r["losses"], r["absences"])
             prec = precedent(rates, c, r["rank_class"], r["rank_number"], r["wins"])
             items.append({
                 "marker": "!", "rid": rid, "range": fmt_cell(*cells[rid]),

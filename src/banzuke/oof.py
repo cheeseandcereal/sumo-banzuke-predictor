@@ -12,13 +12,12 @@ import hashlib
 import inspect
 import json
 import sys
-from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import get_context
 from pathlib import Path
 
 import pandas as pd
 
 from banzuke.features import FEATURES
+from banzuke.harness import pmap
 from banzuke.models import BASE_PARAMS, GBMRegression, GBMRerank, _cols
 
 OOF_MIN_HISTORY = 60  # labelled basho required before a basho gets an out-of-fold score
@@ -66,13 +65,7 @@ def oof_base_scores(trans, model_cls, kwargs, min_history=OOF_MIN_HISTORY, threa
     print(f"computing out-of-fold base scores for {len(todo)} basho ({threads} processes; "
           "cached afterwards)...", file=sys.stderr, flush=True)
     args = [(b, model_cls, kwargs, train_start) for b in todo]
-    if threads > 1:
-        with ProcessPoolExecutor(threads, mp_context=get_context("spawn"),
-                                 initializer=_oof_init, initargs=(lab,)) as ex:
-            parts = list(ex.map(_oof_one, args, chunksize=4))
-    else:
-        _oof_init(lab)
-        parts = [_oof_one(a) for a in args]
+    parts = list(pmap(_oof_one, args, threads, _oof_init, (lab,), label="basho", chunksize=4))
     out = pd.concat(parts, ignore_index=True)
     out.attrs["oof_key"] = key
     path.parent.mkdir(parents=True, exist_ok=True)

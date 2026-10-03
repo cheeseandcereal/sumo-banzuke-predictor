@@ -15,8 +15,9 @@ import re
 
 import numpy as np
 
-from banzuke.ranks import CLS_CHARS, fmt_cell
-SPEC = re.compile(r"^([YOSKMJ])(?:(\d+)(?:-(\d+))?)?([EW])?$")
+from banzuke.ranks import CLS_CHARS, MODERN_ERA, fmt_cell
+
+SPEC = re.compile(rf"^([{CLS_CHARS}])(?:(\d+)(?:-(\d+))?)?([EW])?$")
 
 
 def labeled(trans):
@@ -26,7 +27,7 @@ def labeled(trans):
 
 def windows(t):
     bashos = sorted(t["basho"].unique())
-    return (("all", bashos[0]), ("2004+", 200401), ("last60", bashos[-60]))
+    return (("all", bashos[0]), ("2004+", MODERN_ERA), ("last60", bashos[-60]))
 
 
 def parse_spec(spec):

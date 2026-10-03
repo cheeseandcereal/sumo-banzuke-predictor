@@ -26,18 +26,18 @@ winner.
 """
 from pathlib import Path
 
-from banzuke.cli._common import (CommandError, add_seeds, add_set, add_train_start, add_window,
-                                 add_threads, model_class, parse_seeds, parse_sets, subcommand,
-                                 targets_in)
+from banzuke.cli._common import (CommandError, add_fresh, add_model, add_seeds, add_set,
+                                 add_train_start, add_window, add_threads, model_class, parse_seeds,
+                                 set_configs, subcommand, targets_in)
+from banzuke.ranks import CONFIRM_ERA
 
 
 def add_parser(sub):
     ap = subcommand(sub, "gtb", __doc__, "the human Guess-the-Banzuke field, basho by basho")
-    add_window(ap, 202001, "first target basho (202001: the confirm window of docs/EXPERIMENTS.md)")
+    add_window(ap, CONFIRM_ERA, "first target basho (default: the confirm window of docs/EXPERIMENTS.md)")
     ap.add_argument("--percentiles", default="50,75,100", metavar="LIST",
                     help="percentiles of the field to report, comma-separated (100 = the winner)")
-    ap.add_argument("--model", default=None, metavar="NAME",
-                    help="place this model's backtest forecasts in each basho's field")
+    add_model(ap, None, "place this model's backtest forecasts in each basho's field")
     add_seeds(ap, "0", "bag replicates of --model, averaged per basho")
     add_set(ap)
     add_train_start(ap)
@@ -47,7 +47,7 @@ def add_parser(sub):
                          "(comma-separated; `banzuke backtest --out`)")
     ap.add_argument("--out", default=None, metavar="STEM",
                     help="write STEM_field.csv (the table) and STEM_entries.csv (every entry)")
-    ap.add_argument("--fresh", action="store_true", help="refetch the archive pages")
+    add_fresh(ap, "refetch the archive pages")
     ap.set_defaults(run=run, _parser=ap)
     return ap
 
@@ -116,7 +116,7 @@ def backtest_rows(args, targets, tidy):
     from banzuke.harness import label_of, run_cached
     from banzuke.paths import load_transitions
 
-    configs = {",".join(args.set) or "base": parse_sets(args.set)}
+    configs = set_configs(args)
     try:
         results = run_cached([args.model], targets, load_transitions(), tidy, configs,
                              seeds=parse_seeds(args.seeds), train_start=args.train_start,

@@ -43,6 +43,14 @@ def action_parser(sub, name, help, description=None, **kwargs):
 
 # --- options several commands share -------------------------------------------
 
+def add_model(ap, default=None, help="ordering model (docs/MODEL.md lists them)"):
+    ap.add_argument("--model", default=default, metavar="NAME", help=help)
+
+
+def add_fresh(ap, help="recompute instead of using the cache"):
+    ap.add_argument("--fresh", action="store_true", help=help)
+
+
 def add_set(ap, help=None):
     ap.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help=help or "model option override, repeatable: dotted keys address the "
@@ -118,6 +126,12 @@ def parse_seeds(spec) -> tuple:
         except ValueError:
             raise CommandError(f"--seeds expects N, A-B or a comma-separated list, got {spec!r}")
     return tuple(out)
+
+
+def set_configs(args) -> dict:
+    """The --set options as one labelled configuration, {label: model kwargs};
+    the label is the --set text itself, or "base" without any."""
+    return {",".join(args.set) or "base": parse_sets(args.set)}
 
 
 def parse_sets(items) -> dict:

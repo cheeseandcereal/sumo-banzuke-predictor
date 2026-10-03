@@ -10,19 +10,21 @@ re-measured against the committee's decisions.
 Predictions are cached per (model, window, configuration) under cache/;
 --fresh recomputes them.
 """
-from banzuke.cli._common import (CommandError, add_seeds, add_set, add_window, add_threads,
-                                 model_class, parse_seeds, parse_sets, subcommand)
+from banzuke.cli._common import (CommandError, add_fresh, add_model, add_seeds, add_set, add_window,
+                                 add_threads, model_class, parse_seeds, parse_sets, subcommand,
+                                 targets_in)
+from banzuke.ranks import MODERN_ERA
 
 
 def add_parser(sub):
     ap = subcommand(sub, "analyze", __doc__, "residual analysis and confidence calibration")
-    ap.add_argument("--model", default="Ar", metavar="NAME", help="ordering model")
-    add_window(ap, 200401)
+    add_model(ap, "Ar")
+    add_window(ap, MODERN_ERA)
     add_seeds(ap, "0", "bag replicates; the first drives the residual sections, all of them "
                        "the seed-spread section")
     add_set(ap)
     add_threads(ap)
-    ap.add_argument("--fresh", action="store_true", help="ignore cached predictions")
+    add_fresh(ap, "ignore cached predictions")
     ap.set_defaults(run=run, _parser=ap)
     return ap
 
@@ -35,9 +37,9 @@ def run(args):
     seeds = parse_seeds(args.seeds)
     kwargs = parse_sets(args.set)
     tidy, trans = load_tidy(), load_transitions()
-    end = args.end or int(tidy["basho"].max())
+    targets, end = targets_in(tidy, args.start, args.end)
     try:
-        preds = analysis.cached_predictions(args.model, args.start, end, seeds, kwargs, trans, tidy,
+        preds = analysis.cached_predictions(args.model, targets, seeds, kwargs, trans, tidy,
                                             threads=args.threads, fresh=args.fresh)
     except (TypeError, ValueError) as e:
         raise CommandError(f"--set: {e}")

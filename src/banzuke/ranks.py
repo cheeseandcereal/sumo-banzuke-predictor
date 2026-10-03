@@ -15,6 +15,14 @@ CLASS_ORD = {"Yokozuna": YOKOZUNA, "Ozeki": OZEKI, "Sekiwake": SEKIWAKE, "Komusu
 
 BASHO_MONTHS = (1, 3, 5, 7, 9, 11)  # six honbasho a year; a basho id is YYYYMM
 
+# the eras the evaluation windows are cut at (docs/EXPERIMENTS.md protocol v2):
+# 2004+ is the 42-man, post-kosho committee; 2019+/2020+ the recent and confirm windows
+MODERN_ERA, RECENT_ERA, CONFIRM_ERA = 200401, 201901, 202001
+
+# E and W of one rank number with identical records are "twins"; the committee
+# treats such a pair as a unit (resolver, reranker, convention audit)
+TWIN_KEY = ("rank_class", "rank_number", "wins", "losses", "absences")
+
 
 def next_basho(basho: int) -> int:
     """The basho that follows `basho` on the calendar (202611 -> 202701)."""
@@ -23,9 +31,19 @@ def next_basho(basho: int) -> int:
     return (year + (nxt == 1)) * 100 + nxt
 
 
+def in_window(basho, since=None, until=None):
+    """basho (int or Series) inside since..until; None leaves an end open."""
+    return (basho >= (since or 0)) & (basho <= (until or 10**8))
+
+
+def fmt_rank(c, num) -> str:
+    """(4, 3) -> 'M3'."""
+    return f"{CLS_CHARS[int(c)]}{int(num)}"
+
+
 def fmt_cell(c, num, side) -> str:
     """(4, 3, 1) -> 'M3W'."""
-    return f"{CLS_CHARS[int(c)]}{int(num)}{'EW'[int(side)]}"
+    return f"{fmt_rank(c, num)}{'EW'[int(side)]}"
 
 
 def fmt_record(wins, losses, absences=0) -> str:

@@ -21,7 +21,7 @@ import numpy as np
 import pandas as pd
 from lightgbm import LGBMClassifier, LGBMRanker, LGBMRegressor
 
-from banzuke.ranks import JURYO, KOMUSUBI, MAEGASHIRA, SEKIWAKE
+from banzuke.ranks import JURYO, KOMUSUBI, MAEGASHIRA, SEKIWAKE, TWIN_KEY
 from banzuke.features import FEATURES
 
 BASE_PARAMS = dict(
@@ -295,7 +295,7 @@ def twin_units(cands, scope):
     record, class within `scope` ("sk" or "all" = S/K/M/J)."""
     if scope not in TWIN_SCOPE:
         raise ValueError(f"twin_unit must be one of {sorted(TWIN_SCOPE)} or empty, got {scope!r}")
-    cols = [cands[c].to_numpy() for c in ("rank_class", "rank_number", "wins", "losses", "absences")]
+    cols = [cands[c].to_numpy() for c in TWIN_KEY]
     side = cands["side"].to_numpy()
     groups: dict[tuple, list] = {}
     for i in np.flatnonzero(np.isin(cols[0], TWIN_SCOPE[scope])):

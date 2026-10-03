@@ -23,23 +23,18 @@ from the actual order), base (the base order was wrong and the reranker did not
 fix it), resolver (the final order was right, the resolver's rules or layout moved
 the cell).
 """
-import sys
-import time
-from concurrent.futures import ProcessPoolExecutor
-from multiprocessing import get_context
-
 import numpy as np
 import pandas as pd
 
 from banzuke import confidence
 from banzuke.experiments import precedent
-from banzuke.harness import fingerprint
+from banzuke.harness import fingerprint, pmap, split
 from banzuke.metrics import evaluate
 from banzuke.models import GBMRerank, gap_pairs
 from banzuke.overrides import OverrideError
 from banzuke.paths import EXPLAIN_CACHE as SCRATCH
-from banzuke.ranks import (CLS_CHARS as CLS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA,
-                           fmt_cell as cell, fmt_record as rec)
+from banzuke.ranks import (CLS_CHARS as CLS, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, RECENT_ERA, SEKIWAKE,
+                           YOKOZUNA, fmt_cell as cell, fmt_rank, fmt_record as rec)
 from banzuke.resolver import forced_claims, resolve
 
 PAIR_GAP = 5.0          # record pair probabilities for every pair this close in base score
@@ -162,14 +157,7 @@ def _names(df, mask):
 
 def _build_target(args):
     target, seeds, kw = args
-    trans, tidy = _TRANS, _TIDY
-    bashos = sorted(tidy["basho"].unique())
-    prev = bashos[bashos.index(target) - 1]
-    train = trans[(trans["next_basho"] < target) & trans["position_next"].notna()]
-    assert int(train["next_basho"].max()) < target
-    cands = trans[(trans["basho"] == prev) & ~trans["dropped"]].reset_index(drop=True)
-    actual = tidy[tidy["basho"] == target]
-    mak_size = int(cands["mak_size"].iloc[0])
+    prev, train, cands, actual, mak_size = split(_TRANS, _TIDY, target)
     claims = forced_claims(cands)
     rows, pairs, frames = [], [], []
     for seed in seeds:
@@ -233,15 +221,11 @@ def build(trans, tidy, start, end, seeds, kwargs=None, threads=1):
     out.mkdir(parents=True, exist_ok=True)
     kw = GBMRerank.prepare(kwargs, trans, threads)
     tasks = [(t, seeds, kw) for t in targets[::-1]]
-    rows, pairs, frames, t0 = [], [], [], time.time()
-    with ProcessPoolExecutor(min(threads, len(tasks)), mp_context=get_context("spawn"),
-                             initializer=_init, initargs=(trans, tidy)) as ex:
-        for n, (r, p, f) in enumerate(ex.map(_build_target, tasks), 1):
-            rows.append(r)
-            pairs.append(p)
-            frames.append(f)
-            print(f"\r{n}/{len(tasks)} targets, {time.time() - t0:.0f}s", end="", file=sys.stderr, flush=True)
-    print(file=sys.stderr)
+    rows, pairs, frames = [], [], []
+    for r, p, f in pmap(_build_target, tasks, threads, _init, (trans, tidy), label="targets"):
+        rows.append(r)
+        pairs.append(p)
+        frames.append(f)
     tag = f"{start}_{end}"
     for name, parts in (("rows", rows), ("pairs", pairs), ("frames", frames)):
         pd.concat(parts, ignore_index=True).to_parquet(out / f"{name}_{tag}.parquet", index=False)
@@ -267,23 +251,12 @@ def load(kind, kwargs=None, seeds=(0, 1, 2)):
     return pd.concat([pd.read_parquet(f) for f in files], ignore_index=True)
 
 
-def frame(rows, target, seed):
-    g = rows[(rows["target"] == target) & (rows["seed"] == seed)]
-    if not len(g):
-        raise NoCache(f"target {target} seed {seed} not in cache")
-    return g.reset_index(drop=True)
-
-
 def with_signals(rows, target, seed):
-    """Frame plus confidence tier/spread (over all cached seeds of the target)."""
+    """Frame plus confidence signals (over all cached seeds of the target)."""
     g = rows[rows["target"] == target]
-    pred = frame(rows, target, seed)
-    seeds = sorted(g["seed"].unique())
-    base = g.pivot(index="rikishi_id", columns="seed", values="base").mean(axis=1)
-    final = pred.set_index("rikishi_id")["score"]
-    seed_preds = [g.loc[g["seed"] == s, ["rikishi_id", "pred_pos"]] for s in seeds]
-    sig = confidence.signals(pred, base, final, seed_preds)
-    return pred.join(sig[["gap", "spread", "tier", "big_move"]])
+    if not (g["seed"] == seed).any():
+        raise NoCache(f"target {target} seed {seed} not in cache")
+    return confidence.with_signals(g, seed)
 
 
 # --- sheet -----------------------------------------------------------------------
@@ -364,7 +337,7 @@ def sheet_text(rows, frames, tidy, target, seed):
                 cols.append(who(rid, "" if r["hit"] else p_cell, "<-"))
             else:
                 cols.append(who(rid, "", ""))
-        lines.append(f"{CLS[c] + str(n):<5} {cols[0]:<40} {cols[1]:<40} | {cols[2]:<40} {cols[3]:<40}".rstrip())
+        lines.append(f"{fmt_rank(c, n):<5} {cols[0]:<40} {cols[1]:<40} | {cols[2]:<40} {cols[3]:<40}".rstrip())
     n_mak = int(p["mak_size"].iloc[0])
     near = (p["pred_pos"] <= n_mak + 6) | (p["position_next"] <= n_mak + 6)
     jur = p[((p["pred_class"] == JURYO) | (p["class_next"] == JURYO)) & near].sort_values("pred_pos")
@@ -541,7 +514,7 @@ def calibration(kwargs=None, seeds=(0, 1, 2)):
     for col in ("rank_class", "rank_number", "wins", "division", "class_next"):
         pr[f"{col}_i"], pr[f"{col}_j"] = info[col].reindex(k_i).to_numpy(), info[col].reindex(k_j).to_numpy()
     pr = pr[(pr["class_next_i"] <= MAEGASHIRA) | (pr["class_next_j"] <= MAEGASHIRA)]
-    pr["window"] = np.where(pr["target"] >= 201901, "2019+", "2004-2018")
+    pr["window"] = np.where(pr["target"] >= RECENT_ERA, "2019+", "2004-2018")
     pr["bin"] = pd.cut(pr["p"], [0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1.0], include_lowest=True)
     pr["sanyaku"] = (pr["rank_class_i"] <= KOMUSUBI) | (pr["rank_class_j"] <= KOMUSUBI)
     pr["promotee"] = (pr["division_i"] == 1) | (pr["division_j"] == 1)

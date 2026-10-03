@@ -27,8 +27,8 @@ import numpy as np
 import pandas as pd
 
 from banzuke.overrides import OverrideError
-from banzuke.ranks import (CLS_NAMES, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA,
-                           fmt_cell)
+from banzuke.ranks import (CLS_NAMES, JURYO, KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, TWIN_KEY,
+                           YOKOZUNA, fmt_cell)
 
 
 def block_slots(c, n, ne, nw):
@@ -143,7 +143,7 @@ def keep_twin_order(df: pd.DataFrame) -> pd.DataFrame:
     order = np.arange(len(df))
     side = df["side"].to_numpy()
     mj = df[df["rank_class"] >= MAEGASHIRA]
-    for rows in mj.groupby(["rank_class", "rank_number", "wins", "losses", "absences"]).indices.values():
+    for rows in mj.groupby(list(TWIN_KEY)).indices.values():
         if len(rows) == 2:
             a, b = mj.index[rows]  # positions in df (score order)
             if side[a] > side[b]:

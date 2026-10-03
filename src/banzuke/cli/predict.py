@@ -22,16 +22,15 @@ alternative.
 """
 import sys
 
-from banzuke.cli._common import (CommandError, add_set, add_train_start, add_threads, build_model,
-                                 model_class, parse_sets, subcommand)
+from banzuke.cli._common import (CommandError, add_model, add_set, add_train_start, add_threads,
+                                 build_model, model_class, parse_sets, subcommand)
 
 SPEC_KEYS = ("above", "below", "class", "count", "pin")
 
 
 def add_parser(sub):
     ap = subcommand(sub, "predict", __doc__, "predict the next banzuke from the latest results")
-    ap.add_argument("--model", default="Ar", metavar="NAME",
-                    help="ordering model (docs/MODEL.md lists them)")
+    add_model(ap, "Ar")
     ap.add_argument("--retired", default="", help="comma-separated shikona to exclude")
     ap.add_argument("--protected", default="",
                     help="comma-separated shikona whose full absence the JSA exempted "
@@ -66,7 +65,7 @@ def add_parser(sub):
 def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds):
     from banzuke.forecast import notes
     from banzuke.overrides import verify
-    from banzuke.ranks import CLS_CHARS, JURYO, fmt_cell, fmt_record
+    from banzuke.ranks import JURYO, fmt_cell, fmt_rank, fmt_record
 
     how = f"{n_seeds}-seed bag" if n_seeds > 1 else "seed 0"
     print(f"predicted makuuchi banzuke for {target} "
@@ -93,8 +92,7 @@ def render(pred, ov, warnings, items, baseline, target, latest, args, n_seeds):
     width = max([38] + [len(c) + 2 for c in east.values()])
     print(f"{'':11}{'EAST':<{width}}WEST")
     for key in sorted(slots):
-        lab = f"{CLS_CHARS[int(key[0])]}{int(key[1])}"
-        print(f"  {lab:>3}  {east[key]:<{width}}{cell(slots[key].get(1))}".rstrip())
+        print(f"  {fmt_rank(*key):>3}  {east[key]:<{width}}{cell(slots[key].get(1))}".rstrip())
 
     if ov["relative"]:
         posmap = dict(zip(pred["rikishi_id"], pred["pred_pos"]))

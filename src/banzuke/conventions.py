@@ -12,7 +12,8 @@ silent. A few regularities the resolver does not enforce are tracked too
 import numpy as np
 import pandas as pd
 
-from banzuke.ranks import KOMUSUBI, MAEGASHIRA, OZEKI, SEKIWAKE, YOKOZUNA
+from banzuke.ranks import (KOMUSUBI, MAEGASHIRA, MODERN_ERA, OZEKI, SEKIWAKE, TWIN_KEY,
+                           YOKOZUNA)
 from banzuke.resolver import block_slots, forced_claims, rule_masks
 
 LAYOUT = {YOKOZUNA: "layout: yokozuna block", OZEKI: "layout: ozeki block (odd -> lighter column)",
@@ -107,8 +108,7 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
     add("komusubi newcomers rank below kachi-koshi komusubi incumbents", "resolver",
         p["basho"], p["position_next_a"] > p["position_next_b"])
 
-    tw = t[t["side"] == 0].merge(t[t["side"] == 1], suffixes=("_e", "_w"),
-                                 on=["basho", "rank_class", "rank_number", "wins", "losses", "absences"])
+    tw = t[t["side"] == 0].merge(t[t["side"] == 1], suffixes=("_e", "_w"), on=["basho", *TWIN_KEY])
     mj, sk = tw["rank_class"] >= MAEGASHIRA, tw["rank_class"].isin((SEKIWAKE, KOMUSUBI))
     add("identical-record M/J E/W twins keep their order", "resolver",
         tw.loc[mj, "basho"], tw.loc[mj, "position_next_e"] < tw.loc[mj, "position_next_w"])
@@ -136,7 +136,7 @@ def table(c: pd.DataFrame, recent=30) -> pd.DataFrame:
     2004+ as a whole."""
     bashos = sorted(c["basho"].unique())
     cut = bashos[-recent]
-    windows = [("all", bashos[0]), ("2004+", 200401), ("last 60", bashos[-60]), (f"last {recent}", cut)]
+    windows = [("all", bashos[0]), ("2004+", MODERN_ERA), ("last 60", bashos[-60]), (f"last {recent}", cut)]
     rows = []
     for name in c["convention"].drop_duplicates():
         s = c[c["convention"] == name]
@@ -146,7 +146,7 @@ def table(c: pd.DataFrame, recent=30) -> pd.DataFrame:
             row[w] = f"{int((~q['held']).sum())}/{len(q)}"
         viol = s.loc[~s["held"], "basho"]
         row["last violation"] = str(int(viol.max())) if len(viol) else ""
-        modern, late = s[s["basho"] >= 200401], s[s["basho"] >= cut]
+        modern, late = s[s["basho"] >= MODERN_ERA], s[s["basho"] >= cut]
         v_modern, v_late = int((~modern["held"]).sum()), int((~late["held"]).sum())
         if v_late and v_late == v_modern:
             row["flag"] = "!"
