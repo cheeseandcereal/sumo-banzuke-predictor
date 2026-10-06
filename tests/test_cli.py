@@ -1,6 +1,8 @@
 """The `banzuke` command line: every (sub)command answers --help, usage errors
 exit with status 2 and a message rather than a traceback, the shared option
 grammar parses, and the commands that need no training run end to end."""
+import re
+
 import pytest
 
 from banzuke.cli import build_parser, main
@@ -53,6 +55,7 @@ def test_version_and_dispatch_table(capsys):
     (["precedent", "landing", "Z9 1-1"], "bad rank spec"),
     (["precedent", "pair", "K 5-10", "M1 8-7", "--where", "nonsense column"], "--where 'nonsense column'"),
     (["precedent", "landing", "K1 5-10", "--where", "no_such_col > 1"], "--where 'no_such_col > 1'"),
+    (["precedent", "landing", "K1 5-10", "--limit", "-1"], "--limit must be 0"),
     (["explain", "sheet"], "give a target basho or --all"),
     (["explain", "sheet", "202101", "--seeds", "7-9"], "no rows cache"),
 ])
@@ -96,6 +99,25 @@ def test_conventions_and_precedent_run(capsys):
     assert main(["precedent", "pair", "K 5-10", "M9-10 10-5"]) == 0
     out = capsys.readouterr().out
     assert out.startswith("K 5-10 above M9-10 10-5:") and "2004+" in out
+    assert "newest first" not in out
+
+
+def test_precedent_list(capsys):
+    # --limit implies --list; the listed rows are the ones behind n, newest first
+    assert main(["precedent", "landing", "K1 5-10", "--limit", "3"]) == 0
+    out = capsys.readouterr().out
+    rows = re.findall(r"^ {4}(\d{6}) \S+ +K1[EW] +5-10 +-> M\d+[EW] +[+-]\d+$", out, re.M)
+    assert "rows, newest first:" in out and len(rows) == 3 and rows == sorted(rows, reverse=True)
+    assert "more (--limit 0 for all)" in out
+    assert main(["precedent", "pair", "K 5-10", "M9-10 10-5", "--list"]) == 0
+    out = capsys.readouterr().out
+    assert "pairs, newest first:" in out
+    assert re.search(r"^ {4}\d{6} \S+ +K\d[EW] +5-10 +-> \S+ +(above|below) +\S+ +M(9|10)[EW] +10-5 +-> ",
+                     out, re.M)
+    # nothing to list is no listing
+    assert main(["precedent", "landing", "K1 5-10", "--list", "--where", "year<1900"]) == 0
+    out = capsys.readouterr().out
+    assert "n=0" in out and "newest first" not in out
 
 
 def _latest_candidates():

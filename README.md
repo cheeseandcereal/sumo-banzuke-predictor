@@ -163,6 +163,7 @@ uv run banzuke gtb --model Ar --seeds 0-1     # the human GTB field per basho, t
 uv run banzuke explain build --start 201901   # cache the frames the research tools read
 uv run banzuke explain sheet 202309           # one historical forecast next to the real banzuke
 uv run banzuke precedent landing "K1 5-10"    # where did the committee put that record
+uv run banzuke precedent landing "K1 5-10" --list   # and who they were, newest first
 ```
 
 The resolver's hard-coded conventions (yokozuna never demoted, Y/O order

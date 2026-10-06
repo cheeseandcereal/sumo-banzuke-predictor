@@ -2,6 +2,7 @@
 
     banzuke precedent landing "K1 5-10"
     banzuke precedent landing "M1 8-7" --where "year>=2010"
+    banzuke precedent landing "K1 5-10" --list    # and the rows behind the counts
     banzuke precedent pair "K 5-10" "M9-10 10-5"
     banzuke precedent cells "S 7-8"      # landing cells, counted
 
@@ -15,7 +16,7 @@ import re
 
 import numpy as np
 
-from banzuke.ranks import CLS_CHARS, MODERN_ERA, fmt_cell
+from banzuke.ranks import CLS_CHARS, MODERN_ERA, fmt_cell, fmt_record
 
 SPEC = re.compile(rf"^([{CLS_CHARS}])(?:(\d+)(?:-(\d+))?)?([EW])?$")
 
@@ -98,18 +99,26 @@ def landing(t, spec, where=None):
     return out
 
 
+def pairs(t, spec_a, spec_b, where=None):
+    """Same-basho (a-row, b-row) pairs of two different rikishi; both sides'
+    identity, cell, record and landing, with column suffixes _a and _b."""
+    cols = ["basho", "rikishi_id", "shikona", "rank_class", "rank_number", "side", "wins", "losses",
+            "absences", "class_next", "number_next", "side_next", "position_next"]
+    a = t[select(t, spec_a, where)][cols]
+    b = t[select(t, spec_b, where)][cols]
+    p = a.merge(b, on="basho", suffixes=("_a", "_b"))
+    return p[p["rikishi_id_a"] != p["rikishi_id_b"]]
+
+
 def pair_rate(t, spec_a, spec_b, where=None):
     """Same-basho pairs (a-row, b-row): share where a landed above b, per window."""
-    a = t[select(t, spec_a, where)][["basho", "rikishi_id", "position_next"]]
-    b = t[select(t, spec_b, where)][["basho", "rikishi_id", "position_next"]]
-    pairs = a.merge(b, on="basho", suffixes=("_a", "_b"))
-    pairs = pairs[pairs["rikishi_id_a"] != pairs["rikishi_id_b"]]
+    p = pairs(t, spec_a, spec_b, where)
     out = {}
     for w, since in windows(t):
-        p = pairs[pairs["basho"] >= since]
-        above = int((p["position_next_a"] < p["position_next_b"]).sum())
-        out[w] = {"n": len(p), "a_above": above,
-                  "rate": above / len(p) if len(p) else np.nan}
+        q = p[p["basho"] >= since]
+        above = int((q["position_next_a"] < q["position_next_b"]).sum())
+        out[w] = {"n": len(q), "a_above": above,
+                  "rate": above / len(q) if len(q) else np.nan}
     return out
 
 
@@ -131,3 +140,38 @@ def fmt_pair(spec_a, spec_b, res):
         rate = f"{r['rate']:.2f}" if r["n"] else "-"
         lines.append(f"  {w:7s} {r['a_above']} of {r['n']} ({rate})")
     return "\n".join(lines)
+
+
+def fmt_rows(rows, limit=0):
+    """The transitions behind landing()'s counts, newest basho first and in
+    sheet order within one: basho, man, cell and record, landing cell, delta."""
+    rows = rows.sort_values(["basho", "position"], ascending=[False, True])
+    return _listing("rows", rows, limit, lambda r: f"{r.basho} {_side(r)} {r.delta:+.0f}")
+
+
+def fmt_pairs(p, limit=0):
+    """The pairs behind pair_rate()'s counts, newest basho first: both men as
+    in fmt_rows, and whether a landed above or below b."""
+    p = p.sort_values(["basho", "position_next_a", "position_next_b"], ascending=[False, True, True])
+    return _listing("pairs", p, limit, lambda r: (
+        f"{r.basho} {_side(r, '_a')} {'above' if r.position_next_a < r.position_next_b else 'below'}  "
+        f"{_side(r, '_b')}"))
+
+
+def _listing(noun, frame, limit, line):
+    """Header, one `line(row)` for each of the first `limit` rows (0 = all), how many were cut."""
+    shown = frame.head(limit) if limit else frame
+    lines = [f"  {noun}, newest first:", *(f"    {line(r)}".rstrip() for r in shown.itertuples())]
+    if len(shown) < len(frame):
+        lines.append(f"    ... {len(frame) - len(shown)} more (--limit 0 for all)")
+    return "\n".join(lines)
+
+
+def _side(r, suffix=""):
+    """One man of a listing row: shikona, cell and record, then his landing cell."""
+    def g(col):
+        return getattr(r, col + suffix)
+
+    return (f"{g('shikona'):<14} {fmt_cell(g('rank_class'), g('rank_number'), g('side')):<5} "
+            f"{fmt_record(g('wins'), g('losses'), g('absences')):<7} -> "
+            f"{fmt_cell(g('class_next'), g('number_next'), g('side_next')):<5}")

@@ -815,7 +815,8 @@ Tooling:
   (135 targets x 3 seeds, 25 min on 24 threads) reproduces the E17 confirm
   figures exactly (17.93 / .937).
 - `banzuke precedent`: "where did K1 5-10 land" / "who was higher, K 5-10 or
-  M9-10 10-5" with counts for all history, 2004+ and the last 60 basho.
+  M9-10 10-5" with counts for all history, 2004+ and the last 60 basho;
+  `--list` names the rows (pairs) behind the counts, newest first.
 - `experiments/rules.py` (not in the current code; git history has it):
   candidate rules applied to the cached orders (order edits,
   class assertions, or flipping the inputs of a resolver rule), re-resolved
