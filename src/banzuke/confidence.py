@@ -16,7 +16,7 @@ from banzuke.resolver import forced_claims, resolve
 
 # calibration of the tiers and the big-move flag: docs/MODEL.md 7, `banzuke analyze`
 TIGHT_GAP = 0.25  # base-score gap below which a boundary is a tight call
-BIG_MOVE = 8      # half-ranks
+BIG_MOVE = 4      # ranks (8 cells)
 
 
 def boundaries(pred, base, final, skip=(), seed_preds=()):
@@ -59,10 +59,11 @@ def signals(pred, base, final, seed_preds=(), skip=()):
     if len(seed_preds) >= 2:
         pos = pd.concat(seed_preds).groupby("rikishi_id")["pred_pos"]
         out["spread"] = rid.map(pos.max() - pos.min()).fillna(0).astype(int)
-    out["move"] = (pred["pred_pos"] - pred["position"]).astype(float)
+    # the predicted move in ranks, positive = a rise; the juryo landing threshold is a position (cells)
+    out["move"] = ((pred["position"] - pred["pred_pos"]) / 2).astype(float)
     n_mak = int((pred["pred_class"] < JURYO).sum())
     big = np.where(pred["division"] == 0, out["move"].abs() >= BIG_MOVE,
-                   pred["pred_pos"] <= n_mak - 1 - BIG_MOVE)
+                   pred["pred_pos"] <= n_mak - 1 - 2 * BIG_MOVE)
     out["big_move"] = big & (pred["pred_class"] < JURYO).to_numpy()
     out["n_signals"] = (out["tight"].astype(int) + (out["spread"] >= 1)
                         + (out["spread"] >= 2))

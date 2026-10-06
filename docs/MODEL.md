@@ -44,9 +44,14 @@ Vocabulary used throughout:
   label such as `M3W`.
 - **position**: a cell's joint index on the sheet, 0 = Y1E, counting east
   then west through every maegashira and juryo cell. One position step is
-  one cell, half a rank (M3E to M3W); every distance, error and score in
-  the project is in these units. `delta` = position next basho minus
-  position now, so negative means a rise.
+  one cell, half a rank (M3E to M3W); positions, distances, errors and
+  scores are in these units (cells).
+- **delta** and **move**: the two movement quantities, in ranks rather than
+  cells (0.5 per cell) and positive for a rise: `delta` = (position now
+  minus position next basho) / 2, the committee's decision; `move` is the
+  same for a model's predicted position. Being a difference of joint
+  positions, a move also absorbs any change in the number of sanyaku cells
+  above the man, so it can differ from pure rank arithmetic by half a rank.
 - **score**: a model's output per candidate, lower = ranked higher. The
   resolver sorts by it.
 - **kachi-koshi** (KK): 8+ wins; **make-koshi** (MK): fewer. **kadoban**:
@@ -59,7 +64,7 @@ flowchart LR
     raw["raw API JSON<br/>data/banzuke, data/basho"] -->|"banzuke data build"| tidy["tidy.parquet<br/>bouts.parquet"]
     tidy -->|"features.py"| trans["transitions.parquet<br/>55 columns, 36 FEATURES"]
     trans -->|"banzuke data build"| oof["oof.parquet<br/>rolling out-of-fold base scores"]
-    trans --> base["Stage 1: base movement model (Aq)<br/>5 x LightGBM L1 on delta<br/>base = position + mean delta"]
+    trans --> base["Stage 1: base movement model (Aq)<br/>5 x LightGBM L1 on the move in cells<br/>base = position + mean move"]
     oof --> rerank
     base --> rerank["Stage 2: near-tie reranker (Ar)<br/>S/K twin units, clusters (gap 1.0, max 6)<br/>pair classifier, Borda, rank index"]
     rerank --> splice["--above / --below<br/>splice the order"]
@@ -178,7 +183,7 @@ makushita or a debut carries no history.
 | `w2` | wins two basho ago |
 | `pos1` | position one basho ago |
 | `roll3` | `wins + w1 + w2` (NaN when either lag is) |
-| `traj3` | position two basho ago minus position now (positive = has been climbing) |
+| `traj3` | position two basho ago minus position now, in cells (positive = has been climbing) |
 
 **Model features: career state (4)**
 
@@ -219,7 +224,7 @@ makushita or a debut carries no history.
 
 | column | definition |
 |---|---|
-| `rank_protected` | 1 when a full absence (0 wins, 8+ absences, at sekiwake or below) was not counted against the man: kosho granted in 1972-2003 (read off the frozen rank, `delta <= 3`; the decision was public before the banzuke) or a modern exemption listed in `features.PROTECTED` (the last kosho cases of 200401, the 2020-2022 COVID withdrawals). `banzuke predict --protected Name` sets it live |
+| `rank_protected` | 1 when a full absence (0 wins, 8+ absences, at sekiwake or below) was not counted against the man: kosho granted in 1972-2003 (read off the frozen rank, `delta >= -1.5`; the decision was public before the banzuke) or a modern exemption listed in `features.PROTECTED` (the last kosho cases of 200401, the 2020-2022 COVID withdrawals). `banzuke predict --protected Name` sets it live |
 
 <!-- FEATURES:end -->
 
@@ -246,7 +251,7 @@ Read by the yokozuna and ozeki promotion rules (5.1, rules 4 and 6):
 | `number_next` | his rank number there |
 | `side_next` | his side there |
 | `dropped` | next banzuke known and he is not on it (retired, fell to makushita) |
-| `delta` | `position_next - position`: the training target, negative = rise |
+| `delta` | `(position - position_next) / 2`: the committee's move in ranks, positive = rise (the models fit the same move in cells, section 3) |
 
 **Computed, excluded from the models (4)**
 
@@ -269,9 +274,10 @@ kept in the dataset so `--set extra=...` can measure them.
   was made: the results of N included, nothing later. The one exception
   is `rank_protected` in the kosho era, inferred from the frozen rank
   because the kosho decision itself was public before the banzuke.
-- Ordinals everywhere: class 0-5, side 0/1, lower = higher. Scores,
-  positions and deltas share the direction: smaller is higher on the
-  sheet.
+- Ordinals everywhere: class 0-5, side 0/1, lower = higher. Scores and
+  positions share the direction: smaller is higher on the sheet. The
+  movement quantities `delta` and `move` run the other way: positive is a
+  rise, and they are in ranks, not cells.
 - NaN is a value, not an error: LightGBM routes missing lags natively,
   and the resolver treats a NaN run as "no run".
 - The training set is every labelled transition since 1959, juryo rows
@@ -283,11 +289,13 @@ kept in the dataset so `--set extra=...` can measure them.
 
 `models.GBMMedian`, the stage `Ar` inherits. Five `LGBMRegressor`s with
 `objective="regression_l1"` (median regression) are fitted on
-`train[FEATURES]` against `delta`, one per `random_state` 0-4. For each
-candidate the five predicted movements are averaged and added to his
-current position:
+`train[FEATURES]` against the move in cells, `position_next - position`
+(`models.move_cells`; the dataset's `delta` is the same move in ranks with
+the opposite sign, kept out of the fit because an L1 fit is not symmetric
+under negating the label), one per `random_state` 0-4. For each candidate
+the five predicted moves are averaged and added to his current position:
 
-    base_score = position + mean_k(delta_k)
+    base_score = position + mean_k(move_k)
 
 the model's predicted next position in cells, before any structure is
 applied; lower = ranked higher. L1 rather than L2 because the committee's
@@ -651,7 +659,7 @@ each man:
 | `tight` | some decided boundary has `gap < 0.25` (`TIGHT_GAP`) |
 | `inverted` | some decided boundary has a negative gap: the reranker reversed the base order |
 | `spread` | max minus min of his position across the single-seed sheets (0 with one seed) |
-| `big_move` | a makuuchi incumbent moving 8+ cells (`BIG_MOVE`), or a juryo man landing 8+ cells above the last makuuchi cell; only for men predicted in makuuchi |
+| `big_move` | a makuuchi incumbent moving 4+ ranks (`BIG_MOVE`, 8 cells), or a juryo man landing 8 or more cells above the last makuuchi cell; only for men predicted in makuuchi |
 
 Marker: `n_signals = tight + (spread >= 1) + (spread >= 2)`; 1 gives
 `?`, 2 or more `??`; `~` is appended for a big move; `!` is set by the
@@ -833,8 +841,8 @@ head-to-head bout as a pair feature; E3, E6, E7, E14).
 
 | name | class | what it is | role |
 |---|---|---|---|
-| `R` | `RulesBaseline` | per-zone least squares, `delta ~ a + b (wins - 8) + c absences`, fitted on the last 60 basho | mechanical baseline |
-| `A` | `GBMRegression` | LightGBM L2 on `delta`, 5 seeds | `Aq` with the L2 objective |
+| `R` | `RulesBaseline` | per-zone least squares, `move ~ a + b (wins - 8) + c absences`, fitted on the last 60 basho | mechanical baseline |
+| `A` | `GBMRegression` | LightGBM L2 on the move, 5 seeds | `Aq` with the L2 objective |
 | `Aq` | `GBMMedian` | L1 objective | stage 1 of `Ar` |
 | `B` | `GBMRanker` | LambdaRank on the next-basho order, relevance capped at 60, truncation 60 | the ranking-objective alternative |
 | `Ar` | `GBMRerank` | `Aq` + near-tie reranker | **default** |

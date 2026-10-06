@@ -106,8 +106,9 @@ def test_precedent_list(capsys):
     # --limit implies --list; the listed rows are the ones behind n, newest first
     assert main(["precedent", "landing", "K1 5-10", "--limit", "3"]) == 0
     out = capsys.readouterr().out
-    rows = re.findall(r"^ {4}(\d{6}) \S+ +K1[EW] +5-10 +-> M\d+[EW] +[+-]\d+$", out, re.M)
+    rows = re.findall(r"^ {4}(\d{6}) \S+ +K1[EW] +5-10 +-> M\d+[EW] +[+-]\d+\.\d$", out, re.M)
     assert "rows, newest first:" in out and len(rows) == 3 and rows == sorted(rows, reverse=True)
+    assert "delta q25/50/75 -" in out  # a 5-10 komusubi drops: negative, + is a rise
     assert "more (--limit 0 for all)" in out
     assert main(["precedent", "pair", "K 5-10", "M9-10 10-5", "--list"]) == 0
     out = capsys.readouterr().out

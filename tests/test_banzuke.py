@@ -325,7 +325,7 @@ def test_protected_column(trans):
     full = trans[(trans["wins"] == 0) & (trans["absences"] >= 8) & (trans["rank_class"] >= SEKIWAKE)
                  & trans["delta"].notna()]
     kept, dropped = full[full["rank_protected"] == 1], full[full["rank_protected"] == 0]
-    assert kept["delta"].max() <= 3 and dropped["delta"].min() >= 10
+    assert kept["delta"].min() >= -1.5 and dropped["delta"].max() <= -5
     modern = trans[(trans["basho"] >= 200401) & (trans["rank_protected"] == 1)]
     assert set(zip(modern["basho"], modern["rikishi_id"])) == PROTECTED
     assert (trans.loc[trans["rank_class"] <= OZEKI, "rank_protected"] == 0).all()
@@ -558,14 +558,14 @@ def _synthetic(invert=False):
 
 def test_confidence_signals_tiers():
     pred, base, final = _synthetic()
-    pred.loc[6, "position"] = 16  # incumbent climbing 10 half-ranks
+    pred.loc[6, "position"] = 16  # incumbent climbing 5 ranks (10 cells)
     sig = confidence.signals(pred, base, final)
     assert sig.index.equals(pred.index)
     assert (sig.loc[[0, 1], "gap"] == np.inf).all() and (sig.loc[[0, 1], "tier"] == "").all()
     assert sig.loc[[2, 3], "tight"].all() and (sig.loc[[2, 3], "tier"] == "?").all()
     assert (sig.loc[[4, 5, 6, 7], "tier"] == "").all() and (sig["spread"] == 0).all()
     assert sig["big_move"].tolist() == [False] * 6 + [True, False]
-    assert sig.loc[6, "marker"] == "~" and sig.loc[6, "move"] == -10
+    assert sig.loc[6, "marker"] == "~" and sig.loc[6, "move"] == 5
     # two seed orders that swap rows 5 and 7: spread 2 for both, "??" without tightness
     s1 = pred[["rikishi_id", "pred_pos"]]
     s2 = s1.assign(pred_pos=s1["pred_pos"].replace({5: 7, 7: 5}))

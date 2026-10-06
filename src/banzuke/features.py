@@ -172,13 +172,14 @@ def build_transitions(tidy: pd.DataFrame, bouts: pd.DataFrame) -> pd.DataFrame:
     })
     df = df.merge(nxt, on=["next_basho", "rikishi_id"], how="left")
     df["dropped"] = df["next_basho"].notna() & df["position_next"].isna()
-    df["delta"] = df["position_next"] - df["position"]
+    # the move in ranks (0.5 per cell), positive = a rise
+    df["delta"] = (df["position"] - df["position_next"]) / 2
 
     # a full absence the committee did not count, at a rank that does not
     # protect by itself: kosho granted (the era's public decision, read off the
     # frozen rank) or a listed modern exemption
     full = (df["wins"] == 0) & (df["absences"] >= 8) & (df["rank_class"] >= SEKIWAKE)
-    kosho_kept = (df["basho"] <= KOSHO_END) & full & (df["delta"] <= 3)
+    kosho_kept = (df["basho"] <= KOSHO_END) & full & (df["delta"] >= -1.5)
     listed = pd.Series(list(zip(df["basho"], df["rikishi_id"])), index=df.index).isin(PROTECTED)
     df["rank_protected"] = (kosho_kept | listed).astype(int)
 

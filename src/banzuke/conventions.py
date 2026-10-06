@@ -85,9 +85,9 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
     def watch(name, applies, held):
         add(name, "watch", b[applies], held[applies])
 
-    watch("S/K/M with 0 wins and 8+ absences drops 17+ cells (COVID exemptions violate)",
+    watch("S/K/M with 0 wins and 8+ absences drops 8.5+ ranks (COVID exemptions violate)",
           np.isin(cls, (SEKIWAKE, KOMUSUBI, MAEGASHIRA)) & (wins == 0) & (t["absences"].to_numpy() >= 8),
-          t["delta"].to_numpy() >= 17)
+          t["delta"].to_numpy() <= -8.5)
 
     # order within a block (E22 R14, R4, R12): pairs of one basho
     def same_basho_pairs(mask_a, mask_b=None, keep=None):

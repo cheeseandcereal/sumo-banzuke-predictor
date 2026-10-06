@@ -69,14 +69,14 @@ def calibration(preds, trans):
     inc, pro = m["division"] == 0, m["division"] == 1
     mv = m["move"].abs()
     moves = {
-        "incumbent climb 8+": inc & (m["move"] <= -8),
-        "incumbent drop 8+": inc & (m["move"] >= 8),
-        "incumbent move 4-8": inc & (mv >= 4) & (mv < 8),
-        "incumbent move <4": inc & (mv < 4),
+        "incumbent climb 4+": inc & (m["move"] >= 4),
+        "incumbent drop 4+": inc & (m["move"] <= -4),
+        "incumbent move 2-4": inc & (mv >= 2) & (mv < 4),
+        "incumbent move <2": inc & (mv < 2),
         "promotee big_move": pro & m["big_move"],
         "promotee not big_move": pro & ~m["big_move"],
     }
-    rate_table(m, moves, "by move class")
+    rate_table(m, moves, "by move class (ranks)")
 
     rho = spearmanr(m["n_signals"], m["err"])
     print(f"\nspearman rho(n_signals, |err|) = {rho.statistic:.3f} (p = {rho.pvalue:.2g})")

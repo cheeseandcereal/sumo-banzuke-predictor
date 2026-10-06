@@ -32,6 +32,14 @@ BASE_PARAMS = dict(
 PAIR_PARAMS = {**BASE_PARAMS, "n_estimators": 150}
 
 
+def move_cells(rows):
+    """The regression target: cells moved down the sheet (position_next -
+    position), the unit positions and scores are in. Not the dataset's `delta`
+    (ranks, positive = rise): an L1 fit is not symmetric under negating the
+    label, and the published results are fitted on this sign and scale."""
+    return rows["position_next"] - rows["position"]
+
+
 def _seeds(seed, n_seeds):
     if n_seeds < 1:
         raise ValueError("n_seeds must be at least 1")
@@ -92,7 +100,7 @@ class _Model:
 
 
 class RulesBaseline(_Model):
-    """Fitted movement formula: delta ~ a + b*(wins-8) + c*absences per rank
+    """Fitted movement formula: move ~ a + b*(wins-8) + c*absences per rank
     zone, coefficients from the most recent `recent` basho of training data."""
 
     name = "R"
@@ -116,17 +124,17 @@ class RulesBaseline(_Model):
         for z in range(6):
             rows = t[zones == z]
             X = np.column_stack([np.ones(len(rows)), rows["win8"], rows["absences"]])
-            self.coefs[z], *_ = np.linalg.lstsq(X, rows["delta"], rcond=None)
+            self.coefs[z], *_ = np.linalg.lstsq(X, move_cells(rows), rcond=None)
 
     def score(self, cands, k=None):
         zones = self._zone(cands)
         X = np.column_stack([np.ones(len(cands)), cands["win8"], cands["absences"]])
-        delta = np.array([X[i] @ self.coefs[z] for i, z in enumerate(zones)])
-        return cands["position"].to_numpy() + delta
+        move = np.array([X[i] @ self.coefs[z] for i, z in enumerate(zones)])
+        return cands["position"].to_numpy() + move
 
 
 class GBMRegression(_Model):
-    """A: gradient-boosted regression on movement delta (L2). extra: dataset
+    """A: gradient-boosted regression on the move (L2). extra: dataset
     columns appended to FEATURES, for measuring a candidate input without a
     code change (`--set extra=kinboshi`)."""
 
@@ -140,7 +148,7 @@ class GBMRegression(_Model):
         return FEATURES + _cols(self.extra)
 
     def fit(self, train):
-        X, y = train[self.features], train["delta"]
+        X, y = train[self.features], move_cells(train)
         self.ms = _fit_bag(
             lambda s: LGBMRegressor(objective=self.objective, **_seeded(self.base_params, s))
             .fit(X, y),
@@ -148,8 +156,8 @@ class GBMRegression(_Model):
 
     def base_score(self, cands, k=None):
         ms = self.ms if k is None else [self.ms[k]]
-        delta = np.mean([m.predict(cands[self.features]) for m in ms], axis=0)
-        return cands["position"].to_numpy() + delta
+        move = np.mean([m.predict(cands[self.features]) for m in ms], axis=0)
+        return cands["position"].to_numpy() + move
 
     # the regression stage's predicted next position; for Ar this is the base
     # order its reranker works within (confidence signals need it)

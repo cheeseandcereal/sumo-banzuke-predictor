@@ -79,7 +79,7 @@ def select(t, spec, where=None):
 
 def landing(t, spec, where=None):
     """Where rows matching spec landed, per window: n, class counts, delta
-    quantiles (half-ranks, + = down), most common landing cells."""
+    quantiles (ranks, + = up), most common landing cells."""
     rows = t[select(t, spec, where)]
     out = {}
     for w, since in windows(t):
@@ -144,9 +144,10 @@ def fmt_pair(spec_a, spec_b, res):
 
 def fmt_rows(rows, limit=0):
     """The transitions behind landing()'s counts, newest basho first and in
-    sheet order within one: basho, man, cell and record, landing cell, delta."""
+    sheet order within one: basho, man, cell and record, landing cell, move
+    in ranks (+ = up)."""
     rows = rows.sort_values(["basho", "position"], ascending=[False, True])
-    return _listing("rows", rows, limit, lambda r: f"{r.basho} {_side(r)} {r.delta:+.0f}")
+    return _listing("rows", rows, limit, lambda r: f"{r.basho} {_side(r)} {r.delta:+.1f}")
 
 
 def fmt_pairs(p, limit=0):

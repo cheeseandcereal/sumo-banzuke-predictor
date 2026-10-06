@@ -14,9 +14,10 @@ Windows: all (1959+), 2004+ (modern, 42-man makuuchi), last60 (the 60 most
 recent basho). `--where` is a pandas query on the transition columns.
 `--list` adds the rows (pairs) behind the counts, newest basho first: the
 basho whose record it is, the man, his cell and record there and `-> cell`
-on the banzuke that followed. A row ends with the move in half-rank slots
-(+ = down the sheet), a pair with whether the first man landed above or
-below the second.
+on the banzuke that followed. A row ends with the move in ranks (+ = up
+the banzuke, 0.5 per cell; the `delta` column `--where` sees is the same
+number), a pair with whether the first man landed above or below the
+second.
 """
 from banzuke.cli._common import CommandError, action_parser, subcommand
 
