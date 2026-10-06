@@ -43,9 +43,7 @@ notes:
 
 Multiple ordering models (rules formula, linear, gradient-boosted
 regression/ranking/pairwise variants) competed on a shared
-rolling-origin backtest covering every banzuke transition since 1959
-(the losers are logged in `docs/EXPERIMENTS.md`; the tree keeps the
-baselines `R`, `A`, `Aq` and `B` next to the default).
+rolling-origin backtest covering every banzuke transition since 1959.
 The default model used (`Ar`) is a seed-bagged L1 gradient-boosted
 movement model whose near-tie clusters are reordered by a pairwise
 classifier that learned the committee's conflict-resolution habits,
@@ -158,7 +156,7 @@ Re-run the model bake-off / evaluation:
 
 ```sh
 uv run banzuke backtest --out cache/all       # 2004 through latest basho
-uv run banzuke backtest --end 202311          # original dev window only
+uv run banzuke backtest --end 201911          # the screen window, 2004-2019
 uv run banzuke analyze --model Ar             # residual analysis
 uv run banzuke conventions                    # resolver rules vs committee history
 uv run banzuke gtb --model Ar --seeds 0-1     # the human GTB field per basho, the model placed in it
@@ -196,8 +194,8 @@ configuration with a different base stage (`--seeds`,
 `--set base.*`, `--train-start`) computes its own under `cache/oof/`.
 
 `banzuke predict` and `banzuke backtest` accept `--train-start BASHO` to
-restrict training to newer transitions. Tested and neutral-to-worse
-(docs/EXPERIMENTS.md E9): the era features already let the models
-specialize to the modern regime, so full history remains the default.
+restrict training to newer transitions. Full history is the default: the
+era features already let the models specialize to the modern regime, and
+a hard cutoff measured neutral-to-worse (docs/EXPERIMENTS.md E9).
 
 `uv run pytest -q` runs the regression tests (about ten seconds).

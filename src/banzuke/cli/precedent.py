@@ -9,7 +9,7 @@ Spec grammar: <class>[<number>|<lo>-<hi>][E|W] <record>
     class   Y O S K M J
     record  9-6 | 5-7-3 (exact W-L[-A]) | 8+ (at least 8 wins) | kk | mk | *
 Windows: all (1959+), 2004+ (modern, 42-man makuuchi), last60 (the 60 most
-recent transitions). `--where` is a pandas query on the transition columns.
+recent basho). `--where` is a pandas query on the transition columns.
 """
 from banzuke.cli._common import CommandError, action_parser, subcommand
 

@@ -38,7 +38,7 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
     claims = forced_claims(t)
     rm = rule_masks(t)
     y_promo, o_promo, o_return = rm["y_promo"], rm["o_promo"], rm["o_return"]
-    # the old yokozuna rule without the "fought as ozeki" condition (E22 R7)
+    # the yokozuna rule's results condition alone, without "fought as ozeki" (E22 R7)
     y_fires = (cls == OZEKI) & yusho & ((t["yusho1"].to_numpy() == 1)
                                         | ((t["junyusho1"].to_numpy() == 1) & (t["w1"].to_numpy() >= 12)))
 
@@ -80,8 +80,8 @@ def cases(trans: pd.DataFrame) -> pd.DataFrame:
     rule("make-koshi S/K/M never above the prior cell",
          np.isin(cls, (SEKIWAKE, KOMUSUBI, MAEGASHIRA)) & ~kk, after >= prior)
 
-    # regularities found in the 2019+ case analysis (docs/EXPERIMENTS.md E19/E20)
-    # that the resolver does not enforce: "watch" rows so the first exception is loud
+    # regularities the resolver does not enforce (docs/EXPERIMENTS.md E19/E20):
+    # "watch" rows so the first exception is loud
     def watch(name, applies, held):
         add(name, "watch", b[applies], held[applies])
 

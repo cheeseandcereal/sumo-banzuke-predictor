@@ -27,7 +27,7 @@ from banzuke.ranks import (
 
 def block_slots(c, n, ne, nw):
     """Slot labels, in precedence order, for a block of n members.
-    E/W layout derived empirically (see docs/EXPERIMENTS.md): strict E,W
+    E/W layout (docs/EXPERIMENTS.md E1, MODEL.md rule 17): strict E,W
     alternation, except an odd O/S/K block sends its last slot to the
     lighter column (ne/nw = E/W counts of the blocks above) so the
     banzuke sheet balances. Numbers count per side."""
@@ -75,6 +75,7 @@ def rule_masks(df: pd.DataFrame) -> dict:
     o_run_m   S/K with 12+ wins and a 33-win run, one earlier basho at M1-M3
     o_promo   o_run | o_run_m
     o_return  demoted ozeki with 10+ wins (returns)
+    kadoban_out  kadoban ozeki with make-koshi (forced_claims' mask)
     k_from_s  7-win sekiwake with two other sekiwake candidates: a komusubi slot
     exit      make-koshi S/K who cannot stay in sanyaku (a K1E with 7 wins is
               left to the model), plus the k_from_s men leaving the S block

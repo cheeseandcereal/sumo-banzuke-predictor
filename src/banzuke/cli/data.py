@@ -8,8 +8,8 @@ Run after a banzuke release or a completed basho. Raw responses land in
 data/banzuke/{basho}_{Makuuchi,Juryo}.json and data/basho/{basho}.json; the
 build writes tidy, bouts and transitions .parquet to data/processed/, then
 the default model's out-of-fold table oof.parquet (one process per thread;
-skipped when the committed one still matches, or with --skip-oof). Commit
-all four with the raw JSON.
+skipped when the committed one matches the data and base stage, or with
+--skip-oof). Commit all four with the raw JSON.
 """
 from banzuke.cli._common import action_parser, add_threads, subcommand
 

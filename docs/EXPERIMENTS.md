@@ -52,8 +52,8 @@ change correlates -0.96 with the change in exact slots.
   model; `banzuke backtest` and `banzuke predict` share one seeded configuration.
 - Information policy: the forecast is sized like the previous banzuke
   (constant 42 since 2004; -0.02 slots vs reading the target's size,
-  which the harness did before). Candidate exclusion of announced
-  departures is unchanged.
+  the v1 policy). Candidate exclusion of announced departures is as in
+  v1.
 - Seeds are averaged within a basho before any comparison; the paired
   unit is the basho, never rows, pairs or seeds. Bagged configurations
   are compared as two disjoint bag replicates (seeds 0-4, 5-9).
@@ -71,13 +71,14 @@ change correlates -0.96 with the change in exact slots.
   2012-2019); guardrails dExact >= -0.2, promotion/demotion F1 and
   sanyaku-set exactness >= -0.01. Ties go to the simpler configuration.
   p-values after a search are exploratory and reported as such.
-- Reproduction: rows quote `--set` overrides relative to
-  the pre-round defaults, which from the current ones are
+- Reproduction: rows quote `--set` overrides relative to the pre-round
+  defaults; against the defaults adopted at the end of this round
+  (Finalists section) those are
   `--set n_seeds=1 --set base.n_estimators=600 --set pair.n_estimators=400
   --set near_ties=false --set context=false --set gap=0.5 --set cluster_max=4`
-  (`--set n_seeds=5` for "bag5"). Options that lost and were removed
-  afterwards (near-tie-only pair training, L2 blending, h2h/context for
-  C) are not reproducible without restoring them from git history.
+  (`--set n_seeds=5` for "bag5"). Options that lost (near-tie-only pair
+  training, L2 blending, h2h/context for C) are not in the current code
+  (git history has them).
   Per-basho CSVs live in the git-ignored `cache/` (`--out cache/...`).
 
 ### Baseline under protocol v2 (Ar, seeds 0-4 averaged)
@@ -86,14 +87,14 @@ change correlates -0.96 with the change in exact slots.
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | screen 2004-2019 | 95 | 19.19 | 0.10 | 0.45 | 0.920 | 0.008 | 44.6 | .934/.900 | .60 |
 | confirm 2020-2026 | 40 | 16.55 | 0.22 | 0.81 | 1.030 | 0.009 | 40.6 | .919/.873 | .49 |
-| 2024-2026 (old holdout) | 17 | 18.41 | 0.54 | 1.23 | 0.834 | 0.020 | 44.3 | .953/.895 | .44 |
+| 2024-2026 (holdout through E10) | 17 | 18.41 | 0.54 | 1.23 | 0.834 | 0.020 | 44.3 | .953/.895 | .44 |
 
-`backtest.py --models Ar --seeds 0-4 --start 200401` with the pre-round
+`banzuke backtest --models Ar --seeds 0-4 --start 200401` with the pre-round
 defaults above. The E10 headline (18.2 on 17 basho, one unset-seed draw) sits inside
 this distribution. 2020+ is genuinely harder: the committee created an
 extra S/K slot in 37% of basho since 2020 vs 18% over 2004-2019.
 
-### Where the misses are (Ar seeds 0-2, 2004-2026; from analyze.py sections since trimmed)
+### Where the misses are (Ar seeds 0-2, 2004-2026; `banzuke analyze`)
 
 - Of 5,662 makuuchi slots, 44.3% exact; misses: 27.6% pure E/W flips,
   33.3% off by one position, 39.1% farther.
@@ -166,11 +167,12 @@ worse at the juryo boundary (promo F1 .72 vs .93): its scores have no
 positional anchor. Recency-weighted training does not pay for its
 reduced effective sample (the era features already carry drift). C's
 current-position anchoring cannot express big moves; standalone it is
-the worst contender, but see E4 for where its machinery works.
+the worst contender, but see E4 for where its machinery works. `L`,
+`Aw` and `C` are not in the current code (git history has them).
 
 ## E4: residual analysis -> boundary_dist + local rerank Ar
 
-Residual analysis of Aq (analyze.py): 28% of misses were pure E/W
+Residual analysis of Aq (`banzuke analyze`): 28% of misses were pure E/W
 flips, 34% within one position; juryo promotees under-promoted by
 +1.10 positions; in model-inverted adjacent pairs the committee
 favored the climber (prior order held only 44% vs 63% baseline), and
@@ -180,8 +182,8 @@ learnable signal, and the model was too anchored, not too little.
 Changes:
 - boundary_dist feature (signed distance to the makuuchi/juryo line)
 - Ar = Aq global order + pairwise classifier reranking only within
-  near-tie clusters (consecutive base scores within GAP=0.5, clusters
-  capped at 4). GAP=1.5 was tried first and clustered 80% of pairs,
+  near-tie clusters (consecutive base scores within `gap`=0.5, clusters
+  capped at 4). `gap`=1.5 was tried first and clustered 80% of pairs,
   degrading results; 0.5 clusters ~39%.
 
 Dev: Ar 18.07 vs Aq 16.96 (sign 32-72, p<.001). Promotee bias fell to
@@ -207,7 +209,7 @@ MAE 0.854, promo F1 .96; A 16.69, Aq 16.63, Aw 15.81, B 15.44,
 R 15.44, L 9.44, C 8.31. Sign tests are underpowered at n=16, but Ar
 leads every ordering metric and the dev-window ordering reproduces.
 
-**Decision: Ar promoted as the default predictor** (predict.py).
+**Decision: Ar promoted as the default predictor** (`banzuke predict`).
 Runner-up Aq kept as the simpler fallback.
 
 ## E7: head-to-head bout results in the reranker
@@ -220,8 +222,8 @@ arrays (191k bouts, fusen excluded) and appended as a pair feature
 Result: null. Full dev 18.01 -> 17.97 (sign 19-18, p=1.0);
 2014+ 17.42 -> 17.51 (p=.36); 2020+ 14.13 -> 13.91. Either the
 committee does not actually use it, or the effect is already carried
-by the wins/prior-rank features. Ar remains the default; Ah kept
-in-tree for future re-evaluation.
+by the wins/prior-rank features. Ar remains the default; `Ah` and the
+`h2h` option are not in the current code (git history has them).
 
 ## E8: joi / strength-of-schedule awareness
 
@@ -239,14 +241,15 @@ Result: null. Aq full 16.60 -> 16.62 (sign 54-54); Ar full
 2020+ 14.13 -> 13.74. Joi membership is almost perfectly implied by
 rank position, which the model already has; the dynamic residue is too
 rare to move a 42-slot metric. Columns remain in the dataset
-(SCHEDULE_FEATURES) but are excluded from model inputs.
+(`features.schedule_features`) but are excluded from FEATURES;
+`--set extra=...` can measure them.
 
 ## Benchmark calibration: human "Guess the Banzuke" players
 
 GTB (dichne.com) players predict the same banzuke the backtest predicts
 and are scored like `gtb_points`: a "bullseye" is our exact slot, a
-"hit" the right rank on the wrong side, 2 and 1 points. The 2026-08
-version of this section quoted dichne.com's all-time top-ten table
+"hit" the right rank on the wrong side, 2 and 1 points. The first
+calibration (2026-08) quoted dichne.com's all-time top-ten table
 (25-27 bullseyes per basho over each player's whole career) and guessed
 the field at ~470 entries; neither describes the field the model is
 compared with. Measured instead from the sumodb archive with
@@ -263,7 +266,7 @@ Entries per basho 102-396 (mean 206), growing through the window. The
 winning score ranges 50-82 points (22-40 bullseyes), the median 34-59.
 
 Paired on identical targets (`banzuke gtb --model Ar --seeds 0-1`: the
-final default, two bag replicates): 49.0 points (21.1 exact) per basho,
+E23 default, two bag replicates): 49.0 points (21.1 exact) per basho,
 mean place 85 of 206, ahead of 56% of the field; above the median entry
 in 24 of 40 basho, above P75 in 11, top ten in 4 (202407 and 202511
 2nd, 202503 4th, 202203 7th), never first, 18.6 points behind the
@@ -299,8 +302,8 @@ Neutral-to-worse everywhere that has statistical power: the era
 features (year, kosho, mak_size) already let trees specialize to the
 modern regime, so a cutoff only shrinks the sample; rare big-move
 patterns thin out first. Full history stays the default;
-`--train-start` remains available on backtest.py and predict.py for
-future re-testing (the result cache keys on it).
+`--train-start` remains available on `banzuke backtest` and
+`banzuke predict` for future re-testing (the result cache keys on it).
 
 ## E10: no make-koshi promotion for S/K/M (2026-09)
 
@@ -327,31 +330,10 @@ still improves excluding it. Confirmation boundary F1 unchanged.
 Takayasu now lands at M2E for 202611, whose actual banzuke is not yet
 available.
 
-## Overrides (predict.py, 2026-08)
-
-Human-in-the-loop overrides constrain the assignment, not the model:
-scores are computed once; `--above`/`--below` splice the model's
-ordering (the named wrestler moves the minimal distance to clear its
-target, applied sequentially, no-op if already satisfied); `--class`,
-`--count`, and `--pin` steer the resolver's structural stage. There is
-no conditional re-inference: the model does not revise its opinion of
-C because you moved A above B; the sheet shifts structurally around
-the override.
-
-Precedence: overrides outrank the resolver's near-inviolable
-conventions, and each broken convention is reported (demoted yokozuna,
-retained kadoban ozeki, dropped kachi-koshi incumbent, cancelled rule
-promotion). A relation that the ordering satisfies can still be
-inverted in the final labels by a forced convention (e.g. the
-forced-komusubi claim); this is reported as VIOLATED rather than
-silently overriding the convention. The resolver refactor that made
-slots addressable (block_slots) reproduced the committed holdout
-results exactly, 144/144 (model, basho) rows.
-
 ## E11: seed bagging (2026-09, protocol v2)
 
 Hypothesis: averaging the movement delta and the pair probabilities over
-5 seeds before reranking/resolving beats a single seed (predict.py
+5 seeds before reranking/resolving beats a single seed (`banzuke predict`
 already trained 5 seeds, but only for the +-N column).
 
 Screen 2004-2019, paired per basho, bag replicates (seeds 0-4, 5-9) vs
@@ -368,7 +350,8 @@ part of the pooled effect is the extra replicate; the direction is
 consistent everywhere. Per-basho paired SD of MAE falls from 0.108 to
 0.051 when both sides are bagged, which is why the sweeps below run on
 the bag. **Adopted**: `n_seeds=5` is the platform for E12-E14 and the
-predict.py point forecast (same runtime as before).
+`banzuke predict` point forecast (no extra runtime: the 5 seeds were
+already being fitted).
 `--set n_seeds=5 --seeds 0-1`.
 
 ## E12: base-stage capacity and regularization (2026-09, protocol v2)
@@ -523,7 +506,8 @@ Screen, bag5, on the E13a winner (mixed + context, oof_gap 2, gap .5):
 
 E3's conclusion stands for L1 as well: down-weighting old transitions
 does not pay. L2 blending only helps the pre-2012 half. Neither is
-adopted; the blend option was removed. (Caveat: the rolling OOF scores
+adopted; neither option (`half_life`, blend) is in the current code
+(git history has them). (Caveat: the rolling OOF scores
 used for near-tie pair selection in these runs came from the unweighted,
 unblended base, so a re-run with a matching OOF table would differ
 slightly. The screen-window verdicts are clear enough not to repeat.)
@@ -574,7 +558,7 @@ is noted here rather than blocking. B4 beats B3 on MAE in both windows
 with exact slots flat. **Adopted: B4.** The 2024-2026 slice, for
 continuity with earlier logs: 18.2 -> 20.8 exact, MAE .831 -> .706.
 
-New defaults (`banzuke/models.py`): bag of 5 seeds; base 300 rounds;
+New defaults (`banzuke.models`): bag of 5 seeds; base 300 rounds;
 pair classifier 150 rounds trained on window pairs plus rolling-OOF
 near-ties (oof_gap 2) with context features; rerank gate gap 1.0,
 cluster_max 6. LambdaRank (B) truncation 60. Everything else unchanged.
@@ -613,13 +597,15 @@ data-rich revisit; the ~0.8 slots/basho ceiling stands unclaimed.
 
 ## E16: same-rank E/W "twins" kept adjacent (2026-09)
 
-(Numbered after the protocol-v2 round E11-E15 on the tuning branch.)
+(Run on the E10 configuration while the protocol-v2 round E11-E15 was
+in progress; numbered after it.)
 
 Hypothesis: when M8e and M8w post the same record, the committee keeps
 them adjacent on the next banzuke even if a third wrestler's individual
 movement would land between them, and the per-rikishi model splits such
-pairs too often. Tooling: `experiments/grouping.py`, a post-processing
-harness on analyze.py's cached Ar predictions (2004-2026, 135 targets,
+pairs too often. Tooling: `experiments/grouping.py` (not in the current
+code; git history has it), a post-processing harness on
+`banzuke analyze`'s cached Ar predictions (2004-2026, 135 targets,
 3 seeds). A variant permutes the model's order, re-resolves and
 re-evaluates, so every comparison is exactly paired with no retraining.
 
@@ -673,17 +659,15 @@ resolver rule (`keep_twin_order`): where the model ranks W above E the
 two exchange places in its order. Ar did this in 31 of 405 backtest
 frames (12 of 438 seed-0 pairs); paired effect exact +0.0025/basho
 (5-5), MAE -0.0015. Free, principled, and not the win the hypothesis was
-after. Re-run `uv run python -m experiments.grouping describe|backtest`
-after future model changes; the events parquet it writes is where an
-anchor signal would show up if more data accrues.
+after.
 
-### E16 on the tuned Ar (this branch, bag of 5, 3 seeds)
+### E16 on the tuned Ar (E11-E14 configuration, bag of 5, 3 seeds)
 
 Same harness, same cache window, baseline 19.61 exact / MAE .867. The
 tuned reranker behaves differently around twins:
 
 - it keeps identical-record twins adjacent in only 46% of its orders vs
-  the committee's 69% (main's Ar: 65%); one-interloper splits 170 vs 97.
+  the committee's 69% (the E10 Ar: 65%); one-interloper splits 170 vs 97.
   It inverts twins once in 438, so `keep_twin_order` touches 1 frame
   (-1 slot, noise) here.
 - the anchor is still a coin flip: on 142 kept splits the interloper
@@ -701,7 +685,7 @@ tuned reranker behaves differently around twins:
   p=.012), and positive whether the committee kept the pair (+0.20) or
   split it (+0.18). The tuned reranker's placement of the interloper is
   itself noisy, so consolidating the trio helps either way.
-- oracle ceiling is larger than on main: +0.50/basho for twins, +0.71
+- oracle ceiling is larger than on the E10 Ar: +0.50/basho for twins, +0.71
   for identical-record chains.
 
 Status: suggestive, not confirmed. The mechanism is significant, the
@@ -716,15 +700,15 @@ Follow-up to E16, prompted by the 202611 forecast: Ar put Ura and
 Fujiseiun between Hakunofuji (K1E 5-10) and Daieisho (K1W 5-10). The
 committee has never done that: identical-record S/K twins stayed
 adjacent in 26 of 26 cases since 2004 (92 of 98 since 1959, the last
-split in 1993), while both branches' Ar split them in ~28% of backtest
-frames.
+split in 1993), while both the E10 and the tuned Ar split them in ~28%
+of backtest frames.
 
 Diagnosis: an aggregation artifact, not a classifier error. Within a
 cluster {E, W, X} the twins' mutual comparison is certain (P = .999),
 so Borda separates them by a full point, and any rival X the
 classifier is honestly unsure about (roughly .33 < P < .67 against
 each twin) lands between them. The calibrated reranker (E13) is
-*more* exposed than main's overconfident one: it correctly rates a K
+*more* exposed than the overconfident E10 one: it correctly rates a K
 5-10 against an M9 10-5 near .5 (the committee: 56% since 2004), and
 Borda converts "unsure" into "between", the one outcome the committee
 never chooses. No pair feature can fix this; the algebra holds with
@@ -735,9 +719,10 @@ with identical W-L-A records are one unit in the reranker: clustered at
 their mean base score, compared with a rival by the mean of the
 members' pair probabilities, expanded E then W. Adjacency is assumed,
 the rival's side is learned, so the classifier still decides where the
-unit goes. predict.py gains `--set` so options can be used live.
+unit goes.
 
-Screen and confirm, two bag replicates, paired vs the current default:
+Screen and confirm, two bag replicates, paired vs the pre-`twin_unit`
+default:
 
 | config | window | exact/42 | MAE | dExact [CI] | W-L | dMAE [CI] | p |
 |---|---|---:|---:|---|---|---|---:|
@@ -758,7 +743,7 @@ E/W-flip-sized wins for occasional two-slot losses. Fails the bar.
 **Adopted: `twin_unit="sk"` as the default**, on the E15a precedent
 (a convention with no exceptions in the modern record, neutral on the
 metrics, kept as a correctness fix). The convention audit
-(`banzuke.conventions`, main) tracks S/K twin adjacency so the first
+(`banzuke conventions`) tracks S/K twin adjacency so the first
 counter-example will be visible. The 202611 forecast now reads
 Takayasu / Ura, Hakunofuji / Daieisho, Fujiseiun / Kotoshoho at M2-M4;
 the committee's choice among those three rows is historically a coin
@@ -795,8 +780,8 @@ screen-window sample: the formula over-spreads promotees (its gap
 slope is .89, 168% of the committee's) and the trees trust it in
 near-ties where the learned features were already right. The confirm
 window's small gain does not rescue a significant screen loss. **Not
-adopted**; code removed, `transitions.parquet` unchanged. With `mech`
-the 202611 sheet fixed Kitanowaka / Kyokukaiyu and broke Daiseizan /
+adopted**; `mech` is not in the current code (git history has it). With
+`mech` the 202611 sheet fixed Kitanowaka / Kyokukaiyu and broke Daiseizan /
 Arashifuji (margin -1, the lower-ranked lands higher 83%): one
 near-tie traded for another, which is what a null looks like on one
 sheet.
@@ -815,9 +800,9 @@ case at a time with the committee's precedent counted for each. Not a
 tuning round: no default was changed; every candidate is measured and
 logged for a later decision.
 
-Tooling, committed under `experiments/`:
+Tooling:
 
-- `explain.py build` re-runs each backtest frame (train on next_basho < T,
+- `banzuke explain build` re-runs each backtest frame (train on next_basho < T,
   rolling OOF for the pair stage, asserted per frame) and records the
   reranker's units and clusters, every pair probability within 2.0 base
   points, the sheet the resolver would have produced from the base order
@@ -825,13 +810,14 @@ Tooling, committed under `experiments/`:
   sits in the actual layout), `block_offset` (the label shift caused by a
   wrong Y/O/S/K count above), `local_err`, and the stage a miss was born
   in (cascade / structural / boundary / rerank / base / resolver). Readers:
-  `sheet` (side-by-side banzuke), `explain` (per-rikishi stage table, cluster
+  `sheet` (side-by-side banzuke), `detail` (per-rikishi stage table, cluster
   pair probabilities, precedent lines), `docket`, `calibration`. The cache
   (135 targets x 3 seeds, 25 min on 24 threads) reproduces the E17 confirm
   figures exactly (17.93 / .937).
-- `precedent.py`: "where did K1 5-10 land" / "who was higher, K 5-10 or
+- `banzuke precedent`: "where did K1 5-10 land" / "who was higher, K 5-10 or
   M9-10 10-5" with counts for all history, 2004+ and the last 60 basho.
-- `rules.py`: candidate rules applied to the cached orders (order edits,
+- `experiments/rules.py` (not in the current code; git history has it):
+  candidate rules applied to the cached orders (order edits,
   class assertions, or flipping the inputs of a resolver rule), re-resolved
   and re-evaluated: exactly paired, three seeds averaged, block-bootstrap
   CIs, no retraining (E16's harness generalised).
@@ -849,12 +835,12 @@ one way while the model sits near .5 or on the wrong side.
 Verdicts over the 568 notable cells (structural, boundary, |local err| >= 2,
 confident near misses): lost coin flip 246, miscalibration 234, flow
 artifact 62, missing principled rule 16, unknowable 9, new precedent 1;
-the 208 cascade cells are charged to their structural cause. Full docket,
-sheet reviews and the triage are under `results/scratch/explain/`
-(git-ignored; `review/adhoc.md` is the pattern index).
+the 208 cascade cells are charged to their structural cause. The docket is
+regenerated by `banzuke explain docket` (written under `cache/explain/`);
+the sheet reviews and triage behind the verdicts are not in the repository.
 
-Regularities established (counts 2004+ unless stated), all now rows in the
-convention audit as "watch":
+Regularities established (counts 2004+ unless stated), all added to the
+convention audit as "watch" rows (most become resolver rules in E22):
 
 - Y who stay and O who stay are ordered by wins, then the yusho winner,
   then a man who fought above a full-kyujo man, then prior position: all
@@ -900,13 +886,14 @@ Takakeisho's 33-win decline (201903), Mitakeumi's kadoban exemption
 Data bug found: two 202507 juryo rows (Nishikigi 7-7-0, real 8-7;
 Fujiseiun 9-5-0, real 10-5) have a bout with an empty result in the raw
 API record, a fusen win not counted; Nishikigi's missing win flipped a
-boundary call in the 202509 forecast. Fix in `build.py` at the next
-rebuild (only 2 rows since 2004).
+boundary call in the 202509 forecast. Fixed in `build.py` at the next
+rebuild (E21; only 2 rows since 2004).
 
 ## E20: committee rules measured on the cached orders (2026-10)
 
-`uv run python -m experiments.rules --start 200401`. Paired exact slots per
-basho vs the cached order re-resolved (V0), three seeds averaged, 135 basho;
+Measured with `experiments/rules.py` (not in the current code; git history
+has it), targets from 200401. Paired exact slots per basho vs the cached
+order re-resolved (V0), three seeds averaged, 135 basho;
 MAE is the decision metric where quoted. Nothing adopted in this round.
 
 | rule | precedent | full 2004-2026 dExact [CI] | 2004-2018 | 2019+ | W-L full |
@@ -940,7 +927,7 @@ cached orders, so the table above is the expected result). R8 rests on
 four cases and should carry an audit row. R1 is the largest single lever
 on the recent window but is a fitted constant that loses in COVID frames;
 the model-side fix (flag the exempt rows so the base learns the modern
-drop) is preferred, with a predict.py note meanwhile. Leads needing
+drop) is preferred, with a `banzuke predict` note meanwhile. Leads needing
 retraining: zone-pressure features (MK count in M1-M6, KK count in M1-M8),
 the COVID flag, a formula prior for promotee pairs in the reranker,
 conditioning M1 8-9 claims on zone room and adding M2 10-5 (12/16) to the
@@ -954,7 +941,7 @@ juryo day 15: the API's torikumi has Nishikigi (J1E) over Fujiseiun (J8W)
 by kotenage, the banzuke record is blank for both and a 2026-10 re-fetch
 still returns the blank; the API's own totals were short by one (Nishikigi
 7-7-0 -> 8-7, Fujiseiun 9-5-0 -> 9-6; E19 quoted 10-5 for Fujiseiun, which
-was wrong). Any other scheduled bout without a result now fails the build.
+was wrong). Any other scheduled bout without a result fails the build.
 The brief's "only 2 rows since 2004 have wins + losses + absences != 15"
 was also wrong: 56 do (29 no-shows with an empty record, among them the 15
 men expelled at 201105, 21 mid-basho retirements whose API `absences` is
@@ -966,20 +953,18 @@ two corrected rows have.
 number, same contiguity rule as `w1`): resolver inputs for the Y/O rule
 corrections of E22, not in `FEATURES`. Four transition rows change (the two
 corrected records and Nishikigi's lags at 202509 and 202511), so the OOF
-table recomputed (2 min) and every cache was rebuilt. `explain.py` records
-pair probabilities within 5.0 base points (was 2.0; clusters span up to
-4.4, so every in-cluster pair is now on disk, E24 needs that).
-Thread defaults are now logical process count everywhere and
-`predict.py` gained `--threads`.
+table recomputed (2 min) and every cache was rebuilt. `explain` records
+pair probabilities within 5.0 base points (E19: 2.0; clusters span up to
+4.4, so every in-cluster pair is on disk, which E24 needs).
 
 Reproduction: the E19 cache rebuilt on the fixed data (135 targets x 3
 seeds, 12 min on 14 threads) gives 19.62 exact / 0.864 MAE over 2004-2026
 (E19: 20.37 / 0.852 on 2004-2018, reproduced to the decimal, and 18.14 /
 0.892 on 2019+, now 18.16 / 0.888), seeds 0-1 on 2020-2026 17.94 / 0.932
-(E17's adopted configuration: 17.93 / 0.937 on the old data; the frames
+(E17's adopted configuration: 17.93 / 0.937 on the pre-fix data; the frames
 from 202509 on differ, 202509 -2 exact and 202607 +2 among them), every
 frame with `train_max < target`, `repro` 1.000.
-`experiments.rules` on it reproduces the E20 table: bundle without R1
+`experiments/rules.py` on it reproduced the E20 table: bundle without R1
 +1.13 exact per basho, 43-2 (the two fixed rows change nothing before
 202509).
 
@@ -989,7 +974,7 @@ Hypothesis (E20): six conventions with no modern exception and one at
 47/49, ported from `experiments/rules.py` into `banzuke/resolver.py`, are
 worth about one exact slot per basho on every window. Each precedent count
 below was recomputed from `transitions.parquet` at porting time (2004+
-unless stated; `python -m banzuke.conventions` tracks them).
+unless stated; `banzuke conventions` tracks them).
 
 Change (`rule_masks()` in the resolver, shared with the convention audit;
 overrides still win and each convention they break is reported):
@@ -1008,8 +993,7 @@ overrides still win and each convention they break is reported):
   demoted ozeki): 29/29. With fewer candidates the model decides (6 cases:
   4 went to komusubi, Goeido stayed S1W in 201207 and 201305). M1 claims
   with 8-9 wins never create a third komusubi slot for him: the
-  lowest-scored go back to maegashira while the block exceeds 2 (the
-  `_trim_weak_m1` semantics of rules.py, done on the member list).
+  lowest-scored go back to maegashira while the block exceeds 2.
 - R3: komusubi with <= 6 wins (131/132; Takayasu 202505 kept) and komusubi
   with 7 wins below K1E (24/24, rules.py said K1W; the two K2E cases also
   left) leave sanyaku; sekiwake with <= 6 wins too (69/70; Daieisho
@@ -1023,19 +1007,20 @@ overrides still win and each convention they break is reported):
   sanyaku: 4/4 (Terunofuji 201505, Tochinoshin 201805, Aonishiki 202511,
   Kirishima 202603); runs with two maegashira basho 0/3 (Kotooshu 200509,
   Terunofuji 202011, Onosato 202405). Four cases: an audit row carries the
-  thin precedent, and predict.py notes every Y/O promotion on the sheet
-  with the results behind it ("34 wins over last 3 basho, one of them at
-  M1" names this path).
+  thin precedent, and `banzuke predict` notes every Y/O promotion on the
+  sheet with the results behind it ("34 wins over last 3 basho, one of them
+  at M1" names this path).
 - R12 (own commit, adopted on measured value): komusubi newcomers rank
   below kachi-koshi komusubi incumbents, 47/49 (Takakeisho 11-4 in 201711
   and Tamawashi 13-2 in 202209 went above an 8-7 / 9-6 incumbent).
 
-Faithfulness: `experiments.rules --cache <E19 dir>` re-resolves the old
-resolver's orders with the new one. Every bundle rule is an exact no-op in
-all 405 frames (`changed` 0 for R2, R3, R4, R5, R6, R7, R8, R12, R14), and
-the `cached` variant (the old sheets) pairs the port against them:
+Faithfulness: `experiments/rules.py --cache <E19 dir>` re-resolves the
+E21 cache's orders (pre-E22 resolver) with the E22 resolver. Every bundle
+rule is an exact no-op in all 405 frames (`changed` 0 for R2, R3, R4, R5,
+R6, R7, R8, R12, R14), and the `cached` variant (the pre-E22 sheets) pairs
+the port against them:
 
-| window | n | old exact / MAE | new exact / MAE | dExact [CI] | W-L | dMAE [CI] |
+| window | n | pre-E22 exact / MAE | E22 exact / MAE | dExact [CI] | W-L | dMAE [CI] |
 |---|---:|---:|---:|---|---|---|
 | full 2004-2026 | 135 | 19.62 / 0.864 | 20.80 / 0.844 | +1.18 [+0.73, +1.70] | 44-2 | -0.020 [-0.029, -0.013] |
 | 2004-2018 | 89 | 20.37 / 0.852 | 21.18 / 0.833 | +0.80 [+0.51, +1.13] | 24-1 | -0.019 [-0.032, -0.010] |
@@ -1074,9 +1059,7 @@ Guardrails: promotion/demotion F1 .935/.905 -> .935/.905 on the screen,
 commit). On the cached orders no frame loses more than one cell (201307,
 202507); against the retrained E17 default the worst frame is 202509 at
 -2.0 and four basho gain 11 or more (201807, 202211, 202305, 202605).
-Tests: the eight regained banzuke are reproduced from the true order,
-one fixture per rule on a reversed order, the override path still wins and
-warns. The convention audit's seven watch rows are resolver rows now (the
+The convention audit's seven watch rows became resolver rows (the
 7-win sekiwake row counts the guarded cases, 0/29) plus rows for the two
 Y/O corrections and the K1W exit; the kyujo row stays a watch.
 
@@ -1111,10 +1094,10 @@ Tamanoi 202009, the Hatsu 2021 withdrawals, Miyagino 202109, Tagonoura and
 Nishikido 202201, Ichinojo 202205, Takayasu 202207; every listed row
 dropped <= 3, every unlisted full kyujo since 2004 dropped 17+). The 202207
 partial records (Tamawashi 5-8-2 at +2 and the like) stay unflagged:
-documented unknowables. Models take it through the new `extra` option
-(`--set extra=rank_protected`: appended to the base inputs and the pair
-differences, part of the OOF cache key); `predict.py --protected Name`
-sets it live.
+documented unknowables. Models take it through the `extra` option,
+introduced here (`--set extra=rank_protected`: appended to the base inputs
+and the pair differences, part of the OOF cache key);
+`banzuke predict --protected Name` sets it live.
 
 Two bag replicates, paired against the E22 default on the same data:
 
@@ -1145,8 +1128,8 @@ absolute error 6.3 -> 2.3, rows with seed spread >= 2 25% -> 20%; by era
 -6.0 -> -0.5. The 10 protected makuuchi rows (actual drop 0.8) went from a
 predicted 13.1 to 1.5.
 
-Folded into the same final rebuild: the `kadoban` feature no longer resets
-after an exempted second make-koshi (Mitakeumi 202209; 18 kosho-era rows
+Folded into the same final rebuild: the `kadoban` feature survives an
+exempted second make-koshi (Mitakeumi 202209; 18 kosho-era rows
 before 2004 also flip, all consistent with their outcome), so a third one
 demotes him in the resolver (+1 exact, -0.09 MAE in the 202211 frame on
 the cached orders; Y/O/S/K counts wrong in 2019+ frames 12 -> 11). Against
@@ -1172,7 +1155,8 @@ available when this round closed.
 Hypothesis (E19 5.3): Borda within a cluster overrode a correct direct pair
 through a cycle in four frames (202411, 202501, 202601, 202109), a twin unit
 swallowed a rule-promoted twin (201911), the reranker lifted a demoted ozeki
-(202607). Tool: `experiments/rerank_offline.py` rebuilds the reranker from
+(202607). Tool: `experiments/rerank_offline.py` (not in the current code;
+git history has it) rebuilds the reranker from
 a cached frame's base scores, twin units and pair probabilities (all
 in-cluster pairs are on disk since E21), checks it against the cached
 order (405/405 frames reproduce), then re-aggregates, re-resolves and
@@ -1190,7 +1174,7 @@ class and order, so the only effect left is on cluster-mates whose cluster
 they chained (4 frames). Kemeny and Copeland trade E/W flips for larger
 misses: exact slots up on 2004-2018, MAE up everywhere, flat on 2019+ and
 the confirm window. **Not adopted** (the bar was neutral-or-better on both
-windows). Lead kept: Kemeny's +0.31 on the old window says the cycles are
+windows). Lead kept: Kemeny's +0.31 on 2004-2018 says the cycles are
 real; a better-calibrated pair stage might turn it into a MAE gain too.
 
 ## E25: zone-pressure (supply) features (2026-10, protocol v2)
@@ -1222,10 +1206,10 @@ Two bag replicates, paired against the E22 default (same data):
 **Not adopted.** Flat on the screen with the halves disagreeing, a
 suggestive but insignificant MAE gain on the confirm window that is not
 concentrated in the COVID frames (without 202207/202209 it is -0.029).
-Code and columns removed afterwards (the E18 convention); a later angle
-would be a pair-stage-only form, or the interaction with the riser's own
-record, and the `extra` option measures any new column without a code
-change.
+`supply_features` and `extra_shared` are not in the current code (git
+history has them); a later angle would be a pair-stage-only form, or the
+interaction with the riser's own record, and the `extra` option measures
+any new column without a code change.
 Diagnostic (seed-0 bag, KK risers from M9+ with 9-11 wins, signed error
 by `mk_joi` bucket <= 5 / 6-7 / 8-9 / 10+): default -0.65 / -0.38 / +0.16 /
 +0.67 (Spearman with `mk_joi` .13), with `mk_joi,kk_upper` -0.33 / -0.15 /
@@ -1233,70 +1217,10 @@ by `mk_joi` bucket <= 5 / 6-7 / 8-9 / 10+): default -0.65 / -0.38 / +0.16 /
 is worth about half a cell on 4-5 men per basho and does not reach the
 slot or MAE metrics.
 
-## Housekeeping (2026-10, after E25)
-
-Removed, recoverable from git history before this note: `experiments/
-grouping.py` (E16; the twin question is settled, `keep_twin_order` and
-`twin_unit` are in the package and the convention audit tracks adjacency;
-the tool also read a predictions cache that no longer exists under that
-name), `experiments/rerank_offline.py` (E24 null; a Kemeny retest is
-cheaper as a `GBMRerank` option and one backtest), the fourteen E20 rule
-functions in `experiments/rules.py` (adopted ones are no-ops against the
-resolver, rejected ones are logged above; the harness stays with the two
-open leads R11 and R13 as worked examples), the E25 supply columns and the
-`extra_shared` option. Kept for the next rule search: `explain.py` (frame
-cache, side-by-side sheets, per-rikishi stage table, miss docket, pair
-calibration), `precedent.py`, `rules.py`, and the `extra` model option.
-
-## Housekeeping (2026-10, layout)
-
-The scripts became one installed package with a single command, `banzuke`
-(`uv sync`, then `uv run banzuke --help`). Entries above quote the old
-invocations as they were run; the map:
-
-| before | now |
-|---|---|
-| `uv run python predict.py ...` | `banzuke predict ...` (flags unchanged) |
-| `uv run python update_data.py [--fetch-only\|--build-only]` | `banzuke data update\|fetch\|build` |
-| `uv run python backtest.py ...` / `analyze.py ...` | `banzuke backtest ...` / `banzuke analyze ...` |
-| `uv run python -m banzuke.conventions` | `banzuke conventions` |
-| `uv run python -m experiments.explain build\|sheet\|docket\|calibration` | `banzuke explain build\|sheet\|docket\|calibration` |
-| `uv run python -m experiments.explain explain T` | `banzuke explain detail T` |
-| `uv run python -m experiments.precedent landing\|pair\|cells` | `banzuke precedent landing\|pair\|cells` |
-| `uv run python -m experiments.rules` | `banzuke rules` (removed since, see below) |
-
-`--seeds` on `explain` takes the same SPEC as `backtest`
-(`0-2` is the former `3`). The package moved to `src/banzuke/` with the
-research tools under `banzuke.experiments`; `banzuke.ranks` holds the
-rank vocabulary (ordinals, `fmt_cell`, `fmt_record`, `next_basho`),
-`banzuke.paths` the repository layout (`$BANZUKE_ROOT` overrides it),
-`banzuke.forecast` the forecast assembly `predict` used to carry. The
-backtest and explain caches were invalidated once by the move (the
-fingerprint covers `uv.lock`, which the packaging changed); the OOF
-cache survived. `precedent` and `analyze` print cells as `M3W`, like the
-other commands, instead of `M3w`.
-
-## Housekeeping (2026-10, simplification)
-
-Removed, recoverable from git history before this note:
-
-- `experiments/rules.py` and `banzuke rules`. Its two remaining rules were
-  measured twice and not adopted (R11 and R13, E20 and E22); the part of
-  R13 that did pay, trimming weak M1 claims only behind a falling 7-win
-  sekiwake, has been in the resolver since E22. A future rule search
-  starts from `banzuke explain build` and a copy of the resolver, which
-  is what the harness amounted to.
-- Models `L`, `Aw`, `C` and `Ah`, with the `half_life` and `h2h` options
-  they were aliases of. Settled nulls (E3, E6, E7, E14); nothing since
-  protocol v2 compared them, and `Ah` was `Ar --set h2h=true`. The
-  registry keeps `R` (the cheap baseline), `A`, `Aq`, `B` (the E14
-  truncation lead) and `Ar`. The OOF table was rebuilt once for the
-  base-stage edit (`half_life` removed); its values are unchanged.
-
-## Reading a forecast: reviewer checklist (from E19, updated E22-E25)
+## Reading a forecast: reviewer checklist (from E19 and E22-E25)
 
 Each item is a situation the committee decides lopsidedly; the ones marked
-"enforced" the resolver now applies (E22; an override that breaks one is
+"enforced" the resolver applies (E22; an override that breaks one is
 reported as a broken convention, and every Y/O promotion is listed under
 `notes:` with the results behind it, or "by override" when no convention
 explains it). The rest are still the reviewer's job. Counts are 2004+
@@ -1348,7 +1272,7 @@ unless stated.
   order that contradicts the direct pair (cycle) is worth testing with
   `--above` (Kemeny aggregation gained exact slots but lost MAE, E24).
 
-## Known limitations / future leads (updated 2026-10, after E25)
+## Known limitations / future leads (as of E25, 2026-10)
 
 - Juryo promotee placement: the under-promotion bias has faded (+1.15
   cells in 2004-11, +0.21 in 2024-26); since 2020 promotees with 10+ wins
@@ -1370,7 +1294,7 @@ unless stated.
   declined 33 (201903); `banzuke predict` lists every Y/O promotion under `notes:`
   with the results behind it, so the call is visible.
 - COVID-era kadoban exemptions (Mitakeumi 2022) are not modeled beyond the
-  kadoban flag surviving the exempted basho (E22 note).
+  kadoban flag surviving the exempted basho (E23).
 - Structural errors on 2019+ (E22): Y/O/S/K counts wrong in 12 of 46
   frames (was 17); the twelve left are declined weak M1 claims (58%
   honoured, 0/3 for an M1W behind a same-record M1E), slots created for men

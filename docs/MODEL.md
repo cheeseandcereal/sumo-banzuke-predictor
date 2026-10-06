@@ -335,7 +335,7 @@ flowchart TD
 ### 4.1 Twin units
 
 East and West of one sekiwake or komusubi rank number with identical
-W-L-A records (`_twin_units`, scope `"sk"`) are one unit: clustered at
+W-L-A records (`twin_units`, scope `"sk"`) are one unit: clustered at
 their mean base score, compared with a rival by the mean of the two
 members' pair probabilities, and written back out E then W. The committee
 has never split such a pair (26/26 since 2004, 92/98 since 1959), while
@@ -462,7 +462,7 @@ flowchart TD
    If the model ranks the West man of a pair with one rank number and the
    same W-L-A above the East man, the two exchange places in the order;
    nobody else moves. The committee has never swapped such a pair:
-   0/436 since 2004, 0/1514 since 1959. (`keep_twin_order`)
+   0/437 since 2004, 0/1514 since 1959. (`keep_twin_order`)
 
 3. **A yokozuna is never demoted.** Every yokozuna incumbent is a
    yokozuna on the next sheet, whatever his record (0 exceptions in 864
@@ -588,11 +588,12 @@ flowchart TD
 
 ### 5.3 The convention audit
 
-`banzuke conventions` recounts every rule above, plus a
-few regularities the resolver does not enforce (marked "watch", such as
-the 17+ cell drop of an unexempted full kyujo, and the S/K twin adjacency
-that `twin_unit` assumes), over all history, 2004+, the last 60 and the
-last 30 basho, as violations/cases with the last violating basho. `!`
+`banzuke conventions` recounts every rule above, plus the
+regularities the resolver does not enforce (the 17+ cell drop of an
+unexempted full kyujo, marked "watch", and the S/K twin adjacency that
+`twin_unit` assumes, marked "Ar twin_unit"), over all history, 2004+, the
+last 60 and the last 30 basho, as violations/cases with the last
+violating basho. `!`
 flags a rule that was clean since 2004 and is violated inside the last
 30; `~` a rule whose recent violation rate is above its 2004+ rate.
 `banzuke analyze` ends with the same table. A rule can only be wrong going
@@ -709,7 +710,7 @@ juryo promotees landing 8+ cells above the boundary 25% / 67%.
    options; `--train-start` shortens the training set.
 6. Score the candidates: `point` (the bag's rank index), one rank index
    per single seed (for `spread`), the bag's `base_score` (for gaps);
-   `claim_rates` from the full history.
+   `claim_rates` from 1990 on (7).
 7. `mak_size`: `--mak-size`, else the latest banzuke's.
 8. Resolve `point` without overrides: the baseline sheet whose cells the
    `<-M3E` annotations refer to.
@@ -826,7 +827,7 @@ configuration, so edits and rebuilds invalidate it automatically.
 All share `FEATURES`, the resolver and the backtest; the ordering
 objective is what differs between them. `--model X` on `banzuke predict`,
 `--models X,Y` on `banzuke backtest`; `docs/EXPERIMENTS.md` has their
-head-to-head results, and those of the variants removed from the tree
+head-to-head results, and those of variants that are not in `MODELS`
 (`L` ridge, `Aw` recency-weighted, `C` standalone pairwise, `Ah` with the
 head-to-head bout as a pair feature; E3, E6, E7, E14).
 

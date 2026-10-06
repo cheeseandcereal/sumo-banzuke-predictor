@@ -139,9 +139,8 @@ def build_transitions(tidy: pd.DataFrame, bouts: pd.DataFrame) -> pd.DataFrame:
             sansho_career[i] = sansho_career[prev_i] + sansho[i]
         kk_streak[i] = kk_arr[i] * ((kk_streak[prev_i] if contig else 0) + 1)
         tenure[i] = (cls[i] <= KOMUSUBI) * ((tenure[prev_i] if contig else 0) + 1)
-        # an ozeki who MK'd last basho and is still ozeki is kadoban now; an
-        # exempted second make-koshi (Mitakeumi 202209, kosho-protected ozeki
-        # before 2004) keeps him kadoban rather than resetting the flag (E22)
+        # an ozeki who MK'd last basho and is still ozeki is kadoban; an exempted second
+        # make-koshi (Mitakeumi 202209, kosho-protected ozeki before 2004) keeps him kadoban (E22)
         kadoban[i] = int(
             cls[i] == OZEKI
             and contig

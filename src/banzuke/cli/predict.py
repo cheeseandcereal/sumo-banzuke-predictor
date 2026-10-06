@@ -167,26 +167,26 @@ def interactive(state, run_once):
             flags = [f'--{k} "{v}"' for k in SPEC_KEYS for v in state[k]]
             print("banzuke predict " + " ".join(flags) if flags else "(no overrides)")
             continue
-        new = {k: list(v) for k, v in state.items()}
+        next_state = {k: list(v) for k, v in state.items()}
         if cmd == "clear":
-            new = {k: [] for k in new}
+            next_state = {k: [] for k in next_state}
         elif cmd == "unset":
             if not rest:
                 print("usage: unset <shikona>")
                 continue
-            new = {k: [v for v in vs if rest.lower() not in v.lower()]
-                   for k, vs in new.items()}
+            next_state = {k: [v for v in vs if rest.lower() not in v.lower()]
+                          for k, vs in next_state.items()}
         elif cmd in SPEC_KEYS:
             if not rest:
                 print(f"usage: {cmd} <spec>")
                 continue
-            new[cmd].append(rest)
+            next_state[cmd].append(rest)
         else:
             print(f"unknown command '{cmd}'; {help_line}")
             continue
         try:
-            run_once(new)
-            state.update(new)
+            run_once(next_state)
+            state.update(next_state)
         except OverrideError as e:
             print(f"error: {e} (override not applied)")
 

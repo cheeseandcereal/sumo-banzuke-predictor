@@ -56,7 +56,7 @@ def _fit_bag(fit_one, seeds, threads=1):
 
 def _cols(spec):
     """Column list from an option value: a list, or a comma-separated string
-    (what `--set extra=rank_protected,mk_joi` parses to); empty -> []."""
+    (what `--set extra=kinboshi,opp_pos_mean` parses to); empty -> []."""
     if not spec:
         return []
     return spec.split(",") if isinstance(spec, str) else list(spec)

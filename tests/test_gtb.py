@@ -1,5 +1,5 @@
 """The "Guess the Banzuke" benchmark (banzuke.gtb, `banzuke gtb`): the archive
-parser against a hand-written page with every layout quirk met so far, the
+parser against a hand-written page with every known layout quirk, the
 field percentiles, placing a model's rows in a field, the cache policy, and
 the command end to end without touching the network."""
 import numpy as np

@@ -49,26 +49,26 @@ def _cells(cands, pred):
 
 
 def test_features_are_chronological(tidy, bouts, trans):
-    """Features rebuilt from history truncated at `cut` equal the committed values
-    from the full history (no look-ahead); targets agree wherever the truncated
+    """Features rebuilt from history truncated at `cut` equal those of the
+    full-history build (no look-ahead); targets agree wherever the truncated
     data knows the next banzuke, i.e. strictly before the cut."""
     cut, key = 201911, ["basho", "rikishi_id"]
-    new = build_transitions(tidy[tidy["basho"] <= cut], bouts[bouts["basho"] <= cut])
-    new = new.set_index(key).sort_index()
-    old = trans[trans["basho"] <= cut].set_index(key).sort_index()
-    assert old.index.equals(new.index)
+    rebuilt = build_transitions(tidy[tidy["basho"] <= cut], bouts[bouts["basho"] <= cut])
+    rebuilt = rebuilt.set_index(key).sort_index()
+    full = trans[trans["basho"] <= cut].set_index(key).sort_index()
+    assert full.index.equals(rebuilt.index)
     for col in FEATURES:
-        assert _same(old[col], new[col]), col
-    before = old.index.get_level_values("basho") < cut
+        assert _same(full[col], rebuilt[col]), col
+    before = full.index.get_level_values("basho") < cut
     for col in ("position_next", "delta"):
-        assert _same(old[col][before], new[col][before]), col
+        assert _same(full[col][before], rebuilt[col][before]), col
     # Asanoyama returned at 202301 after five basho below juryo (last seen 202201): no lags
     a = trans[trans["shikona"] == "Asanoyama"].set_index("basho")
     assert a.index[a.index < 202301].max() == 202201
     assert np.isnan(a.loc[202301, "w1"]) and np.isnan(a.loc[202301, "pos1"])
     # lagged class/number are resolver inputs (not FEATURES), kept with the same contiguity
     for col in ("class1", "class2", "num1", "num2"):
-        assert col not in FEATURES and _same(old[col], new[col]), col
+        assert col not in FEATURES and _same(full[col], rebuilt[col]), col
     assert np.isnan(a.loc[202301, "class1"]) and a.loc[202305, ["class1", "num1"]].tolist() == [JURYO, 1]
 
 
@@ -109,8 +109,8 @@ def test_block_slots_layout_conventions():
 def test_resolver_reproduces_banzuke_from_true_order(cands_for, tidy, target):
     """From the true order the sheet is reproduced cell for cell. 200607,
     201507, 201805, 201807, 202107, 202305, 202601, 202605 are frames the
-    committee rules decide (E22): before the rules were ported these eight
-    were not (Y/O membership or a make-koshi sekiwake's exit was wrong)."""
+    committee rules (E22) decide: Y/O membership or a make-koshi sekiwake's
+    exit there is not what score order alone gives."""
     cands, pred = _true_order(cands_for, target)
     actual = tidy[tidy["basho"] == target]
     mak = actual[actual["division"] == 0].merge(pred, on="rikishi_id", how="left")
@@ -137,10 +137,9 @@ def test_resolver_make_koshi_ceiling_and_block_order(cands_for):
 
 
 def test_resolver_keeps_identical_record_twins_in_order(cands_for):
-    # E16: E and W of one M/J rank with the same record never swap. 202609:
-    # Gonoyama (M2E) / Churanoumi (M2W), both 7-8, landed M2E/M2W; with their
-    # scores exchanged the resolver still emits them in prior order, and the
-    # rest of the sheet is untouched
+    # E16: E and W of one M/J rank with the same record never swap. 202609: Gonoyama
+    # (M2E) / Churanoumi (M2W), both 7-8, landed M2E/M2W; with their scores exchanged
+    # the resolver emits the identical sheet, the pair in prior order
     cands, pred = _true_order(cands_for, 202609)
     scores = cands["position_next"].to_numpy(dtype=float)
     names = cands["shikona"]
@@ -206,7 +205,7 @@ def test_resolver_make_koshi_exits(cands_for):
         n += len(out)
         assert (out["pred_class"] >= MAEGASHIRA).all(), target
     assert n >= 8
-    # the override path still wins, and says so (202405: Nishikigi K1W 3-12)
+    # a class override outranks the exit rule, and the warning says so (202405: Nishikigi K1W 3-12)
     cands = cands_for(202405)
     warnings = []
     rid = cands.loc[cands["shikona"] == "Nishikigi", "rikishi_id"].iloc[0]

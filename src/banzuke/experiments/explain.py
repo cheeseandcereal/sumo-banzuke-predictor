@@ -1,10 +1,11 @@
 """E19: per-basho explain dumps, miss docket and pair calibration for Ar.
 
-    banzuke explain build --start 201901 --end 202609 --seeds 3 --threads 14
-    banzuke explain sheet 202101 [--seed 0] [--all]      # side-by-side banzuke
-    banzuke explain detail 202101 [--seed 0] [--all]     # per-rikishi stage table
-    banzuke explain docket --start 201901               # every missed cell, classified
-    banzuke explain calibration                         # pair probability reliability
+    banzuke explain build --start 201901 --end 202609 --seeds 0-2 --threads 14
+    banzuke explain sheet 202101 [--seed 0]      # side-by-side predicted / actual banzuke
+    banzuke explain sheet --all --start 201901   # one file per cached target
+    banzuke explain detail 202101 [--seed 0]     # per-rikishi stage table, clusters, precedent
+    banzuke explain docket --start 201901        # every missed cell, classified
+    banzuke explain calibration                  # pair probability reliability
 
 `build` mirrors the backtest harness frame by frame (train on next_basho < T,
 candidates from the T-1 banzuke, rolling OOF scores for the pair stage) and

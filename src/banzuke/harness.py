@@ -209,8 +209,6 @@ def run_cached(model_names, targets, trans, tidy, configs, seeds=(0,), train_sta
 
     cache = cache or BACKTEST_CACHE
     store = pd.read_parquet(cache) if cache.exists() else pd.DataFrame()
-    if "seed" not in store:
-        store = pd.DataFrame()  # older cache layout
     results = []
     for label, kwargs in configs.items():
         fp = fingerprint(kwargs=kwargs, train_start=train_start)
